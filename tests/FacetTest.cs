@@ -124,6 +124,20 @@ static class FacetTest {
         Check(ValueScale.Snap(3, 0, 0) == 3, "a step of 0 means no snapping");
         Check(ValueScale.Linear.FromT(1f, 0.5f, 2f) == 2f && ValueScale.Linear.FromT(0f, 0.5f, 2f) == 0.5f, "the ends of the track are exactly Min and Max");
 
+        var kc = new List<string>();
+        KeyCapture.Claim("a", () => kc.Add("a"));
+        Check(KeyCapture.Owner == "a" && kc.Count == 0, "the first claim cancels nobody");
+        KeyCapture.Claim("b", () => kc.Add("b"));
+        Check(kc.Count == 1 && kc[0] == "a" && KeyCapture.Owner == "b", "a second claim cancels the first once and takes over");
+        KeyCapture.Release("a");
+        Check(KeyCapture.Owner == "b" && kc.Count == 1, "releasing a non-owner changes nothing");
+        KeyCapture.Release("b");
+        Check(KeyCapture.Owner == null && kc.Count == 1, "releasing the owner clears it without cancelling");
+        KeyCapture.Claim("c", () => { throw new Exception("x"); });
+        KeyCapture.Claim("d", () => kc.Add("d"));
+        Check(KeyCapture.Owner == "d", "a throwing cancel does not stop the next claim");
+        KeyCapture.Release("d");
+
         Console.WriteLine(_fail == 0 ? "ALL PASS" : _fail + " FAILED");
     }
 }
