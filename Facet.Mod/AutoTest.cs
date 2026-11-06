@@ -1034,6 +1034,25 @@ namespace Facet.Mod
             }
             finally { Gallery.Lang = "en"; }
             sk.Dispose();
+
+            // Ruling R22: a Revision page builds once on its first visit; a Revision change rebuilds it in place.
+            var sr = new Surface(Gallery.Host, "FacetNavRev", Layer.Window);
+            var wr = new Window(sr.Root, "navrev", "Nav revision", new Rect(40, 40, 500, 300));
+            int rev = 7, revBuilds = 0;
+            var navr = new Nav(wr.Body, new[] { new NavItem("Rev", p => { revBuilds++; for (int i = 0; i < 60; i++) Controls.Info(p, "Line " + i, () => "r"); }) { Revision = () => rev } });
+            yield return null; navr.Tick(); yield return null; navr.Tick();
+            Check(revBuilds == 1, "a page with a Revision builds once on its first visit", revBuilds + " builds");
+            var rsv = wr.Body.Query<Label>().ToList().Find(l => l.text == "Line 0")?.GetFirstAncestorOfType<ScrollView>();
+            if (rsv != null)
+            {
+                rsv.scrollOffset = new Vector2(0f, 300f);
+                yield return null; yield return null;
+                rev++; navr.Tick();
+                yield return null; yield return null; yield return null;
+                Check(revBuilds == 2 && Mathf.Abs(rsv.scrollOffset.y - 300f) < 1f, "a Revision change rebuilds the page and keeps its scroll", revBuilds + " builds, y " + rsv.scrollOffset.y);
+            }
+            else Check(false, "the Revision page has a content ScrollView");
+            sr.Dispose();
         }
 
         static Label LiveLabel(string text)

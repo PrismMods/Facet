@@ -681,6 +681,12 @@ namespace Facet
             Action<VisualElement> build;
             string what;
             var leaf = _path.Count > 0 ? _path[_path.Count - 1] : null;
+            // What Tick compares against: the revision this build shows.
+            if (leaf != null && leaf.Revision != null)
+            {
+                _revisionOf = leaf;
+                _lastRevision = Safe.Get(Host.For(_host), "Nav.Revision", leaf.Revision, 0);
+            }
             if (_stack.Count > 0)
             {
                 var top = _stack[_stack.Count - 1];
@@ -775,18 +781,18 @@ namespace Facet
         }
 
         private int _lastRevision;
+        private NavItem _revisionOf;
 
-        /// Called each frame by the panel. Rebuilds the open page when its data has changed.
+        /// Called each frame by the panel. Rebuilds the open page in place (keeping scroll) when its
+        /// Revision differs from the one its last build recorded.
         public void Tick()
         {
             if (_path.Count == 0) return;
             var page = _path[_path.Count - 1];
             if (page.Revision == null) return;
-            int r;
-            r = Safe.Get(Host.For(_host), "Nav.Revision", page.Revision, _lastRevision);
-            if (r == _lastRevision) return;
-            _lastRevision = r;
-            RebuildContent();
+            int r = Safe.Get(Host.For(_host), "Nav.Revision", page.Revision, _lastRevision);
+            if (page == _revisionOf && r == _lastRevision) return;
+            Rebuild();
         }
     }
 }
