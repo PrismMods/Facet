@@ -57,7 +57,11 @@ namespace Facet.Mod
             Surface = new Surface(Gallery.Host, "FacetGalleryParts", Layer.Window);
             _win = new Window(Surface.Root, "parts", "Facet Parts", new Rect(100, 60, 960, 600));
             _win.CloseRequested += _ => Close();
-            Nav = new Nav(_win.Body, new[] { CardsItem = new NavItem("Cards", Cards), FeatureItem = new NavItem("Feature", Feature), TilesItem = new NavItem("Tiles", Tiles), TabsItem = new NavItem("Tabs", TabPages) });
+            Nav = new Nav(_win.Body, new[]
+            {
+                NavItem.Heading(null, CardsItem = new NavItem("Cards", Cards), FeatureItem = new NavItem("Feature", Feature)),
+                NavItem.Heading(null, TilesItem = new NavItem("Tiles", Tiles), TabsItem = new NavItem("Tabs", TabPages)),
+            });
             return _win;
         }
 

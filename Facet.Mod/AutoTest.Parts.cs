@@ -1080,5 +1080,78 @@ namespace Facet.Mod
             }
             finally { gs.Dispose(); }
         }
+
+        // Task 13: the labelled sidebar: indicator bars, rules between groups, caps headings.
+        IEnumerator SectionSidebar()
+        {
+            var st = new Theme();
+            st.Looks.Indicator = new Look { SelectedBg = Role.Accent };
+            st.Looks.Rule = new Look { Bg = Role.Line };   // Dark draws no rule (Q25); a skin gives it a colour
+            st[Role.Rail] = new Color(0.2f, 0.1f, 0.3f, 1f);
+            bool ko = false;
+            var ss = new Surface(Host.Create("Sidebar", o => { o.Log = l => Main.Log("[sidebar] " + l); o.Theme = st; o.Translate = k => ko && k == "Tint" ? "틴트" : k; }), "FacetSidebar", Layer.Window);
+            try
+            {
+                var sw = new Window(ss.Root, "sidebar", "Sidebar", new Rect(60, 60, 600, 400));
+                Action<VisualElement> nop = p => { };
+                var open = new NavItem("Two", nop);
+                var sn = new Nav(sw.Body, new[]
+                {
+                    NavItem.Heading(null, new NavItem("One", nop), open),
+                    NavItem.Heading(null, new NavItem("Three", nop)),
+                    NavItem.Heading(null, new NavItem("Four", nop), new NavItem("Five", nop)),
+                });
+                sn.Go(open);
+                yield return null; yield return null;
+                var railScroll = sw.Body.Q<ScrollView>();
+                var rail = railScroll.contentContainer;
+                var rules = rail.Query(name: "rule").ToList();
+                Check(rules.Count == 2 && rules.TrueForAll(r => Px(r.style.height) == st.Sizes.Line && Near(r.resolvedStyle.backgroundColor, st[Role.Line])),
+                    "3 null-titled groups draw 2 rules, Sizes.Line tall, in the theme's Line", rules.Count.ToString());
+                Check(rules.Count > 0 && rules.TrueForAll(r => Px(r.style.marginTop) == st.Sizes.Gap && Px(r.style.marginBottom) == st.Sizes.Gap), "a rule's margins are Sizes.Gap");
+                Check(rules.Count > 0 && rail.IndexOf(rules[0]) > 0, "no rule sits above the first entry");
+                Check(rail.Query<Label>().ToList().Count == 5, "no caps heading is drawn for a null-titled group", rail.Query<Label>().ToList().Count.ToString());
+                var inds = rail.Query(name: "indicator").ToList();
+                Check(inds.Count == 5 && Near(inds[1].resolvedStyle.backgroundColor, st[Role.Accent]) && Px(inds[1].style.width) == st.Sizes.Indicator
+                      && inds.FindAll(i => i.resolvedStyle.backgroundColor.a > 0f).Count == 1,
+                    "only the open entry's indicator is Accent, Sizes.Indicator wide", inds.Count.ToString());
+                Check(inds.TrueForAll(i => Px(i.parent.style.minHeight) == st.Sizes.NavRowHeight), "entries are Sizes.NavRowHeight tall");
+                Check(Near(railScroll.resolvedStyle.backgroundColor, st[Role.Rail]), "the rail's background is the theme's Rail", railScroll.resolvedStyle.backgroundColor.ToString());
+                st[Role.Rail] = new Color(0.4f, 0.3f, 0.1f, 1f);
+                Paint.Apply(ss.Root); yield return null;
+                Check(Near(railScroll.resolvedStyle.backgroundColor, st[Role.Rail]), "re-themed, the rail takes the new Rail colour", railScroll.resolvedStyle.backgroundColor.ToString());
+
+                // Hidden groups leave no rule: a middle group that hides, and a trailing one.
+                bool hide = true;
+                Func<bool> shown = () => !hide;
+                Action<VisualElement> nop2 = p => { };
+                var hw = new Window(ss.Root, "sidebarhide", "Hidden groups", new Rect(80, 80, 600, 400));
+                var hn = new Nav(hw.Body, new[]
+                {
+                    NavItem.Heading(null, new NavItem("A", nop2)),
+                    NavItem.Heading(null, new NavItem("B", nop2) { VisibleWhen = shown }),
+                    NavItem.Heading(null, new NavItem("C", nop2)),
+                    NavItem.Heading(null, new NavItem("D", nop2) { VisibleWhen = shown }),
+                });
+                yield return null; yield return null;
+                var hrail = hw.Body.Q<ScrollView>().contentContainer;
+                Func<int> ruleCount = () => hrail.Query(name: "rule").ToList().Count;
+                Func<bool> adjacent = () => { for (int i = 1; i < hrail.childCount; i++) if (hrail[i].name == "rule" && hrail[i - 1].name == "rule") return true; return false; };
+                Check(ruleCount() == 1 && !adjacent() && hrail[hrail.childCount - 1].name != "rule", "a hidden middle group and a hidden trailing group leave 1 rule (groups that drew, less one), none trailing",
+                    ruleCount().ToString());
+                hide = false; hn.Refresh(); yield return null; yield return null;
+                Check(ruleCount() == 3, "with all 4 groups shown there are 3 rules", ruleCount().ToString());
+
+                // A titled group reads in caps; in Korean it reads the translation (the 0.1 bug).
+                var tw2 = new Window(ss.Root, "sidebartint", "Tint", new Rect(100, 100, 600, 300));
+                var tn = new Nav(tw2.Body, new[] { NavItem.Heading("Tint", new NavItem("Six", nop)) });
+                yield return null; yield return null;
+                Func<string> head = () => tw2.Body.Query<Label>().ToList().Find(l => l.text == "TINT" || l.text == "틴트")?.text;
+                Check(head() == "TINT", "a titled group \"Tint\" reads TINT", head());
+                ko = true; ss.Relabel(); yield return null;
+                Check(head() == "틴트", "in Korean it reads 틴트", head());
+            }
+            finally { ss.Dispose(); }
+        }
     }
 }

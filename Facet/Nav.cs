@@ -357,6 +357,7 @@ namespace Facet
             split.Add(railScroll);
             _railScroll = railScroll;
             _rail = railScroll.contentContainer;
+            Paint.Bg(railScroll, Role.Rail);
 
             /* A drag handle instead of a toggle button: the same gesture Sapphire's timeline uses,
                where dragging narrows the pane and collapses it once it is too small to be useful.
@@ -601,15 +602,39 @@ namespace Facet
         private void RebuildRail()
         {
             _rail.Clear();
+            _pendingRule = false;
             var t = Theme.For(_rail);   // once per rebuild, not per entry
             foreach (var i in _roots) AddRailItem(i, 0, t.Sizes, t.Looks);
+        }
+
+        private bool _pendingRule;
+
+        private void DrawPendingRule(Sizes sz, Looks k)
+        {
+            if (!_pendingRule) return;
+            _pendingRule = false;
+            var rule = Ui.Box(_rail);
+            rule.name = "rule";
+            rule.style.height = sz.Line;
+            rule.style.marginTop = sz.Gap; rule.style.marginBottom = sz.Gap;
+            rule.pickingMode = PickingMode.Ignore;
+            Paint.Look(rule, k.Rule);
         }
 
         private void AddRailItem(NavItem item, int depth, Sizes sz, Looks k)
         {
             if (!Visible(item)) return;
+            if (item.Group && string.IsNullOrEmpty(item.Title))
+            {
+                // An untitled group is a rule between groups, drawn only once a row follows it: a
+                // group that hides entirely leaves no rule, and none sits above the first entry.
+                if (_rail.childCount > 0) _pendingRule = true;
+                foreach (var c in item.Children) AddRailItem(c, depth, sz, k);
+                return;
+            }
             if (item.Group)
             {
+                DrawPendingRule(sz, k);
                 /* A heading has to be obviously NOT clickable, or it reads as a page that does
                    nothing. Upper case, smaller than the items under it, and muted — the opposite
                    of the treatment a selected item gets. */
@@ -623,6 +648,7 @@ namespace Facet
                 return;
             }
 
+            DrawPendingRule(sz, k);
             bool onPath = _path.Contains(item);
             bool open = item.IsBranch && _expanded.Contains(item.Title);
 
@@ -636,6 +662,15 @@ namespace Facet
             Paint.Look(row, k.RailItem);
             Paint.Select(row, selected);
             Ui.SetRadius(row, sz.Radius);
+            // The indicator bar on the row's left edge, selected with the row.
+            var bar = Ui.Box(row);
+            bar.name = "indicator";
+            bar.style.position = Position.Absolute;
+            bar.style.left = 0f; bar.style.top = 0f; bar.style.bottom = 0f;
+            bar.style.width = sz.Indicator;
+            bar.pickingMode = PickingMode.Ignore;
+            Paint.Look(bar, k.Indicator);
+            Paint.Select(bar, selected);
             if (!string.IsNullOrEmpty(item.Tooltip)) row.tooltip = item.Tooltip;
 
             if (item.IsBranch)
