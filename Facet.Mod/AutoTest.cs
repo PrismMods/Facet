@@ -698,7 +698,7 @@ namespace Facet.Mod
 
             var surf = new Surface(hp, "FacetForm", Layer.Window);
             var w = new Window(surf.Root, "form", "Form", new Rect(60, 60, 600, 700));
-            bool b = false, bs = true, b1 = true; int i = 3; float f = 0.5f; string t = "hi", key = "F1", col = "#336699"; object colObj = null, col8 = null;
+            bool b = false, b1 = true; int i = 3; float f = 0.5f; string t = "hi", key = "F1", col = "#336699"; object colObj = null, col8 = null;
             var sc = new List<object>(); var sd = new List<object>(); var sn = new List<object>();
             bool acted = false; object bsv = null, b1v = null;
             var fields = new[] {
@@ -723,7 +723,7 @@ namespace Facet.Mod
                 new Field { Group = "H", Label = "oord", Kind = FieldKind.Dropdown, Options = new[] { "x", "y" }, Get = () => -1, Set = v => { } },
                 new Field { Group = "H", Label = "fl", Kind = FieldKind.Int, Min = 0, Max = 10, Get = () => 2.7f, Set = v => { } },
                 new Field { Group = "H", Label = "lg", Kind = FieldKind.Int, Min = 0, Max = 10, Get = () => 4L, Set = v => { } },
-                new Field { Group = "H", Label = "bs", Kind = FieldKind.Bool, Get = () => bs, Set = v => bsv = v },
+                new Field { Group = "H", Label = "bs", Kind = FieldKind.Bool, Get = () => "true", Set = v => bsv = v },
                 new Field { Group = "H", Label = "b1", Kind = FieldKind.Bool, Get = () => 1, Set = v => b1v = v },
                 new Field { Owner = "FormA", Group = "H", Label = "Greeting", Kind = FieldKind.Bool, Get = () => true, Set = v => { } },
                 new Field { Owner = "NoSuchHost", Group = "H", Label = "Hello", Kind = FieldKind.Bool, Get = () => true, Set = v => { } },
@@ -799,12 +799,24 @@ namespace Facet.Mod
             var surf2 = new Surface(hs, "FacetFormShort", Layer.Window);
             var w2 = new Window(surf2.Root, "formshort", "Short", new Rect(60, 60, 400, 160));
             var many = new List<Field>();
-            for (int k = 0; k < 12; k++) many.Add(new Field { Owner = "FormA", Group = "S", Label = "own" + k, Kind = FieldKind.Bool, Get = () => true, Set = v => { } });
-            var nav2 = new Nav(w2.Body, new[] { new NavItem("Home", p => Form.Build(p, many)) });
+            for (int k = 0; k < 12; k++) many.Add(new Field { Owner = "FormA", Label = "own" + k, Kind = FieldKind.Bool, Get = () => true, Set = v => { } });
+            // A fixed-height parent is where a shrinkable wrapper would squash its row.
+            var fixedBox = Ui.Box(w2.Body);
+            fixedBox.style.height = 100f;
+            Form.Build(fixedBox, many);
             yield return null; yield return null; yield return null;
-            float minH = 999f; int built = 0;
-            for (int k = 0; k < 12; k++) { var r = w2.Body.Q("own" + k); if (r != null) { built++; minH = Mathf.Min(minH, r.layout.height); } }
-            Check(built == 12 && minH >= Controls.RowHeight - 0.5f, "foreign-owner rows in a short scrolling window keep their row height", "built=" + built + " min=" + minH);
+            float minH = 999f, slack = 999f, overlap = 0f; int built = 0; Rect prev = default(Rect);
+            for (int k = 0; k < 12; k++)
+            {
+                var r = w2.Body.Q("own" + k);
+                if (r == null) continue;
+                built++; minH = Mathf.Min(minH, r.layout.height);
+                slack = Mathf.Min(slack, r.parent.layout.height - r.layout.height);   // a squashed wrapper is shorter than its row
+                if (k > 0) overlap = Mathf.Max(overlap, prev.yMax - r.worldBound.yMin);
+                prev = r.worldBound;
+            }
+            Check(built == 12 && minH >= Controls.RowHeight - 0.5f && slack >= -0.5f && overlap <= 0.5f, "foreign-owner rows in a fixed-height parent keep their row height and do not overlap",
+                "built=" + built + " minRow=" + minH + " wrapperSlack=" + slack + " overlap=" + overlap);
             surf2.Dispose();
         }
 
