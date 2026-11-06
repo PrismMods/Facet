@@ -8,6 +8,11 @@ static class FacetTest {
         if (!ok) { _fail++; Console.WriteLine("FAIL: " + what + " " + detail); }
     }
 
+    static bool Near(float[] c, float r, float g, float b, double eps = 1e-3) {
+        return c != null && Math.Abs(c[0] - r) < eps && Math.Abs(c[1] - g) < eps && Math.Abs(c[2] - b) < eps;
+    }
+    static string Show(float[] c) { return c == null ? "null" : string.Join(",", c); }
+
     static void Main() {
         Throttle.Reset();
         Check(Throttle.Allow("h/site", 0), "the first message for a host+site is logged");
@@ -71,6 +76,17 @@ static class FacetTest {
         Check(Safe.Get("A", "get", () => { if (slog != null) throw new Exception("x"); return 5; }, 7, sl) == 7, "Safe.Get returns the fallback on a throw");
         Check(Safe.Get("A", "get2", () => 5, 7, sl) == 5, "Safe.Get returns the value otherwise");
         Check(Safe.Run("A", "nolog", boom, null) == false, "a null log is tolerated");
+
+        var red = Palette.FromAccent(1f, 0f, 0f, 1f);
+        Check(Near(red[(int)Role.Danger], 1f, .478f, .271f), "a red accent turns Danger orange", Show(red[(int)Role.Danger]));
+        var blue = Palette.FromAccent(.2f, .4f, 1f, 1f);
+        Check(Near(blue[(int)Role.Danger], .886f, .404f, .427f), "a blue accent keeps Danger red", Show(blue[(int)Role.Danger]));
+        var bp = blue[(int)Role.Panel];
+        Check(Near(bp, .037f + (.2f - .037f) * .059f, .037f + (.4f - .037f) * .059f, .037f + (1f - .037f) * .059f, 1e-4) && Math.Abs(bp[3] - .98f) < 1e-4,
+            "Panel leans .059 from grey .037 toward the accent, alpha .98", Show(bp));
+        var grey = Palette.FromAccent(.2f, .4f, 1f, 0f)[(int)Role.Panel];
+        Check(grey[0] == grey[1] && grey[1] == grey[2], "tint 0 gives a pure grey Panel", Show(grey));
+        Check(Near(blue[(int)Role.Focus], .2f, .4f, 1f) && Near(blue[(int)Role.AccentText], .06f, .06f, .08f), "Focus is the accent; AccentText is near-black");
         Console.WriteLine(_fail == 0 ? "ALL PASS" : _fail + " FAILED");
     }
 }
