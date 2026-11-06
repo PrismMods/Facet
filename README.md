@@ -14,6 +14,7 @@ Download `Facet-ML.zip` or `Facet-UMM.zip` (built by `./release.sh` into `dist/`
 
 ```csharp
 using Facet;
+using UnityEngine;
 
 static readonly Host Host = Host.Create("MyMod");
 
