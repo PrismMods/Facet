@@ -385,6 +385,17 @@ namespace Facet.Mod
             Check(Fonts.HasHangul(face), "the face the label draws with (with its fallbacks) has the glyphs \uD06C and \uAE30", face?.name);
             var used = Root.style.unityFontDefinition.value.fontAsset;
             Check(used != null && Fonts.HasHangul(used), "the font set on the panel root has Hangul", used?.name);
+            var boldFace = Fonts.BoldFace(face);
+            Check(boldFace != null && Fonts.HasHangul(boldFace), "the weight-700 face (titles, headers) also has the glyphs", boldFace?.name ?? "no bold face");
+            Label title = null;
+            foreach (var l in Root.Query<Label>().ToList()) if (l.text == "Facet Gallery") title = l;
+            Check(title != null && title.style.unityFontStyleAndWeight.value == FontStyle.Bold, "the window title is the bold label that face serves");
+            var late = Ui.Text("Size");   // no parent, no Host.Use scope: the Fallback host (English) translates it
+            Check(late.text == "Size", "a parentless label starts untranslated");
+            Root.Add(late);
+            yield return null; yield return null;
+            Check(late.text == korean, "...and is re-translated by the Gallery host once it joins the panel", late.text);
+            late.RemoveFromHierarchy();
             Check(Words.Own("Sure?", Gallery.Host) == "\uC815\uB9D0\uC694?", "Facet's own words follow the host language through Own");
             Gallery.Lang = "en";
             Gallery.Surface.Relabel();

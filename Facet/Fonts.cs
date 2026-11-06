@@ -75,13 +75,25 @@ namespace Facet
             if (f.CjkTried) return;
             f.CjkTried = true;
             var sans = Regular(h);
-            if (sans == null || HasHangul(sans)) return;
+            var bold = BoldFace(sans);   // titles and headers are bold; its table is its own
+            if (sans == null || (HasHangul(sans) && (bold == null || HasHangul(bold)))) return;
             var cjk = FileFontAsset(_cjkFiles, SamplePx);
             if (cjk == null) { L("Fonts: no CJK font file found — Korean text will draw boxes"); return; }
             try { cjk.isMultiAtlasTexturesEnabled = true; } catch { }   // thousands of glyphs outgrow one 1024 atlas
-            if (sans.fallbackFontAssetTable == null) sans.fallbackFontAssetTable = new List<FontAsset>();
-            sans.fallbackFontAssetTable.Add(cjk);
+            foreach (var fa in new[] { sans, bold })
+            {
+                if (fa == null) continue;
+                if (fa.fallbackFontAssetTable == null) fa.fallbackFontAssetTable = new List<FontAsset>();
+                if (!fa.fallbackFontAssetTable.Contains(cjk)) fa.fallbackFontAssetTable.Add(cjk);
+            }
             L("Fonts: Hangul " + (HasHangul(sans) ? "now" : "STILL NOT") + " drawable through " + cjk.name);
+        }
+
+        /// The real weight-700 face AttachBold put in the regular face's table, or null.
+        public static FontAsset BoldFace(FontAsset regular)
+        {
+            var t = regular == null ? null : regular.fontWeightTable;
+            return t != null && t.Length > 7 ? t[7].regularTypeface : null;
         }
 
         /// Whether the face, with its fallbacks, has the glyphs for 크 and 기.

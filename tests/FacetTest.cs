@@ -97,6 +97,16 @@ static class FacetTest {
         Check(Words.T("Undo", s => { throw new Exception("x"); }) == "Undo", "a throwing translator falls back to English");
         Check(Words.Own("Undo", "ko") == "\uC2E4\uD589 \uCDE8\uC18C" && Words.Own("Undo", "en") == "Undo" && Words.Own("Undo", null) == "Undo", "Own answers Korean from Facet's table for ko only, whatever any consumer maps Undo to");
         Check(Words.Own("Not ours", "ko") == "Not ours", "Own falls back to English for a key not in Facet's table");
+        History.Clear();
+        History.Record("Size", "k1", () => { }, () => { }, trB);
+        Check(History.NextUndoText == Words.T("Size", trB) && History.NextUndoText == "Size", "an entry recorded with translator B shows its label through B");
+        History.Clear();
+        History.Record("Undo", "k2", () => { }, () => { }, trB);
+        aCalls.Clear();
+        Check(History.NextUndoText == "B-undo" && aCalls.Count == 0, "...never through another host's translator", History.NextUndoText);
+        History.Record("Plain", "k3", () => { }, () => { });
+        Check(History.NextUndoText == "Plain", "an entry with no translator shows English");
+        History.Clear();
         Check(Words.OwnF("Undo {0}", "ko", "x") == "\uC2E4\uD589 \uCDE8\uC18C: x", "OwnF fills the translated pattern");
 
         Console.WriteLine(_fail == 0 ? "ALL PASS" : _fail + " FAILED");

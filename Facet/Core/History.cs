@@ -27,6 +27,7 @@ namespace Facet
         private sealed class Entry
         {
             public string Label;
+            public Func<string, string> Translate;
             public string Key;
             public Action Undo;
             public Action Redo;
@@ -66,8 +67,15 @@ namespace Facet
         public static string NextUndo => CanUndo ? _done[_done.Count - 1].Label : null;
         public static string NextRedo => CanRedo ? _undone[_undone.Count - 1].Label : null;
 
+        /* The label as its recorder's host shows it. History is session-wide, so each entry brings
+           its own translator (that host's, or Facet's own table for Facet's words); a window never
+           runs another host's label through its own. */
+        public static string NextUndoText => CanUndo ? Text(_done[_done.Count - 1]) : null;
+        public static string NextRedoText => CanRedo ? Text(_undone[_undone.Count - 1]) : null;
+        private static string Text(Entry e) => Words.T(e.Label, e.Translate);
+
         /// key groups changes that should coalesce — a setting's id or label.
-        public static void Record(string label, string key, Action undo, Action redo)
+        public static void Record(string label, string key, Action undo, Action redo, Func<string, string> translate = null)
         {
             if (Applying || undo == null || redo == null) return;
 
@@ -83,13 +91,14 @@ namespace Facet
                     /* Keep the ORIGINAL undo and take the newest redo: the step then spans the
                        whole drag, from where it started to where it ended. */
                     top.Redo = redo;
+                    top.Translate = translate;
                     top.At = now;
                     Fire();
                     return;
                 }
             }
 
-            _done.Add(new Entry { Label = label, Key = key, Undo = undo, Redo = redo, At = now });
+            _done.Add(new Entry { Label = label, Translate = translate, Key = key, Undo = undo, Redo = redo, At = now });
             if (_done.Count > Limit) _done.RemoveAt(0);
             Fire();
         }

@@ -206,8 +206,8 @@ namespace Facet
             Action refreshHistory = () =>
             {
                 string lang = _host.Language;
-                Enable(undo, History.CanUndo, History.NextUndo == null ? Words.Own("Undo", lang) : Words.OwnF("Undo {0}", lang, Words.T(History.NextUndo, _host)));
-                Enable(redo, History.CanRedo, History.NextRedo == null ? Words.Own("Redo", lang) : Words.OwnF("Redo {0}", lang, Words.T(History.NextRedo, _host)));
+                Enable(undo, History.CanUndo, History.NextUndo == null ? Words.Own("Undo", lang) : Words.OwnF("Undo {0}", lang, History.NextUndoText));
+                Enable(redo, History.CanRedo, History.NextRedo == null ? Words.Own("Redo", lang) : Words.OwnF("Redo {0}", lang, History.NextRedoText));
             };
             History.Changed += refreshHistory;
             refreshHistory();

@@ -26,13 +26,14 @@ namespace Facet
         /* Wraps a setter so every change is undoable. The previous value is snapshotted INSIDE the
            returned action, not captured from the enclosing variable, or the undo closure would read
            whatever the value had become by the time it ran. */
-        private static Action<T> Track<T>(string label, T initial, Action<T> apply)
+        private static Action<T> Track<T>(VisualElement at, string label, T initial, Action<T> apply)
         {
+            var tr = Words.Translator(at);   // fixed at build: the recorder's host, or Facet's own table
             T last = initial;
             return v =>
             {
                 T prev = last;
-                History.Record(label, label, () => apply(prev), () => apply(v));
+                History.Record(label, label, () => apply(prev), () => apply(v), tr);
                 apply(v);
                 last = v;
             };
@@ -108,7 +109,7 @@ namespace Facet
             track.Add(knob);
 
             bool state = value;
-            var set = Track(label, value, v =>
+            var set = Track(host, label, value, v =>
             {
                 state = v;
                 Paint.Bg(track, v ? Role.Accent : Role.RowAlt);
@@ -164,7 +165,7 @@ namespace Facet
             });
             host.Insert(0, s);
 
-            var set = Track(label, value, v =>
+            var set = Track(host, label, value, v =>
             {
                 field.SetValueWithoutNotify(v.ToString(format));
                 s.SetValueWithoutNotify(v);
@@ -212,7 +213,7 @@ namespace Facet
             });
             host.Insert(0, s);
 
-            var set = Track(label, value, v =>
+            var set = Track(host, label, value, v =>
             {
                 field.SetValueWithoutNotify(v.ToString());
                 s.SetValueWithoutNotify(v);
@@ -232,7 +233,7 @@ namespace Facet
             var buttons = new List<Button>();
             int current = index;
 
-            var set = Track(label, index, v =>
+            var set = Track(host, label, index, v =>
             {
                 current = v;
                 for (int j = 0; j < buttons.Count; j++) Paint.Select(buttons[j], j == current);
@@ -258,7 +259,7 @@ namespace Facet
             f.style.fontSize = Tokens.FontSizeSmall;
             // On commit, not per keystroke: a setter that persists to disk should not run once per
             // character typed.
-            var set = Track(label, value ?? "", v =>
+            var set = Track(host, label, value ?? "", v =>
             {
                 f.SetValueWithoutNotify(v);
                 Safe.Run(Host.For(f), "Text handler", () => { if (onChange != null) onChange(v); });
@@ -328,7 +329,7 @@ namespace Facet
                                            Action<Color> onChange, string tooltip = null,
                                            bool hasAlpha = false)
         {
-            var p = new ColourPicker(parent, label, value, hasAlpha, Track(label, value, c =>
+            var p = new ColourPicker(parent, label, value, hasAlpha, Track(parent, label, value, c =>
             {
                 Safe.Run(Host.For(parent), "Colour handler", () => { if (onChange != null) onChange(c); });
             }));

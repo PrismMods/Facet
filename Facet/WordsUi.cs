@@ -9,6 +9,8 @@ namespace Facet {
     public static partial class Words {
         sealed class Key {
             public string Text, Tip, Shown;
+            public Host Labelled;
+            public bool Watching;
             public bool OwnText, OwnTip;
             public Action Hook;
         }
@@ -18,6 +20,14 @@ namespace Facet {
         /// Everything built inside the scope is Facet's own words (the colour picker's, the gradient editor's).
         internal static IDisposable OwnScope() { _ownScope++; return new Scope(); }
         sealed class Scope : IDisposable { public void Dispose() { _ownScope--; } }
+
+        /// How `e`'s host translates, or Facet's own table inside an OwnScope; fixed when asked.
+        internal static Func<string, string> Translator(VisualElement e)
+        {
+            var h = Host.For(e);
+            if (_ownScope > 0) return s => Own(s, h.Language);
+            return h.Translate;
+        }
 
         public static string T(string english, Host host) => T(english, host.Translate);
 
@@ -31,14 +41,24 @@ namespace Facet {
         public static void Label(TextElement e, string english, bool own = false) {
             var k = Data.Get<Key>(e);
             k.Text = english ?? ""; k.OwnText = own || _ownScope > 0;
-            e.text = k.Shown = Show(k.Text, Host.For(e), k.OwnText);
+            e.text = k.Shown = Show(k.Text, k.Labelled = Host.For(e), k.OwnText);
+            Watch(e, k);
         }
 
         /// The element's tooltip from its English key, kept up with the language like Label.
         public static void Tip(VisualElement e, string english, bool own = false) {
             var k = Data.Get<Key>(e);
             k.Tip = string.IsNullOrEmpty(english) ? null : english; k.OwnTip = own || _ownScope > 0;
-            e.tooltip = k.Tip == null ? null : Show(k.Tip, Host.For(e), k.OwnTip);
+            e.tooltip = k.Tip == null ? null : Show(k.Tip, k.Labelled = Host.For(e), k.OwnTip);
+            Watch(e, k);
+        }
+
+        // An element built before it had a parent was translated by the wrong host: fix it on joining a panel.
+        static void Watch(VisualElement e, Key k)
+        {
+            if (k.Watching) return;
+            k.Watching = true;
+            Events.On<AttachToPanelEvent>(e, _ => { if (!ReferenceEquals(Host.For(e), k.Labelled)) Retext(e, k); });
         }
 
         /// Runs `redo` on every Relabel: for text built from parts (Undo + a label).
@@ -49,16 +69,18 @@ namespace Facet {
             Walk(root);
         }
 
+        static void Retext(VisualElement e, Key k) {
+            var h = k.Labelled = Host.For(e);
+            var t = e as TextElement;
+            // Text someone set by hand since (a readout, a key's name) is no longer ours to translate.
+            if (t != null && k.Text != null && t.text == k.Shown) t.text = k.Shown = Show(k.Text, h, k.OwnText);
+            if (k.Tip != null) e.tooltip = Show(k.Tip, h, k.OwnTip);
+            if (k.Hook != null) Safe.Run(h, "Words.Relabel", k.Hook);
+        }
+
         static void Walk(VisualElement e) {
             var k = Data.Find<Key>(e);
-            if (k != null) {
-                var h = Host.For(e);
-                var t = e as TextElement;
-                // Text someone set by hand since (a readout, a key's name) is no longer ours to translate.
-                if (t != null && k.Text != null && t.text == k.Shown) t.text = k.Shown = Show(k.Text, h, k.OwnText);
-                if (k.Tip != null) e.tooltip = Show(k.Tip, h, k.OwnTip);
-                if (k.Hook != null) Safe.Run(h, "Words.Relabel", k.Hook);
-            }
+            if (k != null) Retext(e, k);
             for (int i = 0; i < e.hierarchy.childCount; i++) Walk(e.hierarchy[i]);
         }
     }
