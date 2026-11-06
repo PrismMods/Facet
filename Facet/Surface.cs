@@ -78,8 +78,9 @@ namespace Facet
         public bool BlocksGameInput { get; set; } = true;
 
         /* Called instead of hiding when Escape reaches this surface. The popup host uses it to
-           close only its newest popup rather than every one at once. Return true when consumed. */
-        internal Func<bool> EscapeHandler;
+           close only its newest popup rather than every one at once. Return true when consumed.
+           Runs under Safe: a throw counts as consumed. */
+        public Func<bool> EscapeHandler;
 
         /// A text input under Root has focus (kept by FocusIn / FocusOut; Input.LocalText reads it).
         internal bool TextIn;
@@ -93,8 +94,9 @@ namespace Facet
             TextIn = false;
         }
 
-        /// Raised when the surface hides or is disposed — a popup closes with the window it came from.
-        internal event Action Hidden;
+        /// Raised when the surface hides or is disposed, whoever hid it (Escape, a window's ×, the
+        /// host): a popup closes with the window it came from. Runs under Safe.
+        public event Action Hidden;
 
         /// name is used for the GameObject, so it shows up in a hierarchy dump.
         public Surface(Host host, string name, Layer layer, UnityEngine.TextCore.Text.FontAsset font = null)
