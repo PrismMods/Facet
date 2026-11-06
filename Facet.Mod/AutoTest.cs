@@ -83,13 +83,30 @@ namespace Facet.Mod
         {
             for (int i = 0; i < 5; i++) yield return null;
             Main.Log("AUTOTEST start screen " + Screen.width + "x" + Screen.height);
-            yield return SectionOpen();
-            // Later tasks: yield return Section...();
+            yield return Run("SectionOpen", SectionOpen());
+            // Later tasks: yield return Run("Section...", Section...());
 
             Main.Log("AUTOTEST DONE pass=" + _pass + " fail=" + _fail);
             yield return null;
             Application.Quit();
         }
+
+        // Drives a section by hand so a throw is logged to gallery.log and the run carries on.
+        IEnumerator Run(string name, IEnumerator section)
+        {
+            while (true)
+            {
+                try { if (!section.MoveNext()) yield break; }
+                catch (Exception ex)
+                {
+                    var st = (ex.StackTrace ?? "").Split('\n')[0].Trim();
+                    Check(false, name + " threw", ex.Message + " @ " + st);
+                    yield break;
+                }
+                yield return section.Current;
+            }
+        }
+
 
         IEnumerator SectionOpen()
         {

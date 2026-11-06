@@ -17,6 +17,7 @@ start=$SECONDS; last=$SECONDS; size=-1; rc=1
 while :; do
   sleep 2
   s=$(stat -f %z "$LOG" 2>/dev/null || echo 0)
+  [ "$s" = 0 ] && last=$SECONDS   # no log yet: only the total cap applies
   if [ "$s" != "$size" ]; then size=$s; last=$SECONDS; fi
   grep -q "AUTOTEST DONE" "$LOG" 2>/dev/null && break
   if [ $((SECONDS-last)) -ge 90 ]; then echo "stalled: gallery.log unchanged for 90 s" >&2; break; fi
