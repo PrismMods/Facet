@@ -748,7 +748,7 @@ namespace Facet.Mod
             var w = new Window(surf.Root, "form", "Form", new Rect(60, 60, 600, 700));
             bool b = false, b1 = true; int i = 3; float f = 0.5f; string t = "hi", key = "F1", col = "#336699"; object colObj = null, col8 = null;
             var sc = new List<object>(); var sd = new List<object>(); var sn = new List<object>();
-            bool acted = false; object bsv = null, b1v = null;
+            bool acted = false; object bsv = null, b1v = null; float fu = 2f;
             var fields = new[] {
                 new Field { Group = "G", Label = "fb", Kind = FieldKind.Bool, Get = () => b, Set = v => b = (bool)v },
                 new Field { Group = "G", Label = "fi", Kind = FieldKind.Int, Min = 0, Max = 10, Get = () => i, Set = v => i = (int)v },
@@ -763,6 +763,7 @@ namespace Facet.Mod
                 new Field { Group = "G", Label = "fin", Kind = FieldKind.Info, Get = () => "info" },
                 new Field { Group = "H", Label = "fd", Kind = FieldKind.Dropdown, Options = new[] { "x", "y" }, Get = () => 0, Set = v => sd.Add(v) },
                 new Field { Group = "H", Label = "fn", Kind = FieldKind.Number, Min = 0, Max = 5, Get = () => 2f, Set = v => sn.Add(v) },
+                new Field { Group = "H", Label = "fu", Kind = FieldKind.Float, Get = () => fu, Set = v => fu = (float)v },
                 new Field { Group = "H", Label = "badf", Kind = FieldKind.Float, Get = () => null },
                 new Field { Group = "H", Label = "badi", Kind = FieldKind.Int, Get = () => "x" },
                 new Field { Group = "H", Label = "badc", Kind = FieldKind.Colour, Get = () => "nope" },
@@ -818,6 +819,9 @@ namespace Facet.Mod
             Check(sd.Count == 1 && sd[0] is int && (int)sd[0] == 1, "picking Dropdown item 1 writes the int 1", sd.Count == 1 ? sd[0].ToString() : sd.Count.ToString());
             if (tfIn("fn") != null) { Type(tfIn("fn"), "3"); yield return null; }
             Check(sn.Count == 1 && sn[0] is float && Mathf.Abs((float)sn[0] - 3f) < 1e-4f, "typing 3 in a Number row writes the float 3", sn.Count == 1 ? sn[0].ToString() : sn.Count.ToString());
+            Check(page.Q("fu") != null && page.Q<Slider>("fu-input") == null, "a Float field with Min == Max is a Number row, no slider");
+            if (tfIn("fu") != null) { Type(tfIn("fu"), "50"); yield return null; }
+            Check(fu == 50f, "...which is not clamped: typing 50 writes 50", fu.ToString());
 
             // Colour writes back the form it read.
             Action<string, string> hex = (row, text) => { var tf = page.Q(row)?.Q<TextField>(); if (tf != null) Type(tf, text); };
@@ -1098,7 +1102,11 @@ namespace Facet.Mod
             Controls.Toggle(w.Body, "Enabled", Bind.To(() => b, v => b = v), o => o.Id = "enb");
             var longEn = Controls.Toggle(w.Body, string.Concat(System.Linq.Enumerable.Repeat("long label ", 19)).Substring(0, 200), Bind.Value(false));
             var longKo = Controls.Toggle(w.Body, string.Concat(System.Linq.Enumerable.Repeat("\uC544\uC8FC \uAE34 \uD55C\uAD6D\uC5B4 \uB77C\uBCA8 ", 10)), Bind.Value(false));
+            float bare = 0f;
+            Controls.Number(w.Body, "Bare number", Bind.To(() => bare, v => bare = v), o => o.Id = "bare");
             yield return null; yield return null; yield return null;
+            Type(w.Body.Q<TextField>("bare-input"), "50"); yield return null;
+            Check(bare == 50f, "a Number with no range accepts 50", bare.ToString());
 
             int ch = 0, cm = 0;
             st.Changed += _ => ch++; st.Committed += _ => cm++;

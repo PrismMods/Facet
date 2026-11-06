@@ -89,7 +89,8 @@ namespace Facet
                         o.Step = f.Step;
                     };
                     var fb = B(f, bad, x => Convert.ToSingle(x, CultureInfo.InvariantCulture));
-                    Doom(f.Kind == FieldKind.Float ? Controls.Slider(p, label, fb, so) : Controls.Number(p, label, fb, so), bad[0]);
+                    // A Float with no range (Min == Max) is a Number: a slider needs both ends.
+                    Doom(f.Kind == FieldKind.Float && f.Max > f.Min ? Controls.Slider(p, label, fb, so) : Controls.Number(p, label, fb, so), bad[0]);
                     break;
                 case FieldKind.Choice:
                     Doom(Controls.Choice(p, label, B(f, bad, x => Convert.ToInt32(x)), o => { common(o); Def(o, f, x => Convert.ToInt32(x)); o.Items = f.Options; }), bad[0]);

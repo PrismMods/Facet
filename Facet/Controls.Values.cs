@@ -88,10 +88,15 @@ namespace Facet
             return FloatRow(parent, label, bind, ControlOptions.Make(parent, label, configure), true);
         }
 
-        /// Just the typed number, no track. Clamped to Min..Max, so set them when 0..1 is not the range.
+        /// Just the typed number, no track. Unbounded unless you set a range (Min < Max), then clamped to it.
         public static Control<float> Number(VisualElement parent, string label, Bind<float> bind, Action<SliderOptions> configure = null)
         {
-            return FloatRow(parent, label, bind, ControlOptions.Make(parent, label, configure), false);
+            // No range by default: a slider's 0..1 would clamp every typed number.
+            return FloatRow(parent, label, bind, ControlOptions.Make<SliderOptions>(parent, label, o =>
+            {
+                o.Min = o.Max = 0f;
+                if (configure != null) configure(o);
+            }), false);
         }
 
         public static Control<int> IntSlider(VisualElement parent, string label, Bind<int> bind, Action<IntSliderOptions> configure = null)
@@ -396,7 +401,8 @@ namespace Facet
             }
             var scale = o.Scale ?? ValueScale.Linear;
             float min = o.Min, max = o.Max;
-            Func<float, float> fit = v => Math.Max(min, Math.Min(max, ValueScale.Snap(v, o.Step, min)));
+            // Min == Max is no range: snapped, never clamped.
+            Func<float, float> fit = v => { v = ValueScale.Snap(v, o.Step, min); return max > min ? Math.Max(min, Math.Min(max, v)) : v; };
             Func<float, string> text = v => v.ToString(o.Format, CultureInfo.CurrentCulture);
 
             Action<float> show = v =>
