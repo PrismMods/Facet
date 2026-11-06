@@ -40,6 +40,7 @@ namespace Facet
             Color.RGBToHSV(initial, out _h, out _s, out _v);
 
             Root = Ui.Box(parent);
+            Root.name = "facet-picker";   // SectionNoStale: swatches under here may hold literal colours
             BuildHeader(label);
             BuildBody();
             Sync(true);
@@ -78,7 +79,7 @@ namespace Facet
             _swatch.style.right = 0f; _swatch.style.bottom = 0f;
             Ui.SetRadius(_swatch, 4f);
             Ui.SetBorderWidth(_swatch, 1f);
-            Ui.SetBorderColor(_swatch, Theme.For(_swatch)[Role.PanelBorder]);
+            Paint.Border(_swatch, Role.PanelBorder);
             swatchBg.Add(_swatch);
 
             Events.On<ClickEvent>(head, _ =>
@@ -173,8 +174,7 @@ namespace Facet
             k.style.width = size; k.style.height = size;
             Ui.SetRadius(k, size / 2f);
             Ui.SetBorderWidth(k, 2f);
-            Ui.SetBorderColor(k, Color.white);
-            k.style.backgroundColor = Color.clear;
+            Paint.Border(k, Role.Text);
             /* Centre the knob on its own position with a percentage translate, rather than a
                negative margin computed from resolvedStyle — which is NaN until layout has run, so
                the margin came out as zero and every knob sat half its own width right and low of

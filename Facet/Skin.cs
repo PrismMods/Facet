@@ -25,7 +25,7 @@ namespace Facet
             var tracker = slider.Q(className: "unity-base-slider__tracker");
             if (tracker != null)
             {
-                tracker.style.backgroundColor = Theme.For(slider)[Role.RowAlt];
+                Paint.Bg(tracker, Role.RowAlt);
                 tracker.style.position = Position.Absolute;
                 tracker.style.left = 0f; tracker.style.right = 0f;
                 tracker.style.top = Length.Percent(50f);
@@ -37,7 +37,7 @@ namespace Facet
             var dragger = slider.Q(className: "unity-base-slider__dragger");
             if (dragger != null)
             {
-                dragger.style.backgroundColor = Theme.For(slider)[Role.Accent];
+                Paint.Bg(dragger, Role.Accent);
                 dragger.style.width = 12f;
                 dragger.style.height = 12f;
                 Ui.SetRadius(dragger, 6f);
@@ -63,16 +63,13 @@ namespace Facet
             if (input == null) input = field.Q("unity-text-input");
             if (input != null)
             {
-                var t = Theme.For(field);
-                input.style.backgroundColor = t[Role.Row];
-                input.style.color = t[Role.Text];
-                Ui.SetBorderColor(input, t[Role.PanelBorder]);
+                Paint.Look(input, Look.Field);
                 Ui.SetBorderWidth(input, 1f);
                 Ui.SetRadius(input, 4f);
                 Ui.SetPadding(input, 4f);
                 input.style.unityTextAlign = TextAnchor.MiddleLeft;
                 // Without this the caret is drawn in the theme's colour, which is nothing.
-                input.style.unityBackgroundImageTintColor = t[Role.Text];
+                Paint.Tint(input, Role.Text);
             }
             var label = field.Q<Label>(className: "unity-base-field__label");
             if (label != null) label.style.display = DisplayStyle.None;
@@ -85,7 +82,6 @@ namespace Facet
             if (view == null) return;
             Scroller(view.verticalScroller);
             Scroller(view.horizontalScroller);
-            view.style.backgroundColor = Color.clear;
             /* The editor theme's stylesheet clips the viewport; a runtime panel has no theme, so
                without this, scrolled rows draw over whatever sits above the view (a window's title
                bar, its search box). */
@@ -97,20 +93,18 @@ namespace Facet
         {
             if (s == null) return;
             s.style.width = 10f;
-            s.style.backgroundColor = Color.clear;
             var slider = s.slider;
             if (slider != null)
             {
                 var tracker = slider.Q(className: "unity-base-slider__tracker");
                 if (tracker != null)
                 {
-                    tracker.style.backgroundColor = Color.clear;
                     Ui.SetBorderWidth(tracker, 0f);
                 }
                 var dragger = slider.Q(className: "unity-base-slider__dragger");
                 if (dragger != null)
                 {
-                    dragger.style.backgroundColor = Theme.For(s)[Role.RowHover];
+                    Paint.Bg(dragger, Role.RowHover);
                     dragger.style.width = 6f;
                     Ui.SetRadius(dragger, 3f);
                     Ui.SetBorderWidth(dragger, 0f);

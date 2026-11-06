@@ -13,3 +13,6 @@ if grep -rn 'RegisterCallback\|ConditionalWeakTable' Facet/ --include='*.cs' | g
     echo "RegisterCallback/ConditionalWeakTable outside Events.cs/Data.cs"; exit 1; fi
 if grep -rnE 'class \w+ *: *(VisualElement|Button|Label|TextField|ScrollView|MonoBehaviour)' Facet/ --include='*.cs'; then
     echo "a Facet type derives from a Unity type (IL2CPP rule 1)"; exit 1; fi
+# Colour is painted by role (Paint.cs); only the pickers' swatches may write a literal.
+if grep -rnE 'style\.(backgroundColor|color|border[A-Za-z]*Color|unity[A-Za-z]*Color) *=' Facet/ --include='*.cs' | grep -v 'Paint.cs\|ColourPicker.cs\|GradientEditor.cs'; then
+    echo "direct colour write outside Paint.cs and the pickers: paint by role"; exit 1; fi

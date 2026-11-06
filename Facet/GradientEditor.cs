@@ -46,6 +46,7 @@ namespace Facet
             _hasAlpha = hasAlpha;
 
             Root = Ui.Box(parent);
+            Root.name = "facet-picker";   // SectionNoStale: swatches under here may hold literal colours
             if (!string.IsNullOrEmpty(label)) Widgets.Header(Root, label);
 
             _strip = new VisualElement();
@@ -55,7 +56,7 @@ namespace Facet
             _strip.style.marginRight = MarkerWidth / 2f;
             Ui.SetRadius(_strip, 3f);
             Ui.SetBorderWidth(_strip, 1f);
-            Ui.SetBorderColor(_strip, Theme.For(_strip)[Role.PanelBorder]);
+            Paint.Border(_strip, Role.PanelBorder);
             _strip.pickingMode = PickingMode.Position;
             Root.Add(_strip);
 
@@ -156,7 +157,7 @@ namespace Facet
                 Ui.SetRadius(m, MarkerWidth / 2f);
                 m.style.backgroundColor = s.Colour;
                 Ui.SetBorderWidth(m, 2f);
-                Ui.SetBorderColor(m, s == _selected ? Theme.For(m)[Role.Accent] : Color.white);
+                Paint.Border(m, s == _selected ? Role.Accent : Role.Text);
                 m.pickingMode = PickingMode.Position;
                 _markerLayer.Add(m);
 

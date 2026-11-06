@@ -55,8 +55,6 @@ namespace Facet
     {
         private readonly VisualElement _rail, _crumbs, _content;
         private readonly VisualElement _host;
-        // Read at use, not cached: the window may be given its scheme after the Nav is built.
-        private Theme T { get { return Theme.For(_host); } }
         private readonly List<NavItem> _roots;
         private readonly List<NavItem> _path = new List<NavItem>();
         private readonly HashSet<string> _expanded = new HashSet<string>();
@@ -110,8 +108,7 @@ namespace Facet
                 var where = Ui.Muted(string.IsNullOrEmpty(h.Group) ? h.Page : h.Page + " · " + h.Group, row);
                 where.pickingMode = PickingMode.Ignore;
 
-                Events.On<MouseEnterEvent>(row, _ => row.style.backgroundColor = T[Role.Row]);
-                Events.On<MouseLeaveEvent>(row, _ => row.style.backgroundColor = Color.clear);
+                Paint.Look(row, Look.Row);
                 Events.On<ClickEvent>(row, _ => GoTo(h));
             }
         }
@@ -133,13 +130,7 @@ namespace Facet
                 if (!(e.userData is string) || (string)e.userData != label) continue;
                 /* Fade a highlight out rather than in: the row is already on screen by the time
                    this runs, so starting lit and settling is what draws the eye to it. */
-                e.style.backgroundColor = T[Role.Accent];
-                e.experimental.animation.Start(1f, 0f, 900, (el, t) =>
-                {
-                    var c = T[Role.Accent];
-                    c.a = t * 0.5f;
-                    el.style.backgroundColor = c;
-                });
+                Paint.Flash(e, Role.Accent, 900);
                 return;
             }
         }
@@ -212,6 +203,9 @@ namespace Facet
                 Anim.Width(_railScroll, 0f, Anim.Fast, () => _railScroll.style.display = DisplayStyle.None);
             }
         }
+
+        private static readonly Look HandleLine = new Look { Bg = Role.PanelBorder, HoverBg = Role.Accent };
+        private static readonly Look HandleKnob = new Look { Bg = Role.RowAlt, HoverBg = Role.RowHover };
 
         private float _railWidth = 200f;
         private VisualElement _railLine, _railKnob;
@@ -291,7 +285,7 @@ namespace Facet
             line.style.position = Position.Absolute;
             line.style.top = 0f; line.style.bottom = 0f;
             line.style.width = 1f;
-            line.style.backgroundColor = T[Role.PanelBorder];
+            Paint.Look(line, HandleLine);
             line.pickingMode = PickingMode.Ignore;
 
             var knob = Ui.Box(handle);
@@ -299,7 +293,7 @@ namespace Facet
             knob.style.height = 34f;
             knob.style.alignItems = Align.Center;
             knob.style.justifyContent = Justify.Center;
-            knob.style.backgroundColor = T[Role.RowAlt];
+            Paint.Look(knob, HandleKnob);
             Ui.SetRadius(knob, Tokens.Radius);
             knob.style.display = DisplayStyle.None;
             knob.pickingMode = PickingMode.Ignore;
@@ -309,16 +303,9 @@ namespace Facet
 
             _railLine = line;
             _railKnob = knob;
-            Events.On<MouseEnterEvent>(handle, _ =>
-            {
-                line.style.backgroundColor = T[Role.Accent];
-                knob.style.backgroundColor = T[Role.RowHover];
-            });
-            Events.On<MouseLeaveEvent>(handle, _ =>
-            {
-                line.style.backgroundColor = T[Role.PanelBorder];
-                knob.style.backgroundColor = T[Role.RowAlt];
-            });
+            // The hit area is the handle, wider than either: they light when it is hovered.
+            Events.On<MouseEnterEvent>(handle, _ => { Paint.Hover(line, true); Paint.Hover(knob, true); });
+            Events.On<MouseLeaveEvent>(handle, _ => { Paint.Hover(line, false); Paint.Hover(knob, false); });
             MakeRailHandle(handle, railScroll);
 
             var right = Ui.Box(split);
@@ -331,7 +318,7 @@ namespace Facet
                line of height at the top of every page to say something the eye had just read.
                The element stays for search, which has nothing else to announce itself with. */
             _crumbs = Ui.Row(right);
-            _crumbs.style.backgroundColor = T[Role.Panel];
+            Paint.Bg(_crumbs, Role.Panel);
             _crumbs.style.flexShrink = 0f;
 
             var contentScroll = new ScrollView(ScrollViewMode.Vertical);
@@ -450,7 +437,8 @@ namespace Facet
             // The selected LEAF is the highlighted one. A branch on the path is merely open, and
             // colouring it as selected too makes it unclear which page is actually showing.
             bool selected = onPath && !item.IsBranch;
-            row.style.backgroundColor = selected ? T[Role.RowHover] : Color.clear;
+            Paint.Look(row, Look.RailItem);
+            Paint.Select(row, selected);
             Ui.SetRadius(row, 4f);
             if (!string.IsNullOrEmpty(item.Tooltip)) row.tooltip = item.Tooltip;
 
@@ -466,25 +454,12 @@ namespace Facet
                 pad.style.width = depth > 0 ? 14f : 0f;
             }
 
-            var label = Ui.Text(item.Title, row, Tokens.FontSize,
-                                selected ? Role.Text : Role.TextMuted);
+            // The row's look drives the text (muted, full on hover or selected); without hover
+            // feedback nothing in the rail looks clickable until you click it.
+            var label = Ui.Text(item.Title, row, Tokens.FontSize);
+            Paint.Inherit(label);
             label.style.flexGrow = 1f;
             label.pickingMode = PickingMode.Ignore;
-
-            // Hover feedback: without it nothing in the rail looks clickable until you click it.
-            if (!selected)
-            {
-                Events.On<MouseEnterEvent>(row, _ =>
-                {
-                    row.style.backgroundColor = T[Role.Row];
-                    label.style.color = T[Role.Text];
-                });
-                Events.On<MouseLeaveEvent>(row, _ =>
-                {
-                    row.style.backgroundColor = Color.clear;
-                    label.style.color = T[Role.TextMuted];
-                });
-            }
 
             Events.On<ClickEvent>(row, _ =>
             {

@@ -58,8 +58,7 @@ namespace Facet
             l.style.flexShrink = 1f;
             l.pickingMode = PickingMode.Ignore;
 
-            Events.On<MouseEnterEvent>(row, _ => row.style.backgroundColor = Theme.For(row)[Role.Row]);
-            Events.On<MouseLeaveEvent>(row, _ => row.style.backgroundColor = Color.clear);
+            Paint.Look(row, Look.Row);
 
             var right = Ui.Row(row);
             right.style.flexShrink = 0f;
@@ -94,8 +93,7 @@ namespace Facet
             track.style.width = 36f;
             track.style.height = 18f;
             Ui.SetRadius(track, 9f);
-            var th = Theme.For(host);
-            track.style.backgroundColor = value ? th[Role.Accent] : th[Role.RowAlt];
+            Paint.Bg(track, value ? Role.Accent : Role.RowAlt);
             track.pickingMode = PickingMode.Position;
 
             var knob = new VisualElement();
@@ -104,7 +102,7 @@ namespace Facet
             knob.style.width = 14f;
             knob.style.height = 14f;
             Ui.SetRadius(knob, 7f);
-            knob.style.backgroundColor = Color.white;
+            Paint.Bg(knob, Role.Text);
             knob.style.left = value ? 20f : 2f;
             knob.pickingMode = PickingMode.Ignore;
             track.Add(knob);
@@ -113,7 +111,7 @@ namespace Facet
             var set = Track(label, value, v =>
             {
                 state = v;
-                track.style.backgroundColor = v ? Theme.For(track)[Role.Accent] : Theme.For(track)[Role.RowAlt];
+                Paint.Bg(track, v ? Role.Accent : Role.RowAlt);
                 Anim.Move(knob, v ? 20f : 2f, Anim.Fast);
                 Safe.Run(Host.For(track), "Toggle handler", () => { if (onChange != null) onChange(v); });
             });
@@ -311,16 +309,16 @@ namespace Facet
                 {
                     armed = true;
                     b.text = Words.Own("Sure?");
-                    b.style.backgroundColor = Theme.For(b)[Role.Danger];
+                    Paint.Select(b, true);
                     Anim.Pop(b);
                     return;
                 }
                 armed = false;
                 b.text = buttonText;
-                b.style.backgroundColor = Theme.For(b)[Role.RowAlt];
+                Paint.Select(b, false);
                 Safe.Run(Host.For(b), "Danger handler", () => { if (onConfirm != null) onConfirm(); });
             }, host);
-            Paint.Fg(b, Role.Danger);
+            Paint.Look(b, Look.DangerButton);
             return b;
         }
 
@@ -412,7 +410,7 @@ namespace Facet
             row.style.paddingRight = 4f;
             row.style.marginBottom = 2f;
             Ui.SetRadius(row, Tokens.Radius);
-            row.style.backgroundColor = Theme.For(row)[Role.Row];
+            Paint.Bg(row, Role.Row);
 
             var text = Ui.Box(row);
             text.style.flexGrow = 1f;
@@ -455,13 +453,13 @@ namespace Facet
             bool armed = false;
             b = Ui.Btn(text, () =>
             {
-                if (!armed) { armed = true; b.text = Words.Own("Sure?"); b.style.backgroundColor = Theme.For(b)[Role.Danger]; Anim.Pop(b); return; }
+                if (!armed) { armed = true; b.text = Words.Own("Sure?"); Paint.Select(b, true); Anim.Pop(b); return; }
                 armed = false;
                 b.text = text;
-                b.style.backgroundColor = Theme.For(b)[Role.RowAlt];
+                Paint.Select(b, false);
                 Safe.Run(Host.For(b), "Danger handler", () => { if (onConfirm != null) onConfirm(); });
             }, row);
-            Paint.Fg(b, Role.Danger);
+            Paint.Look(b, Look.DangerButton);
             return b;
         }
 

@@ -163,11 +163,5 @@ namespace Facet
             e.style.borderLeftWidth = v; e.style.borderRightWidth = v;
             e.style.borderTopWidth = v; e.style.borderBottomWidth = v;
         }
-
-        public static void SetBorderColor(VisualElement e, Color c)
-        {
-            e.style.borderLeftColor = c; e.style.borderRightColor = c;
-            e.style.borderTopColor = c; e.style.borderBottomColor = c;
-        }
     }
 }

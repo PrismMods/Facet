@@ -89,6 +89,7 @@ namespace Facet.Mod
             yield return Run("SharedEscape", SharedEscape());
             yield return Run("SectionHost", SectionHost());
             yield return Run("SectionTheme", SectionTheme());
+            yield return Run("SectionNoStale", SectionNoStale());
             // Later tasks: yield return Run("Section...", Section...());
 
             Main.Log("AUTOTEST DONE pass=" + _pass + " fail=" + _fail);
@@ -227,6 +228,110 @@ namespace Facet.Mod
                 "replacing a surface's theme moves its subscription and redraws in the new one");
             s.Dispose();
             Check(Subscribers(other) == 0, "disposing a surface unsubscribes it");
+        }
+
+        static bool IsRole(Color c, Theme t)
+        {
+            if (c.a < 1e-3f) return true;   // transparent is no colour at all
+            foreach (Role r in Enum.GetValues(typeof(Role))) if (Near(c, t[r])) return true;
+            return false;
+        }
+
+        // Every inline background, text, border and tint colour under e must be one of t's roles.
+        // A picker's swatches (under the element named facet-picker) may hold a literal background or tint.
+        static void Stale(VisualElement e, Theme t, List<string> bad, bool picker)
+        {
+            picker |= e.name == "facet-picker";
+            var s = e.style;
+            string id = e.GetType().Name + "#" + e.name + (e is TextElement te ? " '" + te.text + "'" : "");
+            Action<string, StyleColor> chk = (what, sc) =>
+            {
+                if (sc.keyword != StyleKeyword.Undefined || IsRole(sc.value, t)) return;
+                bad.Add(id + " " + what + " " + sc.value);
+            };
+            if (!picker) chk("background", s.backgroundColor);
+            chk("text", s.color);
+            chk("borderL", s.borderLeftColor); chk("borderR", s.borderRightColor);
+            chk("borderT", s.borderTopColor); chk("borderB", s.borderBottomColor);
+            if (!picker) chk("tint", s.unityBackgroundImageTintColor);
+            var h = e.hierarchy;
+            for (int i = 0; i < h.childCount; i++) Stale(h[i], t, bad, picker);
+        }
+
+        // Open every page, search, flash a hit, open a popup, recolour to red, and walk the whole tree:
+        // no widget may keep a colour from the old scheme.
+        IEnumerator SectionNoStale()
+        {
+            var t = new Theme();
+            var h = Host.Create("NoStale", o => { o.Log = m => Main.Log("[nostale] " + m); o.Theme = t; });
+            var s = new Surface(h, "FacetNoStale", Layer.Window);
+            var w = new Window(s.Root, "nostale", "No stale", new Rect(40, 40, 900, 700));
+            w.ShowSearch("Search", null);
+            var stops = new List<GradientStop> { new GradientStop { Position = 0f, Colour = Color.red }, new GradientStop { Position = 1f, Colour = Color.blue } };
+            Button anchor = null;
+            var pages = new[] {
+                new NavItem("Controls", p =>
+                {
+                    Widgets.Toggle(p, "Toggle", true, v => { });
+                    Widgets.Slider(p, "Slider", 1f, 0f, 2f, v => { });
+                    Widgets.Choice(p, "Choice", new[] { "One", "Two" }, 1, v => { });
+                    Widgets.Text(p, "Text", "x", v => { });
+                    Widgets.Danger(p, "Danger", "Wipe", () => { });
+                    Widgets.DangerButton(p, "Reset all", () => { });
+                    Widgets.Colour(p, "Colour", Color.cyan, v => { }, null, true);
+                    new GradientEditor(p, "Gradient", stops, () => { });
+                    var item = Widgets.Item(p, "Item", "a note"); Widgets.MarkActive(item);
+                    new Tabs(p, i => { }).Rebuild(new[] { "A", "B" });
+                    Widgets.ToggleSubPage(p, "Sub toggle", false, v => { }, q => Widgets.Info(q, "Inner", "x"));
+                    var sec = Widgets.Section(p, "Section"); Widgets.Info(sec, "Info", "v");
+                    anchor = Ui.Btn("Anchor", null, p);
+                }),
+                NavItem.Heading("Group", new NavItem("Other", p => Widgets.Action(p, "Other action", "Go", () => { }))),
+            };
+            var nav = new Nav(w.Body, pages);
+            yield return null; yield return null;
+            nav.Go(pages[1].Children[0]); yield return null; yield return null;
+            nav.Go(pages[0]); yield return null; yield return null;
+
+            nav.Filter("Toggle"); yield return null;
+            var hit = w.Body.Query<Label>().ToList().Find(l => l.text == "Toggle");
+            Check(hit != null, "searching finds the Toggle row");
+            if (hit != null) using (var e = ClickEvent.GetPooled()) { e.target = hit; hit.SendEvent(e); }
+            yield return new WaitForSeconds(1.2f);   // the hit's flash settles
+
+            int before = Subscribers(t);
+            var menu = Popup.Menu(anchor, new[] { "One", "Two" }, 1, i => { });
+            yield return null; yield return null;
+            Check(menu != null && Subscribers(t) == before + 1, "an open popup follows its anchor's theme", before + " -> " + Subscribers(t));
+
+            t.Recolour(new Color(.9f, .1f, .1f));
+            yield return null; yield return null;
+            var bad = new List<string>();
+            Stale(s.Root, t, bad, false);
+            if (menu != null) Stale(menu.Content, t, bad, false);
+            Check(bad.Count == 0, "after recolouring, no element keeps an old colour", bad.Count + ": " + string.Join(" | ", bad.GetRange(0, Math.Min(6, bad.Count))));
+            if (menu != null) Check(Near(menu.Content.resolvedStyle.backgroundColor, t[Role.Panel]), "the open popup card is re-themed");
+
+            // Rail: the selected leaf is lit, the others show muted text and full text on hover.
+            Label Find(string text) { return w.Body.Query<Label>().ToList().Find(l => l.text == text); }
+            var on = Find("Controls"); var off = Find("Other");
+            Check(on != null && Near(on.parent.resolvedStyle.backgroundColor, t[Role.RowHover]) && Near(on.resolvedStyle.color, t[Role.Text]),
+                "the selected rail leaf shows RowHover and full text");
+            Check(off != null && Near(off.resolvedStyle.color, t[Role.TextMuted]), "an unselected rail leaf shows muted text");
+            if (off != null)
+            {
+                var row = off.parent;
+                using (var e = MouseEnterEvent.GetPooled()) { e.target = row; row.SendEvent(e); }
+                yield return null;
+                Check(Near(off.resolvedStyle.color, t[Role.Text]) && Near(row.resolvedStyle.backgroundColor, t[Role.Row]), "hovering a rail leaf shows full text on Row");
+                using (var e = MouseLeaveEvent.GetPooled()) { e.target = row; row.SendEvent(e); }
+                yield return null;
+                Check(Near(off.resolvedStyle.color, t[Role.TextMuted]) && row.resolvedStyle.backgroundColor.a == 0f, "...and muted text again after it leaves");
+            }
+
+            if (menu != null) menu.Close();
+            Check(Subscribers(t) == before, "closing a popup stops it listening", Subscribers(t) + " vs " + before);
+            s.Dispose();
         }
 
         IEnumerator SharedEscape()

@@ -26,10 +26,14 @@ namespace Facet
         private readonly VisualElement _anchor;
         private readonly Action _onClose;
         private Surface _owner;
+        private readonly Theme _theme;
+        private readonly Action _retheme;
         private EventCallback<DetachFromPanelEvent> _onDetach;
 
         private static Surface _popups;
         private static readonly List<Popup> _open = new List<Popup>();
+
+        private static readonly Look MenuRow = new Look { HoverBg = Role.RowHover };
 
         private const float Gap = 4f;      // between anchor and card
         private const float Margin = 8f;   // kept clear of the screen edge
@@ -62,8 +66,7 @@ namespace Facet
                     Ui.SetRadius(row, 4f);
                     var label = Ui.Text(items[i], row, Tokens.FontSizeSmall, i == selected ? Role.Accent : Role.Text);
                     label.pickingMode = PickingMode.Ignore;
-                    Events.On<MouseEnterEvent>(row, _ => row.style.backgroundColor = Theme.For(row)[Role.RowHover]);
-                    Events.On<MouseLeaveEvent>(row, _ => row.style.backgroundColor = Color.clear);
+                    Paint.Look(row, MenuRow);
                     Events.On<PointerUpEvent>(row, e =>
                     {
                         if (e.button != 0) return;
@@ -92,6 +95,10 @@ namespace Facet
             var theme = Theme.For(anchor);
             using (Theme.Use(theme)) Content = Ui.Card();
             Theme.Set(Content, theme);
+            // The card follows its anchor's scheme while open; Close lets go.
+            _theme = theme;
+            _retheme = () => Paint.Apply(Content);
+            theme.Changed += _retheme;
             Host.For(anchor).Attach(Content);   // its handlers log to the consumer that opened it, not to Facet
             Content.style.position = Position.Absolute;
             Content.style.paddingLeft = 4f; Content.style.paddingRight = 4f;
@@ -157,6 +164,7 @@ namespace Facet
         {
             if (!_open.Remove(this)) return;
             if (_owner != null) _owner.Hidden -= Close;
+            _theme.Changed -= _retheme;
             Events.Off(_anchor, _onDetach);
             _catcher.RemoveFromHierarchy();
             Content.RemoveFromHierarchy();
