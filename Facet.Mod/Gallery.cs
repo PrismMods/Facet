@@ -45,11 +45,19 @@ namespace Facet.Mod
         {
             if (Surface != null) { Surface.Visible = true; return _win; }
             Surface = new Surface(Host, "FacetGallery", Layer.Window);
-            _win = new Window(Surface.Root, "Gallery", "Facet Gallery", new Rect(120, 80, 640, 640), Close);
+            _win = Build(Surface.Root, "Gallery");
+            _win.CloseRequested += _ => Close();
+            return _win;
+        }
+
+        /// The Gallery's window and controls; the autotest times a second one opened after the warm-up.
+        internal static Window Build(VisualElement root, string id)
+        {
+            var w = new Window(root, id, "Facet Gallery", new Rect(120, 80, 640, 640));
             var scroll = new ScrollView();
             Skin.Scroll(scroll);
             scroll.style.flexGrow = 1f; scroll.style.minHeight = 0f;
-            _win.Body.Add(scroll);
+            w.Body.Add(scroll);
             var p = scroll.contentContainer;
             Controls.Toggle(p, "Toggle", Bind.To(() => Model.Flag, v => Model.Flag = v), o => { o.Id = "flag"; o.Default = false; });
             Controls.Slider(p, "Size", Bind.To(() => Model.Size, v => Model.Size = v), o => { o.Id = "size"; o.Min = 0.5f; o.Max = 2f; o.Default = 1f; });
@@ -63,7 +71,7 @@ namespace Facet.Mod
             Controls.Action(p, "Action", "Run", () => { });
             Controls.Danger(p, "Danger", "Wipe", () => { });
             Controls.Info(p, "Info", () => "Facet " + "0.1");
-            return _win;
+            return w;
         }
 
         public static void Close()

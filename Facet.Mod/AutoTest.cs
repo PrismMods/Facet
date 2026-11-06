@@ -87,6 +87,7 @@ namespace Facet.Mod
         {
             for (int i = 0; i < 5; i++) yield return null;
             Main.Log("AUTOTEST start screen " + Screen.width + "x" + Screen.height);
+            yield return Run("SectionWarmUp", SectionWarmUp());   // first: it needs the session's first surface
             yield return Run("SectionOpen", SectionOpen());
             yield return Run("SharedEscape", SharedEscape());
             yield return Run("SectionHost", SectionHost());
@@ -102,6 +103,7 @@ namespace Facet.Mod
             yield return Run("SectionInput", SectionInput());
             yield return Run("SectionNavIndex", SectionNavIndex());
             yield return Run("SectionForm", SectionForm());
+            yield return Run("SectionClose", SectionClose());
             // Later tasks: yield return Run("Section...", Section...());
 
             Main.Log("AUTOTEST DONE pass=" + _pass + " fail=" + _fail);
@@ -558,9 +560,22 @@ namespace Facet.Mod
             yield return null; yield return null;
             var r = RefresherOf(s);
             Check(Bound(r) == 100, "the open page's 100 bound controls register with their surface's refresher", Bound(r).ToString());
+            // The budgets: one refresher tick (the mean of 20, a frame apart) and a re-theme of this page.
+            double sum = 0;
+            for (int i = 0; i < 20; i++)
+            {
+                var tick = Stopwatch.StartNew();
+                s.Refresh();
+                sum += tick.Elapsed.TotalMilliseconds;
+                yield return null;
+            }
+            Main.Log("[perf] refresh " + (sum / 20).ToString("0.000") + " ms (mean of 20 ticks, 100 bound toggles)");
+            Check(sum / 20 <= 0.2, "a refresh pass over 100 bound toggles takes <= 0.2 ms (mean of 20)", (sum / 20).ToString("0.000") + " ms");
             var sw = Stopwatch.StartNew();
-            s.Refresh();
-            Main.Log("[perf] refresh pass, 100 bound controls " + sw.Elapsed.TotalMilliseconds.ToString("0.000") + " ms");
+            s.Theme.Recolour(new Color(.9f, .2f, .2f));
+            double rt = sw.Elapsed.TotalMilliseconds;
+            Main.Log("[perf] retheme " + rt.ToString("0.0") + " ms (100 bound toggles)");
+            Check(rt <= 16.0, "re-theming the page of 100 bound toggles takes <= 16 ms", rt.ToString("0.0") + " ms");
 
             var b = w.Body.Query<Button>().ToList().Find(x => x.text == "Rebuild");
             Check(b != null, "the page has its Rebuild button");
@@ -1228,12 +1243,99 @@ namespace Facet.Mod
             Check(size.resolvedStyle.borderTopColor == want, "the focused slider's border resolves to Role.Focus", size.resolvedStyle.borderTopColor + " vs " + want);
         }
 
+        /* The session's first surface (a mod's HUD, built at load) schedules the warm-up; a window
+           opened after it must not hitch. Timed as PrismLib's LayoutProbe does: the constructor, the
+           show, the rest of that frame (layout and draw), and the frame's own length. The check is the
+           three parts' sum: the frame length is paced by vsync (17 ms and 8 ms on two runs whose parts
+           were the same 10 ms), so it says more about the display than about the window. */
+        IEnumerator SectionWarmUp()
+        {
+            var hud = new Surface(Gallery.Host, "FacetFirstHud", Layer.Hud);
+            var ms = new double[1];
+            yield return Until(() => WarmUp.Done, ms, 5000);
+            Check(ms[0] >= 450, "the first surface's warm-up is done, half a second or more after it", Ms(ms));
+            for (int i = 0; i < 4; i++) yield return null;   // settle, as LayoutProbe idles before it opens
+
+            var sw = Stopwatch.StartNew();
+            var s = new Surface(Gallery.Host, "FacetFirstOpen", Layer.Window);
+            s.Visible = false;
+            Gallery.Build(s.Root, "firstopen");
+            long ctor = sw.ElapsedMilliseconds;
+            s.Visible = true;
+            long show = sw.ElapsedMilliseconds - ctor;
+            yield return new WaitForEndOfFrame();
+            long draw = sw.ElapsedMilliseconds - ctor - show;
+            yield return null;
+            long open = ctor + show + draw;
+            Main.Log("[perf] first open " + open + " ms (ctor " + ctor + " ms, show " + show + " ms, layout+draw " + draw
+                     + " ms; frame " + (Time.unscaledDeltaTime * 1000f).ToString("0") + " ms)");
+            Check(open <= 50, "a Gallery-sized window opened after the warm-up takes <= 50 ms", open + " ms");
+            s.Dispose(); hud.Dispose();
+        }
+
+        static Button CloseButton(Window w)
+        {
+            var bs = w.TitleBarRight.Query<Button>().ToList();
+            return bs.Find(b => b.text == "\u2715");
+        }
+
+        // The close button is the owner's to answer, and Anim.Speed 0 is instant.
+        IEnumerator SectionClose()
+        {
+            Gallery.Open(); yield return null;   // Pointer maps screen to panel through the Gallery's root
+            var e = new VisualElement();
+            e.style.position = Position.Absolute;
+            e.style.left = 0f; e.style.top = 0f; e.style.width = 10f; e.style.height = 10f;
+            Root.Add(e);
+            yield return null; yield return null;   // laid out, so the motion would start from 0
+            Anim.Speed = 0f;
+            try
+            {
+                Anim.Move(e, 40f);
+                Check(e.style.left.value.value == 40f, "with Anim.Speed = 0, Anim.Move(e, 40) leaves left at 40 in the same call", e.style.left.ToString());
+            }
+            finally { Anim.Speed = 1f; }
+            e.RemoveFromHierarchy();
+
+            var logs = new List<string>();
+            var h = Host.Create("Closer", o => o.Log = m => { logs.Add(m); Main.Log("[closer] " + m); });
+
+            var s1 = new Surface(h, "FacetCloseHide", Layer.Window);
+            var w1 = new Window(s1.Root, "closehide", "Close hide", new Rect(100, 60, 400, 300));
+            yield return null; yield return null;
+            var x1 = CloseButton(w1);
+            Check(x1 != null, "a window with no CloseRequested subscriber still has a close button");
+            if (x1 != null) yield return Click(Ctr(x1), 0, x1);
+            Check(!s1.Visible && s1.Root != null, "...which hides its surface");
+            s1.Dispose();
+
+            // Review Focus 2: a close handler that disposes the surface it runs in.
+            var s = new Surface(h, "FacetCloseDispose", Layer.Window);
+            var w = new Window(s.Root, "closedispose", "Close dispose", new Rect(100, 60, 400, 300));
+            int reads = 0, raised = 0;
+            Controls.Toggle(w.Body, "Counting", Bind.To(() => { reads++; return false; }, v => { }));
+            w.CloseRequested += win => { raised++; s.Dispose(); };
+            yield return null; yield return null;
+            var r = RefresherOf(s);
+            var x = CloseButton(w);
+            Check(x != null && Bound(r) == 1, "the window has a close button and one bound control", "bound " + Bound(r));
+            if (x == null) { s.Dispose(); yield break; }
+            bool threw = false;
+            try { Pointer(EventType.MouseDown, Ctr(x), 0, x); Pointer(EventType.MouseUp, Ctr(x), 0, x); }
+            catch (Exception ex) { threw = true; Main.Log("close click threw " + ex); }
+            yield return null; yield return null;
+            reads = 0;
+            yield return new WaitForSeconds(0.3f);
+            var errs = logs.FindAll(m => m.StartsWith("[Closer] "));
+            Check(!threw && raised == 1 && errs.Count == 0 && s.Root == null, "a CloseRequested subscriber that disposes its surface raises nothing",
+                "threw=" + threw + " raised=" + raised + " " + string.Join(" | ", errs));
+            Check(Bound(r) == 0 && reads == 0, "...and the dead surface's refresher stops", "bound " + Bound(r) + ", " + reads + " reads");
+        }
+
         IEnumerator SectionOpen()
         {
-            var sw = Stopwatch.StartNew();
             var w = Gallery.Open(); yield return null; yield return null;
             Check(w.Root.layout.width > 300f, "the Gallery window lays out", "w=" + w.Root.layout.width);
-            Main.Log("[perf] gallery first open " + sw.ElapsedMilliseconds + " ms");
         }
     }
 }

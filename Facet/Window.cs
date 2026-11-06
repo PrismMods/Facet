@@ -83,6 +83,10 @@ namespace Facet
         /// its own — it is just the element tree inside one.
         public Action OnRaise;
 
+        /// Raised by the close button. With no subscriber the window's surface hides; with any,
+        /// only they decide (animate, veto, dispose).
+        public event Action<Window> CloseRequested;
+
         private readonly string _id;
         private readonly Host _host;
         private readonly string _key;
@@ -119,7 +123,7 @@ namespace Facet
             return true;
         }
 
-        public Window(VisualElement parent, string id, string title, Rect initial, Action onClose = null)
+        public Window(VisualElement parent, string id, string title, Rect initial)
         {
             _id = id ?? title ?? "window";
             _host = Host.For(parent);
@@ -215,20 +219,17 @@ namespace Facet
 
             /* × rather than a "Close" button, matching the mods' own panels. Sized as a square so
                it reads as a window control instead of as another toolbar button. */
-            if (onClose != null)
-            {
-                var close = Ui.Btn("\u2715", onClose, TitleBarRight);
-                Paint.Look(close, CloseLook);
-                close.style.width = 30f;
-                close.style.height = 26f;
-                close.style.marginRight = 0f;
-                /* Centre the glyph by hand. A Button's text is laid out by the theme, so without
-                   one it sits wherever the default padding leaves it — which is what made the ✕
-                   look off-centre. */
-                Ui.SetPadding(close, 0f);
-                close.style.unityTextAlign = TextAnchor.MiddleCenter;
-                close.style.fontSize = Tokens.FontSize;
-            }
+            var close = Ui.Btn("\u2715", RequestClose, TitleBarRight);
+            Paint.Look(close, CloseLook);
+            close.style.width = 30f;
+            close.style.height = 26f;
+            close.style.marginRight = 0f;
+            /* Centre the glyph by hand. A Button's text is laid out by the theme, so without
+               one it sits wherever the default padding leaves it — which is what made the ✕
+               look off-centre. */
+            Ui.SetPadding(close, 0f);
+            close.style.unityTextAlign = TextAnchor.MiddleCenter;
+            close.style.fontSize = Tokens.FontSize;
 
             Body = Ui.Box(Root);
             Body.style.flexGrow = 1f;
@@ -283,6 +284,19 @@ namespace Facet
         {
             Paint.Enable(b, on);
             b.tooltip = on ? tip : null;
+        }
+
+        /* Each subscriber under its own Safe, so one that throws leaves the rest deciding. With none,
+           the surface the window sits in hides (a surface Root is an ancestor, not always the parent). */
+        private void RequestClose()
+        {
+            var h = CloseRequested;
+            if (h != null)
+            {
+                foreach (Action<Window> a in h.GetInvocationList()) Safe.Run(_host, "Window.CloseRequested", () => a(this));
+                return;
+            }
+            foreach (var s in Ui.Stack) if (s.Root != null && s.Root.Contains(Root)) { s.Visible = false; return; }
         }
 
         // A window control, not a toolbar button: bare until hovered, then Danger.
