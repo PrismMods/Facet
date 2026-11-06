@@ -11,8 +11,8 @@ namespace Facet
        One per surface, found by its controls through Data on the surface root. Controls join when
        they attach to the panel and leave when they detach, so a rebuilt page's old rows stop being
        read with no bookkeeping by the page. The timer is paused while the surface is hidden: a
-       hidden window reads nothing. Each pass runs inside Safe, so one surface's failure leaves the
-       others ticking. */
+       hidden window reads nothing. Each control refreshes under its own Safe, so one that throws
+       (its drawing, its value type's Equals) leaves the rows after it and other surfaces ticking. */
     internal sealed class Refresher
     {
         private static readonly List<Refresher> _all = new List<Refresher>();
@@ -20,20 +20,27 @@ namespace Facet
         // Undo and redo re-read every visible surface at once, through History's own hook (Ruling R14).
         static Refresher() { History.RefreshAll = All; }
 
-        private readonly List<Action> _controls = new List<Action>();
+        // Each control's refresh with the Safe site it logs under, built once by the control.
+        private readonly List<KeyValuePair<string, Action>> _controls = new List<KeyValuePair<string, Action>>();
         private Surface _surface;
+        private Host _host;
         private IVisualElementScheduledItem _timer;
         private Action _pass;
 
         internal int Count => _controls.Count;
 
-        internal void Add(Action refresh) { _controls.Add(refresh); }
+        internal void Add(Action refresh, string site) { _controls.Add(new KeyValuePair<string, Action>(site, refresh)); }
 
-        internal void Remove(Action refresh) { _controls.Remove(refresh); }
+        internal void Remove(Action refresh)
+        {
+            for (int i = 0; i < _controls.Count; i++)
+                if (_controls[i].Value == refresh) { _controls.RemoveAt(i); return; }
+        }
 
         internal void Start(Surface s)
         {
             _surface = s;
+            _host = s.Host;
             _pass = Pass;
             _timer = s.Root.schedule.Execute(Now).Every(Math.Max(10, s.Host.RefreshMs));
             _all.Add(this);
@@ -54,10 +61,17 @@ namespace Facet
             if (s != null && s.Visible && s.Root != null) Safe.Run(s.Host, "Refresher", _pass);
         }
 
-        // By index: a control's refresh may rebuild its page, adding and removing rows mid-pass.
+        /* By index: a control's refresh may rebuild its page, adding and removing rows mid-pass.
+           One Safe per control (it allocates nothing when nothing throws), logged under that
+           control's own site, once per 10 s, so a throwing row never silences the rows after it. */
         private void Pass()
         {
-            for (int i = 0; i < _controls.Count; i++) _controls[i]();
+            var h = _host;
+            for (int i = 0; i < _controls.Count; i++)
+            {
+                var c = _controls[i];
+                Safe.Run(h, c.Key, c.Value);
+            }
         }
 
         internal void Stop()

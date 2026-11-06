@@ -96,6 +96,7 @@ namespace Facet.Mod
             yield return Run("SectionWords", SectionWords());
             yield return Run("SectionBind", SectionBind());
             yield return Run("SectionRebuild", SectionRebuild());
+            yield return Run("SectionRefreshIsolation", SectionRefreshIsolation());
             // Later tasks: yield return Run("Section...", Section...());
 
             Main.Log("AUTOTEST DONE pass=" + _pass + " fail=" + _fail);
@@ -577,6 +578,37 @@ namespace Facet.Mod
             try { s.Dispose(); } catch { threw = true; }
             yield return null; yield return null;
             Check(!threw && Bound(r) == 0, "disposing the surface stops its refresher", Bound(r).ToString());
+        }
+
+        // A value type whose Equals throws: the refresher's comparison is a call into consumer code.
+        sealed class Unequal
+        {
+            public override bool Equals(object o) { throw new InvalidOperationException("Equals"); }
+            public override int GetHashCode() { return 0; }
+        }
+
+        // Ruling R15: a control that throws while refreshing leaves the rows after it refreshing.
+        IEnumerator SectionRefreshIsolation()
+        {
+            Gallery.Open(); yield return null;
+            var logs = new List<string>();
+            var h = Host.Create("Isolate", o => o.Log = m => { logs.Add(m); Main.Log("[isolate] " + m); });
+            var s = new Surface(h, "FacetIsolate", Layer.Window);
+            var w = new Window(s.Root, "isolate", "Isolate", new Rect(120, 120, 500, 300));
+            var right = Widgets.Row(w.Body, "Unequal");
+            // Control's constructor is internal; a test reaches it as Task 10's Controls will.
+            typeof(Control<Unequal>).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance)[0]
+                .Invoke(new object[] { right.parent, right, "Unequal", Bind.To(() => new Unequal(), v => { }), null, null });
+            bool flag = false;
+            var after = Widgets.Toggle(w.Body, "After it", Bind.To(() => flag, v => flag = v));
+            yield return null; yield return null;
+            flag = true;
+            var ms = new double[1];
+            yield return Until(() => Near(after.Input.style.backgroundColor.value, s.Theme[Role.Accent]), ms);
+            Check(ms[0] >= 0 && ms[0] <= 150, "with a control whose value's Equals throws ahead of it, a toggle still shows a change behind the UI within 150 ms", Ms(ms));
+            var errs = logs.FindAll(m => m.StartsWith("[Isolate] Refresh 'Unequal'"));
+            Check(errs.Count == 1, "...and the throw is logged once, under the throwing control's name", string.Join(" | ", logs.FindAll(m => m.StartsWith("[Isolate] "))));
+            s.Dispose();
         }
 
         IEnumerator SharedEscape()

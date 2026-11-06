@@ -40,7 +40,7 @@ namespace Facet
         private readonly ControlOptions _o;
         private readonly Options<T> _d;     // _o, when it can carry a Default
         private readonly VisualElement _dot;
-        private readonly string _name, _getSite;
+        private readonly string _name, _getSite, _refreshSite;
         private readonly Action _read, _write, _refresh;   // allocated once: Refresh runs per tick
         private string _setSite, _enabledSite, _visibleSite;
         private Host _host;
@@ -59,6 +59,7 @@ namespace Facet
             _d = options as Options<T>;
             _name = _o.Id ?? label;
             _getSite = "Bind.Get '" + _name + "'";
+            _refreshSite = "Refresh '" + _name + "'";
             _read = () => _got = _bind.Get();
             _write = () => _bind.Set(_pending);
             _refresh = Refresh;
@@ -220,7 +221,7 @@ namespace Facet
             if (_refresher != null) return;
             _host = Host.For(Root);
             for (var e = Root; e != null && _refresher == null; e = e.hierarchy.parent) _refresher = Data.Find<Refresher>(e);
-            if (_refresher != null) _refresher.Add(_refresh);
+            if (_refresher != null) _refresher.Add(_refresh, _refreshSite);
         }
 
         private void Detach()
