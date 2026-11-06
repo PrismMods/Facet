@@ -47,7 +47,7 @@ namespace Facet
         private static readonly Dictionary<string, string> Korean = new Dictionary<string, string>
         {
             { "Nothing matches.", "일치하는 항목이 없습니다." },
-            { "This page failed to build — see the log.", "이 페이지를 만들지 못했습니다 — 로그를 확인하세요." },
+            { "{0}: this page failed to build — see the log.", "{0}: 이 페이지를 만들지 못했습니다 — 로그를 확인하세요." },
             { "Run", "실행" },
             { "Undo", "실행 취소" },
             { "Redo", "다시 실행" },

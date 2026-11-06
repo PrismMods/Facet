@@ -680,6 +680,7 @@ namespace Facet
 
             Action<VisualElement> build;
             string what;
+            var leaf = _path.Count > 0 ? _path[_path.Count - 1] : null;
             if (_stack.Count > 0)
             {
                 var top = _stack[_stack.Count - 1];
@@ -702,10 +703,9 @@ namespace Facet
             }
             else
             {
-                if (_path.Count == 0) return;
-                var page = _path[_path.Count - 1];
-                what = page.Title;
-                build = page.Build;
+                if (leaf == null) return;
+                what = leaf.Title;
+                build = leaf.Build;
             }
             if (build == null) return;
 
@@ -714,7 +714,16 @@ namespace Facet
             Controls.Seq = 0;   // so an unnamed control has the same history key after every rebuild
             bool ok = Safe.Run(Host.For(_host), "Nav.build '" + what + "'", () => build(_content));
             Active = was;
-            if (!ok) Ui.Muted("This page failed to build — see the log.", _content, true);
+            if (!ok) FailedCard(leaf != null && leaf.Owner != null ? leaf.Owner : Host.For(_host).Name);
+        }
+
+        // Names whose page it was (the page's Owner, else the host), so the reader knows which mod to blame.
+        private void FailedCard(string owner)
+        {
+            var card = Ui.Muted("", _content);
+            Action say = () => card.text = Words.OwnF("{0}: this page failed to build — see the log.", Host.For(card).Language, owner);
+            say();
+            Words.OnRelabel(card, say);
         }
 
         /* Drill-down pages.

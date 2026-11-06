@@ -139,13 +139,14 @@ namespace Facet.Mod
             var sb = new Surface(b, "FacetHostB", Layer.Window);
             var wa = new Window(sa.Root, "hosta", "Host A", new Rect(60, 60, 400, 300));
             var wb = new Window(sb.Root, "hostb", "Host B", new Rect(500, 60, 400, 300));
-            new Nav(wa.Body, new[] { new NavItem("Boom", p => throw new InvalidOperationException("boom")) });
+            new Nav(wa.Body, new[] { new NavItem("Boom", p => throw new InvalidOperationException("boom")) { Owner = "BoomMod" } });
             new Nav(wb.Body, new[] { new NavItem("Fine", p => Controls.Info(p, "Fine", () => "ok")) });
             yield return null; yield return null;
             var ea = la.FindAll(m => m.StartsWith("[A] "));
             Check(ea.Count == 1 && ea[0].Contains("Boom"), "A's list has one guard entry naming the page", string.Join(" | ", ea));
             Check(!lb.Exists(m => m.StartsWith("[B] ") || m.Contains("Boom")), "B's list stays empty of A's failure");
             Check(wa.Body.Query<Label>().ToList().Exists(l => l.text.Contains("failed to build")), "A's content shows the failed-to-build text");
+            Check(wa.Body.Query<Label>().ToList().Exists(l => l.text.Contains("failed to build") && l.text.Contains("BoomMod")), "...naming the page's owner");
             Check(!wb.Body.Query<Label>().ToList().Exists(l => l.text.Contains("failed to build")), "B's content builds");
             Check(ReferenceEquals(Host.For(wa.Body), a) && ReferenceEquals(Host.For(wb.Body), b), "Host.For finds each element's own host");
             var nb = new Nav(wb.Body, new[] { new NavItem("Fine2", p => { }) });
