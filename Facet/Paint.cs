@@ -92,13 +92,16 @@ namespace Facet
         {
             if (e == null) return;
             var s = Data.Get<State>(e);
+            System.Action rest = () => { e.style.backgroundColor = StyleKeyword.Null; Draw(e, s, Theme.For(e)); };
+            ms = (int)(ms * Anim.Speed);
+            if (ms <= 0) { rest(); return; }   // instant motion: straight to the resting paint
             var a = e.experimental.animation.Start(1f, 0f, ms, (el, t) =>
             {
                 var c = Theme.For(el)[r];
                 c.a = t * 0.5f;
                 el.style.backgroundColor = c;
             });
-            a.onAnimationCompleted = () => { e.style.backgroundColor = StyleKeyword.Null; Draw(e, s, Theme.For(e)); };
+            a.onAnimationCompleted = rest;
         }
 
         /// The selected tab, segment or rail leaf. Survives the pointer leaving it.

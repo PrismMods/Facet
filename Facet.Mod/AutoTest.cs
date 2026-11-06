@@ -1297,6 +1297,23 @@ namespace Facet.Mod
             finally { Anim.Speed = 1f; }
             e.RemoveFromHierarchy();
 
+            // Ruling R20: a search hit's flash follows Anim.Speed too.
+            var g = Gallery.Surface.Theme;
+            var fl = Ui.Box(Root);
+            Paint.Bg(fl, Role.Row);
+            yield return null;
+            var flash = typeof(Paint).GetMethod("Flash", BindingFlags.NonPublic | BindingFlags.Static);
+            Anim.Speed = 0f;
+            try
+            {
+                flash.Invoke(null, new object[] { fl, Role.Accent, 900 });
+                Check(Near(fl.style.backgroundColor.value, g[Role.Row]), "with Anim.Speed = 0, a Flash leaves the resting background in the same call", fl.style.backgroundColor.value.ToString());
+            }
+            finally { Anim.Speed = 1f; }
+            yield return null; yield return null;
+            Check(Near(fl.style.backgroundColor.value, g[Role.Row]), "...and plays no flash after it", fl.style.backgroundColor.value.ToString());
+            fl.RemoveFromHierarchy();
+
             var logs = new List<string>();
             var h = Host.Create("Closer", o => o.Log = m => { logs.Add(m); Main.Log("[closer] " + m); });
 
