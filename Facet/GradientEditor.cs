@@ -68,7 +68,7 @@ namespace Facet
 
             // Click empty strip to add a stop at that position, coloured as the gradient already
             // is there — so the ramp does not jump when you add one.
-            _strip.RegisterCallback<ClickEvent>(e =>
+            Events.On<ClickEvent>(_strip, e =>
             {
                 var r = _strip.contentRect;
                 if (r.width <= 0f) return;
@@ -160,7 +160,7 @@ namespace Facet
                 m.pickingMode = PickingMode.Position;
                 _markerLayer.Add(m);
 
-                m.RegisterCallback<PointerDownEvent>(e =>
+                Events.On<PointerDownEvent>(m, e =>
                 {
                     if (e.button != 0) return;
                     _selected = s;
@@ -170,7 +170,7 @@ namespace Facet
                     RebuildMarkers();
                     RebuildEditor();
                 });
-                m.RegisterCallback<PointerMoveEvent>(e =>
+                Events.On<PointerMoveEvent>(m, e =>
                 {
                     if (!m.HasPointerCapture(e.pointerId)) return;
                     var r = _strip.contentRect;
@@ -181,7 +181,7 @@ namespace Facet
                     Bake();
                     Notify();
                 });
-                m.RegisterCallback<PointerUpEvent>(e =>
+                Events.On<PointerUpEvent>(m, e =>
                 {
                     if (!m.HasPointerCapture(e.pointerId)) return;
                     m.ReleasePointer(e.pointerId);
@@ -190,7 +190,7 @@ namespace Facet
                     Sort();
                     Rebuild();
                 });
-                m.RegisterCallback<PointerLeaveEvent>(_ => { });
+                Events.On<PointerLeaveEvent>(m, _ => { });
             }
         }
 
@@ -250,8 +250,7 @@ namespace Facet
 
         private void Notify()
         {
-            try { if (_onChange != null) _onChange(); }
-            catch (Exception e) { Ui.Log("GradientEditor handler threw: " + e.Message); }
+            if (_onChange != null) Safe.Run(Host.For(_strip), "GradientEditor handler", _onChange);
         }
     }
 }

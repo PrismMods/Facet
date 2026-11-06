@@ -21,6 +21,9 @@ namespace Facet
         /// language setting.
         public static Func<string> Language;
 
+        /// Where a throwing translator is reported; Host points it at the fallback host's log.
+        public static Action<string> Log;
+
         private static readonly List<Func<string, string>> _translators = new List<Func<string, string>>();
         private static readonly List<string> _assemblies = new List<string>();
 
@@ -45,8 +48,8 @@ namespace Facet
             for (int i = 0; i < _translators.Count; i++)
             {
                 if (owner != null && !Owns(_assemblies[i], owner)) continue;
-                string s = null;
-                try { s = _translators[i](english); } catch { }
+                var tr = _translators[i];
+                string s = Safe.Get(Self, "Words.translator", () => tr(english), null, Log);
                 if (!string.IsNullOrEmpty(s) && s != english) return s;
             }
             return english;

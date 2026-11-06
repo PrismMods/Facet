@@ -81,7 +81,7 @@ namespace Facet
             Ui.SetBorderColor(_swatch, Theme.For(_swatch).PanelBorder);
             swatchBg.Add(_swatch);
 
-            head.RegisterCallback<ClickEvent>(_ =>
+            Events.On<ClickEvent>(head, _ =>
             {
                 bool open = _body.style.display == DisplayStyle.None;
                 chevron.text = open ? "▾" : "▸";
@@ -148,8 +148,8 @@ namespace Facet
             Skin.When<TextField>(_hexField, Skin.Field);
             Cursors.Set(_hexField, Cursors.Kind.Text);
             // Commit on Enter or focus loss, never per keystroke: "#1a" is not a colour yet.
-            _hexField.RegisterCallback<BlurEvent>(_ => ParseHex());
-            _hexField.RegisterCallback<KeyDownEvent>(e =>
+            Events.On<BlurEvent>(_hexField, _ => ParseHex());
+            Events.On<KeyDownEvent>(_hexField, e =>
             {
                 if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) ParseHex();
             });
@@ -214,19 +214,19 @@ namespace Facet
                 if (r.width <= 0f || r.height <= 0f) return;
                 onMove(pos.x / r.width, pos.y / r.height);
             };
-            e.RegisterCallback<PointerDownEvent>(ev =>
+            Events.On<PointerDownEvent>(e, ev =>
             {
                 if (ev.button != 0) return;
                 e.CapturePointer(ev.pointerId);
                 apply(ev.localPosition);
                 ev.StopPropagation();
             });
-            e.RegisterCallback<PointerMoveEvent>(ev =>
+            Events.On<PointerMoveEvent>(e, ev =>
             {
                 if (!e.HasPointerCapture(ev.pointerId)) return;
                 apply(ev.localPosition);
             });
-            e.RegisterCallback<PointerUpEvent>(ev =>
+            Events.On<PointerUpEvent>(e, ev =>
             {
                 if (e.HasPointerCapture(ev.pointerId)) e.ReleasePointer(ev.pointerId);
             });
@@ -245,7 +245,7 @@ namespace Facet
             var readout = Ui.Muted("", row);
             readout.style.minWidth = 34f;
             readout.style.unityTextAlign = TextAnchor.MiddleRight;
-            s.RegisterValueChangedCallback(e =>
+            Events.On<ChangeEvent<float>>(s, e =>
             {
                 if (_writing) return;
                 readout.text = Mathf.RoundToInt(e.newValue * 255f).ToString();
@@ -315,8 +315,7 @@ namespace Facet
 
             if (!initial && _onChange != null)
             {
-                try { _onChange(_colour); }
-                catch (Exception e) { Ui.Log("ColourPicker handler threw: " + e.Message); }
+                Safe.Run(Host.For(_swatch), "ColourPicker handler", () => _onChange(_colour));
             }
         }
 

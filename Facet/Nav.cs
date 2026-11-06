@@ -110,9 +110,9 @@ namespace Facet
                 var where = Ui.Muted(string.IsNullOrEmpty(h.Group) ? h.Page : h.Page + " · " + h.Group, row);
                 where.pickingMode = PickingMode.Ignore;
 
-                row.RegisterCallback<MouseEnterEvent>(_ => row.style.backgroundColor = T.Row);
-                row.RegisterCallback<MouseLeaveEvent>(_ => row.style.backgroundColor = Color.clear);
-                row.RegisterCallback<ClickEvent>(_ => GoTo(h));
+                Events.On<MouseEnterEvent>(row, _ => row.style.backgroundColor = T.Row);
+                Events.On<MouseLeaveEvent>(row, _ => row.style.backgroundColor = Color.clear);
+                Events.On<ClickEvent>(row, _ => GoTo(h));
             }
         }
 
@@ -153,7 +153,7 @@ namespace Facet
             float startWidth = 0f;
             float startX = 0f;
 
-            handle.RegisterCallback<PointerDownEvent>(e =>
+            Events.On<PointerDownEvent>(handle, e =>
             {
                 if (e.button != 0) return;
                 startX = e.position.x;
@@ -161,7 +161,7 @@ namespace Facet
                 handle.CapturePointer(e.pointerId);
                 e.StopPropagation();
             });
-            handle.RegisterCallback<PointerMoveEvent>(e =>
+            Events.On<PointerMoveEvent>(handle, e =>
             {
                 if (!handle.HasPointerCapture(e.pointerId)) return;
                 float w = startWidth + (e.position.x - startX);
@@ -180,7 +180,7 @@ namespace Facet
                 PaintHandle();
                 ReportInset();
             });
-            handle.RegisterCallback<PointerUpEvent>(e =>
+            Events.On<PointerUpEvent>(handle, e =>
             {
                 if (handle.HasPointerCapture(e.pointerId)) handle.ReleasePointer(e.pointerId);
                 // A click with no drag reopens a collapsed rail: dragging out from zero width is
@@ -271,10 +271,10 @@ namespace Facet
             handle.pickingMode = PickingMode.Position;
             /* Resize cursor only while there is something to resize. Collapsed, the knob is a
                click-to-open affordance and a double arrow would promise the wrong gesture. */
-            handle.RegisterCallback<MouseEnterEvent>(_ =>
+            Events.On<MouseEnterEvent>(handle, _ =>
                 Cursors.Apply(_railOpen ? Cursors.Kind.ResizeHorizontal : Cursors.Kind.Default));
-            handle.RegisterCallback<MouseLeaveEvent>(_ => Cursors.Apply(Cursors.Kind.Default));
-            handle.RegisterCallback<DetachFromPanelEvent>(_ => Cursors.Apply(Cursors.Kind.Default));
+            Events.On<MouseLeaveEvent>(handle, _ => Cursors.Apply(Cursors.Kind.Default));
+            Events.On<DetachFromPanelEvent>(handle, _ => Cursors.Apply(Cursors.Kind.Default));
 
             var line = Ui.Box(handle);
             line.style.position = Position.Absolute;
@@ -298,12 +298,12 @@ namespace Facet
 
             _railLine = line;
             _railKnob = knob;
-            handle.RegisterCallback<MouseEnterEvent>(_ =>
+            Events.On<MouseEnterEvent>(handle, _ =>
             {
                 line.style.backgroundColor = T.Accent;
                 knob.style.backgroundColor = T.RowHover;
             });
-            handle.RegisterCallback<MouseLeaveEvent>(_ =>
+            Events.On<MouseLeaveEvent>(handle, _ =>
             {
                 line.style.backgroundColor = T.PanelBorder;
                 knob.style.backgroundColor = T.RowAlt;
@@ -364,8 +364,7 @@ namespace Facet
                 if (item.IsBranch) { IndexInto(item.Children); continue; }
                 if (item.Build == null) continue;
                 SearchIndex.BeginPage(item, item.Title);
-                try { item.Build(new VisualElement()); }
-                catch (Exception e) { Ui.Log("Nav: indexing '" + item.Title + "' threw: " + e.Message); }
+                Safe.Run(Host.For(_host), "Nav.build '" + item.Title + "'", () => item.Build(new VisualElement()));
                 SearchIndex.EndPage();
             }
         }
@@ -464,19 +463,19 @@ namespace Facet
             // Hover feedback: without it nothing in the rail looks clickable until you click it.
             if (!selected)
             {
-                row.RegisterCallback<MouseEnterEvent>(_ =>
+                Events.On<MouseEnterEvent>(row, _ =>
                 {
                     row.style.backgroundColor = T.Row;
                     label.style.color = T.Text;
                 });
-                row.RegisterCallback<MouseLeaveEvent>(_ =>
+                Events.On<MouseLeaveEvent>(row, _ =>
                 {
                     row.style.backgroundColor = Color.clear;
                     label.style.color = T.TextMuted;
                 });
             }
 
-            row.RegisterCallback<ClickEvent>(_ =>
+            Events.On<ClickEvent>(row, _ =>
             {
                 if (item.IsBranch)
                 {
@@ -527,7 +526,7 @@ namespace Facet
                 // An ancestor crumb expands its branch in the rail; there is no page of its own to
                 // show, which is exactly what a branch means here.
                 crumb.pickingMode = PickingMode.Position;
-                crumb.RegisterCallback<ClickEvent>(_ =>
+                Events.On<ClickEvent>(crumb, _ =>
                 {
                     _expanded.Add(step.Title);
                     var leaf = step.IsBranch ? FirstLeaf(step.Children) : step;
@@ -556,7 +555,7 @@ namespace Facet
                 back.pickingMode = PickingMode.Position;
                 var arrow = Ui.Text("\u2039  " + home, back, Tokens.FontSize, T.Accent);
                 arrow.pickingMode = PickingMode.Ignore;
-                back.RegisterCallback<ClickEvent>(_ => Pop());
+                Events.On<ClickEvent>(back, _ => Pop());
 
                 var heading = Ui.Text(what, _content, Tokens.FontSizeTitle);
                 heading.style.unityFontStyleAndWeight = FontStyle.Bold;
@@ -573,13 +572,9 @@ namespace Facet
 
             var was = Active;
             Active = this;
-            try { build(_content); }
-            catch (Exception e)
-            {
-                Ui.Log("Nav: page '" + what + "' failed to build: " + e.Message);
-                Ui.Muted(Words.Own("This page failed to build — see the log."), _content);
-            }
-            finally { Active = was; }
+            bool ok = Safe.Run(Host.For(_host), "Nav.build '" + what + "'", () => build(_content));
+            Active = was;
+            if (!ok) Ui.Muted(Words.Own("This page failed to build — see the log."), _content);
         }
 
         /* Drill-down pages.
@@ -620,7 +615,7 @@ namespace Facet
             var page = _path[_path.Count - 1];
             if (page.Revision == null) return;
             int r;
-            try { r = page.Revision(); } catch { return; }
+            r = Safe.Get(Host.For(_host), "Nav.Revision", page.Revision, _lastRevision);
             if (r == _lastRevision) return;
             _lastRevision = r;
             RebuildContent();

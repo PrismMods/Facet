@@ -58,8 +58,8 @@ namespace Facet
             l.style.flexShrink = 1f;
             l.pickingMode = PickingMode.Ignore;
 
-            row.RegisterCallback<MouseEnterEvent>(_ => row.style.backgroundColor = Theme.For(row).Row);
-            row.RegisterCallback<MouseLeaveEvent>(_ => row.style.backgroundColor = Color.clear);
+            Events.On<MouseEnterEvent>(row, _ => row.style.backgroundColor = Theme.For(row).Row);
+            Events.On<MouseLeaveEvent>(row, _ => row.style.backgroundColor = Color.clear);
 
             var right = Ui.Row(row);
             right.style.flexShrink = 0f;
@@ -115,9 +115,9 @@ namespace Facet
                 state = v;
                 track.style.backgroundColor = v ? Theme.For(track).Accent : Theme.For(track).RowAlt;
                 Anim.Move(knob, v ? 20f : 2f, Anim.Fast);
-                try { if (onChange != null) onChange(v); } catch (Exception e) { Ui.Log("Toggle handler threw: " + e.Message); }
+                Safe.Run(Host.For(track), "Toggle handler", () => { if (onChange != null) onChange(v); });
             });
-            track.RegisterCallback<ClickEvent>(e =>
+            Events.On<ClickEvent>(track, e =>
             {
                 set(!state);
                 // Or the row underneath would also take the click and navigate.
@@ -170,9 +170,9 @@ namespace Facet
             {
                 field.SetValueWithoutNotify(v.ToString(format));
                 s.SetValueWithoutNotify(v);
-                try { if (onChange != null) onChange(v); } catch (Exception ex) { Ui.Log("Slider handler threw: " + ex.Message); }
+                Safe.Run(Host.For(s), "Slider handler", () => { if (onChange != null) onChange(v); });
             });
-            s.RegisterValueChangedCallback(e => set(e.newValue));
+            Events.On<ChangeEvent<float>>(s, e => set(e.newValue));
             return s;
         }
 
@@ -188,8 +188,8 @@ namespace Facet
             Skin.When<TextField>(f, Skin.Field);
             Cursors.Set(f, Cursors.Kind.Text);
             Action apply = () => { if (!commit(f.value)) f.SetValueWithoutNotify(initial); };
-            f.RegisterCallback<BlurEvent>(_ => apply());
-            f.RegisterCallback<KeyDownEvent>(e =>
+            Events.On<BlurEvent>(f, _ => apply());
+            Events.On<KeyDownEvent>(f, e =>
             {
                 if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) apply();
             });
@@ -218,9 +218,9 @@ namespace Facet
             {
                 field.SetValueWithoutNotify(v.ToString());
                 s.SetValueWithoutNotify(v);
-                try { if (onChange != null) onChange(v); } catch (Exception ex) { Ui.Log("IntSlider handler threw: " + ex.Message); }
+                Safe.Run(Host.For(s), "IntSlider handler", () => { if (onChange != null) onChange(v); });
             });
-            s.RegisterValueChangedCallback(e => set(e.newValue));
+            Events.On<ChangeEvent<int>>(s, e => set(e.newValue));
             return s;
         }
 
@@ -239,7 +239,7 @@ namespace Facet
                 current = v;
                 for (int j = 0; j < buttons.Count; j++) Ui.Highlight(buttons[j], j == current);
                 if (v >= 0 && v < buttons.Count) Anim.Pop(buttons[v]);
-                try { if (onChange != null) onChange(v); } catch (Exception e) { Ui.Log("Choice handler threw: " + e.Message); }
+                Safe.Run(Host.For(host), "Choice handler", () => { if (onChange != null) onChange(v); });
             });
             for (int i = 0; i < (options != null ? options.Count : 0); i++)
             {
@@ -263,10 +263,10 @@ namespace Facet
             var set = Track(label, value ?? "", v =>
             {
                 f.SetValueWithoutNotify(v);
-                try { if (onChange != null) onChange(v); } catch (Exception e) { Ui.Log("Text handler threw: " + e.Message); }
+                Safe.Run(Host.For(f), "Text handler", () => { if (onChange != null) onChange(v); });
             });
-            f.RegisterCallback<BlurEvent>(_ => set(f.value));
-            f.RegisterCallback<KeyDownEvent>(e => { if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) set(f.value); });
+            Events.On<BlurEvent>(f, _ => set(f.value));
+            Events.On<KeyDownEvent>(f, e => { if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) set(f.value); });
             host.Add(f);
             return f;
         }
@@ -287,8 +287,7 @@ namespace Facet
 
         private static void Commit(TextField f, Action<string> onChange)
         {
-            try { if (onChange != null) onChange(f.value); }
-            catch (Exception e) { Ui.Log("Text handler threw: " + e.Message); }
+            Safe.Run(Host.For(f), "Text handler", () => { if (onChange != null) onChange(f.value); });
         }
 
         public static Button Action(VisualElement parent, string label, string buttonText,
@@ -319,7 +318,7 @@ namespace Facet
                 armed = false;
                 b.text = buttonText;
                 b.style.backgroundColor = Theme.For(b).RowAlt;
-                try { if (onConfirm != null) onConfirm(); } catch (Exception e) { Ui.Log("Danger handler threw: " + e.Message); }
+                Safe.Run(Host.For(b), "Danger handler", () => { if (onConfirm != null) onConfirm(); });
             }, host);
             b.style.color = Theme.For(b).Danger;
             return b;
@@ -333,7 +332,7 @@ namespace Facet
         {
             var p = new ColourPicker(parent, label, value, hasAlpha, Track(label, value, c =>
             {
-                try { if (onChange != null) onChange(c); } catch (Exception e) { Ui.Log("Colour handler threw: " + e.Message); }
+                Safe.Run(Host.For(parent), "Colour handler", () => { if (onChange != null) onChange(c); });
             }));
             if (!string.IsNullOrEmpty(tooltip)) p.Root.tooltip = tooltip;
             return p.Root;
@@ -352,20 +351,13 @@ namespace Facet
             {
                 b.text = Words.Own("press a key…");
                 Ui.Highlight(b, true);
-                try
+                bool ok = Safe.Run(Host.For(b), "Key capture", () => beginCapture(name =>
                 {
-                    beginCapture(name =>
-                    {
-                        b.text = string.IsNullOrEmpty(name) ? Words.Own("unbound") : name;
-                        Ui.Highlight(b, false);
-                        Anim.Pop(b);
-                    });
-                }
-                catch (Exception e)
-                {
-                    Ui.Log("Key capture threw: " + e.Message);
-                    b.text = current; Ui.Highlight(b, false);
-                }
+                    b.text = string.IsNullOrEmpty(name) ? Words.Own("unbound") : name;
+                    Ui.Highlight(b, false);
+                    Anim.Pop(b);
+                }));
+                if (!ok) { b.text = current; Ui.Highlight(b, false); }
             }, host);
             b.style.minWidth = 110f;
             return b;
@@ -396,7 +388,7 @@ namespace Facet
             body.style.display = open ? DisplayStyle.Flex : DisplayStyle.None;
             body.style.marginBottom = Tokens.Gap;
 
-            head.RegisterCallback<ClickEvent>(_ =>
+            Events.On<ClickEvent>(head, _ =>
             {
                 open = !open;
                 _folded[title] = open;
@@ -467,7 +459,7 @@ namespace Facet
                 armed = false;
                 b.text = text;
                 b.style.backgroundColor = Theme.For(b).RowAlt;
-                try { if (onConfirm != null) onConfirm(); } catch (Exception e) { Ui.Log("Danger handler threw: " + e.Message); }
+                Safe.Run(Host.For(b), "Danger handler", () => { if (onConfirm != null) onConfirm(); });
             }, row);
             b.style.color = Theme.For(b).Danger;
             return b;
@@ -488,10 +480,10 @@ namespace Facet
                why the subpages could not be opened. */
             var nav = Nav.Active;
             row.pickingMode = PickingMode.Position;
-            row.RegisterCallback<ClickEvent>(_ =>
+            Events.On<ClickEvent>(row, _ =>
             {
                 if (nav != null) nav.Push(label, build);
-                else Ui.Log("SubPage '" + label + "': no Nav was building this page");
+                else Host.For(row).Log("SubPage '" + label + "': no Nav was building this page");
             });
             return host;
         }
@@ -515,7 +507,7 @@ namespace Facet
 
             var nav = Nav.Active;   // see SubPage: Active is null by the time a click arrives
             row.pickingMode = PickingMode.Position;
-            row.RegisterCallback<ClickEvent>(_ =>
+            Events.On<ClickEvent>(row, _ =>
             {
                 // The switch stops its own clicks; anything else on the row opens the page.
                 if (nav != null && build != null) nav.Push(label, build);

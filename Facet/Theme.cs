@@ -1,5 +1,4 @@
 using System;
-using System.Runtime.CompilerServices;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -84,7 +83,7 @@ namespace Facet
         private static Color Lean(float grey, Color accent, float amount)
             => Color.Lerp(new Color(grey, grey, grey, 1f), accent, amount);
 
-        private static readonly ConditionalWeakTable<VisualElement, Theme> _of = new ConditionalWeakTable<VisualElement, Theme>();
+        private sealed class Ref { public Theme Theme; }
         private static Theme _building;
         internal static Theme Building { get { return _building; } }
 
@@ -92,8 +91,7 @@ namespace Facet
         public static void Set(VisualElement e, Theme t)
         {
             if (e == null) return;
-            _of.Remove(e);
-            if (t != null) _of.Add(e, t);
+            if (t != null) Data.Get<Ref>(e).Theme = t; else Data.Clear<Ref>(e);
         }
 
         /// The scheme `e` should draw with. Null-safe; never returns null.
@@ -101,10 +99,10 @@ namespace Facet
         {
             for (var x = e; x != null; x = x.hierarchy.parent)
             {
-                Theme t;
-                if (_of.TryGetValue(x, out t)) return t;
+                var r = Data.Find<Ref>(x);
+                if (r != null) return r.Theme;
             }
-            return _building ?? Default;
+            return _building ?? Host.For(e).Theme;
         }
 
         /// For a build that happens before its elements join the tree: `using (Theme.Use(t)) { … }`.

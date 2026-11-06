@@ -148,12 +148,12 @@ namespace Facet
             /* TrickleDown, so this is seen on the way IN — a ScrollView that handles the wheel
                stops it bubbling, and a bubbling handler would therefore never hear about exactly
                the case it needs to know about. */
-            root.RegisterCallback<WheelEvent>(_ =>
+            Events.On<WheelEvent>(root, _ =>
             {
                 _lastWheelFrame = Time.frameCount;
                 if (_sawWheelEvent) return;
                 _sawWheelEvent = true;
-                Ui.Log("Skin: host delivers WheelEvent; polling stands down on frames it arrives");
+                Host.For(root).Log("Skin: host delivers WheelEvent; polling stands down on frames it arrives");
             }, TrickleDown.TrickleDown);
         }
 
@@ -192,7 +192,7 @@ namespace Facet
             if (!_reported)
             {
                 _reported = true;
-                Ui.Log("Skin wheel: delta=" + delta.ToString("0.##")
+                Host.For(root).Log("Skin wheel: delta=" + delta.ToString("0.##")
                        + " screen=" + pointerScreen.x.ToString("0") + "," + pointerScreen.y.ToString("0")
                        + " panel=" + point.x.ToString("0") + "," + point.y.ToString("0")
                        + " scrollviews=" + lists.Count
@@ -221,7 +221,7 @@ namespace Facet
                 if (!_reportedFit)
                 {
                     _reportedFit = true;
-                    Ui.Log("Skin wheel: nothing to scroll here — content " + target.contentContainer.layout.height.ToString("0")
+                    Host.For(root).Log("Skin wheel: nothing to scroll here — content " + target.contentContainer.layout.height.ToString("0")
                            + " fits the " + view.ToString("0") + " view");
                 }
                 return;
@@ -254,7 +254,7 @@ namespace Facet
             if (!_movedOnce)
             {
                 _movedOnce = true;
-                Ui.Log("Skin wheel: scrolled " + before.ToString("0") + " -> " + o.y.ToString("0")
+                Host.For(root).Log("Skin wheel: scrolled " + before.ToString("0") + " -> " + o.y.ToString("0")
                        + " of " + max.ToString("0"));
             }
         }
@@ -268,8 +268,8 @@ namespace Facet
             if (t == null) return;
             if (e.panel != null) { apply(t); return; }
             EventCallback<AttachToPanelEvent> cb = null;
-            cb = _ => { apply(t); e.UnregisterCallback(cb); };
-            e.RegisterCallback(cb);
+            cb = _ => { apply(t); Events.Off(e, cb); };
+            Events.On(e, cb);
         }
     }
 }

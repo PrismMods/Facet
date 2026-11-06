@@ -53,11 +53,11 @@ namespace Facet
             // Unity 6 only; Unity 2022 has no placeholder, so it is set by name.
             var ph = typeof(ITextEdition).GetProperty("placeholder");
             if (ph != null) ph.SetValue(Search.textEdition, Words.T(placeholder), null);
-            Search.RegisterValueChangedCallback(e =>
+            Events.On<ChangeEvent<string>>(Search, e =>
             {
                 _searchClear.style.display = string.IsNullOrEmpty(e.newValue)
                     ? DisplayStyle.None : DisplayStyle.Flex;
-                if (onChange != null) onChange(e.newValue);
+                if (onChange != null) Safe.Run(_host, "Window.Search", () => onChange(e.newValue));
             });
         }
 
@@ -83,6 +83,8 @@ namespace Facet
         public Action OnRaise;
 
         private readonly string _id;
+        private readonly Host _host;
+        private readonly string _key;
         private Rect _rect;
         private float _scale = 1f;
         private Vector2 _dragFrom;
@@ -90,26 +92,12 @@ namespace Facet
 
         /* Where each window was last left, by id.
 
-           Kept in memory AND written through Store when a host provides one. Facet cannot own
-           a settings file — it has no idea where a given
-           mod keeps its data — so the host supplies two delegates and gets to decide the format.
-           Without them the geometry still survives a reopen, just not a restart. */
+           Kept in memory AND written through the host's Write when it has one. Facet cannot own
+           a settings file — it has no idea where a given mod keeps its data — so the host supplies
+           Read and Write and decides the format. Without them the geometry still survives a
+           reopen, just not a restart. Keyed by host as well, so two mods' "main" do not collide. */
         private static readonly Dictionary<string, Rect> _saved = new Dictionary<string, Rect>();
         private static readonly Dictionary<string, float> _savedScale = new Dictionary<string, float>();
-
-        /// Host-provided persistence. Read returns null for an unknown key.
-        public static Func<string, string> Read;
-        public static Action<string, string> Write;
-
-        private static string Load(string key)
-        {
-            try { return Read != null ? Read(key) : null; } catch { return null; }
-        }
-
-        private static void Save(string key, string value)
-        {
-            try { if (Write != null) Write(key, value); } catch { }
-        }
 
         /* "x,y,w,h,scale" — invariant culture, because a machine with a comma decimal separator
            would otherwise write a string it cannot read back. */
@@ -133,13 +121,15 @@ namespace Facet
         public Window(VisualElement parent, string id, string title, Rect initial, Action onClose = null)
         {
             _id = id ?? title ?? "window";
+            _host = Host.For(parent);
+            _key = _host.Name + "|" + _id;
             Rect stored; float storedScale;
-            if (_saved.ContainsKey(_id))
+            if (_saved.ContainsKey(_key))
             {
-                _rect = _saved[_id];
-                _scale = _savedScale.ContainsKey(_id) ? _savedScale[_id] : 1f;
+                _rect = _saved[_key];
+                _scale = _savedScale.ContainsKey(_key) ? _savedScale[_key] : 1f;
             }
-            else if (TryParse(Load("window." + _id), out stored, out storedScale))
+            else if (TryParse(_host.Read("window." + _id), out stored, out storedScale))
             {
                 _rect = stored; _scale = storedScale;
             }
@@ -237,8 +227,8 @@ namespace Facet
                 Ui.SetPadding(close, 0f);
                 close.style.unityTextAlign = TextAnchor.MiddleCenter;
                 close.style.fontSize = Tokens.FontSize;
-                close.RegisterCallback<MouseEnterEvent>(_ => close.style.backgroundColor = Theme.For(close).Danger);
-                close.RegisterCallback<MouseLeaveEvent>(_ => close.style.backgroundColor = Color.clear);
+                Events.On<MouseEnterEvent>(close, _ => close.style.backgroundColor = Theme.For(close).Danger);
+                Events.On<MouseLeaveEvent>(close, _ => close.style.backgroundColor = Color.clear);
             }
 
             Body = Ui.Box(Root);
@@ -269,7 +259,7 @@ namespace Facet
             _footerHint.style.marginRight = 14f;   // clear of the resize grip
 
             // Click anywhere in the window to raise it above the other one.
-            Root.RegisterCallback<PointerDownEvent>(_ => { if (OnRaise != null) OnRaise(); });
+            Events.On<PointerDownEvent>(Root, _ => { if (OnRaise != null) Safe.Run(_host, "Window.OnRaise", OnRaise); });
 
             MakeDraggable(bar);
             MakeResizable();
@@ -306,7 +296,7 @@ namespace Facet
             set
             {
                 _scale = Mathf.Clamp(value, 0.6f, 2f);
-                _savedScale[_id] = _scale;
+                _savedScale[_key] = _scale;
                 Apply();
             }
         }
@@ -329,10 +319,10 @@ namespace Facet
             Root.style.width = _rect.width / _scale;
             Root.style.height = _rect.height / _scale;
             Root.style.scale = new Scale(new Vector2(_scale, _scale));
-            _saved[_id] = _rect;
-            _savedScale[_id] = _scale;
+            _saved[_key] = _rect;
+            _savedScale[_key] = _scale;
             var c = System.Globalization.CultureInfo.InvariantCulture;
-            Save("window." + _id, _rect.x.ToString(c) + "," + _rect.y.ToString(c) + ","
+            _host.Write("window." + _id, _rect.x.ToString(c) + "," + _rect.y.ToString(c) + ","
                                 + _rect.width.ToString(c) + "," + _rect.height.ToString(c) + ","
                                 + _scale.ToString(c));
         }
@@ -360,7 +350,7 @@ namespace Facet
 
         private void MakeDraggable(VisualElement bar)
         {
-            bar.RegisterCallback<PointerDownEvent>(e =>
+            Events.On<PointerDownEvent>(bar, e =>
             {
                 if (e.button != 0) return;
                 _dragFrom = e.position;
@@ -368,7 +358,7 @@ namespace Facet
                 bar.CapturePointer(e.pointerId);
                 e.StopPropagation();
             });
-            bar.RegisterCallback<PointerMoveEvent>(e =>
+            Events.On<PointerMoveEvent>(bar, e =>
             {
                 if (!bar.HasPointerCapture(e.pointerId)) return;
                 var d = (Vector2)e.position - _dragFrom;
@@ -377,7 +367,7 @@ namespace Facet
                 Clamp();
                 Apply();
             });
-            bar.RegisterCallback<PointerUpEvent>(e =>
+            Events.On<PointerUpEvent>(bar, e =>
             {
                 if (!bar.HasPointerCapture(e.pointerId)) return;
                 bar.ReleasePointer(e.pointerId);
@@ -414,7 +404,7 @@ namespace Facet
                     grip.Add(dot);
                 }
 
-            grip.RegisterCallback<PointerDownEvent>(e =>
+            Events.On<PointerDownEvent>(grip, e =>
             {
                 if (e.button != 0) return;
                 _dragFrom = e.position;
@@ -422,7 +412,7 @@ namespace Facet
                 grip.CapturePointer(e.pointerId);
                 e.StopPropagation();
             });
-            grip.RegisterCallback<PointerMoveEvent>(e =>
+            Events.On<PointerMoveEvent>(grip, e =>
             {
                 if (!grip.HasPointerCapture(e.pointerId)) return;
                 var d = (Vector2)e.position - _dragFrom;
@@ -431,7 +421,7 @@ namespace Facet
                 Clamp();
                 Apply();
             });
-            grip.RegisterCallback<PointerUpEvent>(e =>
+            Events.On<PointerUpEvent>(grip, e =>
             {
                 if (!grip.HasPointerCapture(e.pointerId)) return;
                 grip.ReleasePointer(e.pointerId);

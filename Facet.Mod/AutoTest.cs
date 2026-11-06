@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Diagnostics;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -85,6 +86,7 @@ namespace Facet.Mod
             Main.Log("AUTOTEST start screen " + Screen.width + "x" + Screen.height);
             yield return Run("SectionOpen", SectionOpen());
             yield return Run("SharedEscape", SharedEscape());
+            yield return Run("SectionHost", SectionHost());
             // Later tasks: yield return Run("Section...", Section...());
 
             Main.Log("AUTOTEST DONE pass=" + _pass + " fail=" + _fail);
@@ -108,6 +110,37 @@ namespace Facet.Mod
             }
         }
 
+
+        // Two consumers, one broken page: only the owner's log hears of it, and the drag of a window
+        // reaches its host's Write.
+        IEnumerator SectionHost()
+        {
+            var la = new List<string>(); var lb = new List<string>();
+            var a = Host.Create("A", o => o.Log = la.Add);
+            var b = Host.Create("B", o => o.Log = lb.Add);
+            var sa = new Surface(a, "FacetHostA", Layer.Window);
+            var sb = new Surface(b, "FacetHostB", Layer.Window);
+            var wa = new Window(sa.Root, "hosta", "Host A", new Rect(60, 60, 400, 300));
+            var wb = new Window(sb.Root, "hostb", "Host B", new Rect(500, 60, 400, 300));
+            new Nav(wa.Body, new[] { new NavItem("Boom", p => throw new InvalidOperationException("boom")) });
+            new Nav(wb.Body, new[] { new NavItem("Fine", p => Widgets.Info(p, "Fine", "ok")) });
+            yield return null; yield return null;
+            var ea = la.FindAll(m => m.StartsWith("[A] "));
+            Check(ea.Count == 1 && ea[0].Contains("Boom"), "A's list has one guard entry naming the page", string.Join(" | ", ea));
+            Check(!lb.Exists(m => m.StartsWith("[B] ") || m.Contains("Boom")), "B's list stays empty of A's failure");
+            Check(wa.Body.Query<Label>().ToList().Exists(l => l.text.Contains("failed to build")), "A's content shows the failed-to-build text");
+            Check(!wb.Body.Query<Label>().ToList().Exists(l => l.text.Contains("failed to build")), "B's content builds");
+            Check(ReferenceEquals(Host.For(wa.Body), a) && ReferenceEquals(Host.For(wb.Body), b), "Host.For finds each element's own host");
+            sa.Dispose(); sb.Dispose();
+
+            var w = Gallery.Open(); yield return null; yield return null;
+            string before; Gallery.Store.TryGetValue("window.Gallery", out before);
+            var bar = w.Root.hierarchy[0];
+            var from = Ctr(bar);
+            yield return Drag(from, from + new Vector2(60, -40));
+            string after; Gallery.Store.TryGetValue("window.Gallery", out after);
+            Check(after != null && after.Split(',').Length == 5 && after != before, "dragging the title bar writes x,y,w,h,scale to the host", before + " -> " + after);
+        }
 
         IEnumerator SharedEscape()
         {

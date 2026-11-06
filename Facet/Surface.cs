@@ -33,6 +33,15 @@ namespace Facet
 
         public Layer Layer { get; }
 
+        /// The consumer this surface was made for; everything under Root finds it with Host.For.
+        public Host Host { get; }
+
+        /* The host of the surface being made, for the static font code that logs while it runs.
+           ponytail: fonts are shared across hosts, so a line may go to the host that happened to
+           build last; per-host font caches if that ever matters. */
+        private static Host _ctx;
+        private static void L(string m) { (_ctx ?? Host.Fallback).Log(m); }
+
         public string Name { get; }
 
         private Theme _theme;
@@ -55,11 +64,13 @@ namespace Facet
         internal event Action Hidden;
 
         /// name is used for the GameObject, so it shows up in a hierarchy dump.
-        public Surface(string name, Layer layer, UnityEngine.TextCore.Text.FontAsset font = null)
+        public Surface(Host host, string name, Layer layer, UnityEngine.TextCore.Text.FontAsset font = null)
         {
+            Host = host ?? Host.Fallback;
+            _ctx = Host;
             Layer = layer;
             Name = name;
-            Ui.Log("Surface '" + name + "': creating UI Toolkit panel");
+            L("Surface '" + name + "': creating UI Toolkit panel");
             _settings = ScriptableObject.CreateInstance<PanelSettings>();
             _settings.name = name + "PanelSettings";
             // Empty rather than null: the panel works either way, but a null theme logs a warning
@@ -81,11 +92,12 @@ namespace Facet
             var doc = _go.AddComponent<UIDocument>();
             doc.panelSettings = _settings;
             Root = doc.rootVisualElement;
+            if (Root != null) Host.Attach(Root);
             // Built inside Theme.Use: keep that scheme, or the panel's later pages fall back to Default.
             if (Root != null && Theme.Building != null) Theme = Theme.Building;
             /* Null here is the failure that looks like nothing happening: the panel exists, the
                hotkey "works", and not one element is ever drawn. Worth its own line. */
-            Ui.Log("Surface '" + name + "': root " + (Root == null ? "NULL — nothing will render" : "ok")
+            L("Surface '" + name + "': root " + (Root == null ? "NULL — nothing will render" : "ok")
                    + ", font " + (font == null ? "none (text may be invisible)" : font.name));
             if (Root != null)
             {
@@ -100,14 +112,15 @@ namespace Facet
                 if (font != null)
                 {
                     Root.style.unityFontDefinition = FontDefinition.FromSDFFont(font);
-                    Ui.Log("Surface '" + name + "': SDF font " + font.name);
+                    L("Surface '" + name + "': SDF font " + font.name);
                 }
                 else SetFont(null);   // never leave a panel fontless; see Fallback
                 if (!FontsInherit) Root.schedule.Execute(() => HandDownFonts(Root, default(StyleFontDefinition))).Every(200);
                 if (!WarmUpStarted)
                 {
                     WarmUpStarted = true;   // before scheduling: the warm-up window is a surface too
-                    Root.schedule.Execute(WarmUp.Run).StartingIn(500);
+                    var first = Host;
+                    Root.schedule.Execute(() => WarmUp.Run(first)).StartingIn(500);
                 }
             }
         }
@@ -121,17 +134,17 @@ namespace Facet
            the first time this panel opened, and a panel with no font draws no text at all. */
         public void SetFont(Font font)
         {
-            if (Root == null) { Ui.Log("Surface: SetFont ignored, no root"); return; }
+            if (Root == null) { L("Surface: SetFont ignored, no root"); return; }
             if (font != null)
             {
                 Root.style.unityFontDefinition = FontDefinition.FromFont(font);
-                Ui.Log("Surface: font " + font.name);
+                L("Surface: font " + font.name);
                 return;
             }
             var fa = Fallback();
-            if (fa == null) { Ui.Log("Surface: NO FONT AVAILABLE — labels will be blank"); return; }
+            if (fa == null) { L("Surface: NO FONT AVAILABLE — labels will be blank"); return; }
             Root.style.unityFontDefinition = FontDefinition.FromSDFFont(fa);
-            Ui.Log("Surface: font " + fa.name + " (OS fallback)");
+            L("Surface: font " + fa.name + " (OS fallback)");
         }
 
         /* Before Unity 6 (a Unity 2022 game) a font set on an element does not reach its
@@ -183,7 +196,7 @@ namespace Facet
             _textSettings.name = "FacetPanelTextSettings";
             _textSettings.defaultFontAsset = preferred ?? Fallback();
             _textSettings.fallbackFontAssets = new System.Collections.Generic.List<FontAsset>();
-            Ui.Log("Surface: panel text settings, default font "
+            L("Surface: panel text settings, default font "
                    + (_textSettings.defaultFontAsset != null ? _textSettings.defaultFontAsset.name : "NONE"));
             return _textSettings;
         }
@@ -203,7 +216,7 @@ namespace Facet
         private static FontAsset MonoOnly()
         {
             if (_mono != null) return _mono;
-            _mono = FileFontAsset(_monoFiles, SamplePx)
+            _mono = FileFontAsset((_ctx != null ? _ctx.MonoFonts : null) ?? _monoFiles, SamplePx)
                  ?? (_osSdf == null ? FileFontAsset(_macMonoFiles, SamplePx) : null)
                  ?? OsFontAsset(new[] { "Menlo", "SF Mono", "Consolas", "DejaVu Sans Mono", "Noto Sans Mono", "Courier New", "monospace" }, SamplePx);
             return _mono;
@@ -274,7 +287,7 @@ namespace Facet
                 if (!System.IO.File.Exists(pair[0])) continue;
                 var fa = FromFile(pair[0], pointSize);
                 if (fa == null) continue;
-                Ui.Log("Surface: font file " + pair[0]);
+                L("Surface: font file " + pair[0]);
                 if (pair.Length > 1 && System.IO.File.Exists(pair[1])) AttachBold(fa, FromFile(pair[1], pointSize), pair[1]);
                 return fa;
             }
@@ -305,11 +318,11 @@ namespace Facet
                     fa.name = System.IO.Path.GetFileNameWithoutExtension(path);
                     string missing;
                     bool all = fa.TryAddCharacters(_preload, out missing);
-                    Ui.Log("Surface: preloaded " + fa.name + (all ? "" : " (missing: " + missing + ")"));
+                    L("Surface: preloaded " + fa.name + (all ? "" : " (missing: " + missing + ")"));
                 }
                 return fa;
             }
-            catch (Exception e) { Ui.Log("Surface: font file '" + path + "' failed: " + e.Message); return null; }
+            catch (Exception e) { L("Surface: font file '" + path + "' failed: " + e.Message); return null; }
         }
 
         /* A real bold face for FontStyle.Bold. Without one UI Toolkit fakes bold by dilating the
@@ -320,9 +333,9 @@ namespace Facet
         {
             if (regular == null || bold == null) return;
             var table = regular.fontWeightTable;
-            if (table == null || table.Length < 8) { Ui.Log("Surface: no weight table — bold stays synthesised"); return; }
+            if (table == null || table.Length < 8) { L("Surface: no weight table — bold stays synthesised"); return; }
             table[7].regularTypeface = bold;
-            Ui.Log("Surface: bold face " + what);
+            L("Surface: bold face " + what);
         }
 
         /* An OS font, built once. Cheap insurance: every mod has a different font pipeline and any
@@ -343,7 +356,7 @@ namespace Facet
         private static FontAsset Fallback()
         {
             if (_fallback != null) return _fallback;
-            _fallback = FileFontAsset(_sansFiles, SamplePx)
+            _fallback = FileFontAsset((_ctx != null ? _ctx.SansFonts : null) ?? _sansFiles, SamplePx)
                      ?? (_osSdf == null ? FileFontAsset(_macSansFiles, SamplePx) : null)
                      ?? OsFontAsset(new[] { "Helvetica Neue", "Helvetica", "Arial", "Segoe UI", "Noto Sans", "DejaVu Sans", "Liberation Sans", "Cantarell", "FreeSans" }, SamplePx);
             /* The monospace face as the sans face's fallback: Arial (macOS on 2.9) lacks the panel
@@ -376,10 +389,10 @@ namespace Facet
                            SDF explicitly so faux-bold has an edge to dilate. */
                         fa = OsFont(family, style, pointSize);
                     }
-                    catch (Exception e) { Ui.Log("Surface: OS font '" + family + "' (" + style + ") failed: " + e.Message); continue; }
+                    catch (Exception e) { L("Surface: OS font '" + family + "' (" + style + ") failed: " + e.Message); continue; }
                     if (fa != null)
                     {
-                        Ui.Log("Surface: OS font asset '" + family + "' style '" + style + "'");
+                        L("Surface: OS font asset '" + family + "' style '" + style + "'");
                         // The family's own bold, where the OS has one (macOS's Helvetica Neue does).
                         FontAsset bold = null;
                         try { bold = OsFont(family, "Bold", pointSize); }
@@ -388,7 +401,7 @@ namespace Facet
                         return fa;
                     }
                 }
-            Ui.Log("Surface: no OS font asset matched any candidate");
+            L("Surface: no OS font asset matched any candidate");
             return null;
         }
 
@@ -424,7 +437,7 @@ namespace Facet
         {
             var h = Hidden;
             if (h == null) return;
-            try { h(); } catch (Exception e) { Ui.Log("Surface Hidden handler threw: " + e.Message); }
+            Safe.Run(Host, "Surface.Hidden", h);
         }
 
         /// One-shot geometry report: proves layout actually ran and where the element landed.
@@ -436,12 +449,12 @@ namespace Facet
             cb = _ =>
             {
                 var r = e.worldBound;
-                Ui.Log(label + ": laid out at " + Mathf.RoundToInt(r.x) + "," + Mathf.RoundToInt(r.y)
+                L(label + ": laid out at " + Mathf.RoundToInt(r.x) + "," + Mathf.RoundToInt(r.y)
                        + " size " + Mathf.RoundToInt(r.width) + "x" + Mathf.RoundToInt(r.height)
                        + " (screen " + Screen.width + "x" + Screen.height + ")");
-                e.UnregisterCallback(cb);
+                Events.Off(e, cb);
             };
-            e.RegisterCallback(cb);
+            Events.On(e, cb);
         }
 
         /* Raise above everything else in this surface's layer. sortingOrder is what orders separate
@@ -465,7 +478,7 @@ namespace Facet
             {
                 // Park this surface above the band so the renumber (all versions) ranks it topmost.
                 Order = _bandBase[b] + _bandSpan[b];
-                _bandNext[b] = Coord.Renumber(Input.Entries, b, _bandBase[b], Ui.Log);
+                _bandNext[b] = Coord.Renumber(Input.Entries, b, _bandBase[b], Host.Fallback.LogFn);
             }
             else if (_settings != null) _settings.sortingOrder = _bandNext[b] += 1f;
         }

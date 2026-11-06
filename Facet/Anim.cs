@@ -95,11 +95,11 @@ namespace Facet
             if (ms <= 0 || e.panel == null)
             {
                 apply(e, to);
-                if (done != null) done();
+                if (done != null) Safe.Run(Host.For(e), "Anim.done", done);
                 return;
             }
             var anim = e.experimental.animation.Start(from, to, ms, (el, v) => apply(el, v));
-            if (done != null) anim.OnCompleted(() => done());
+            if (done != null) anim.OnCompleted(() => Safe.Run(Host.For(e), "Anim.done", done));
         }
 
         /// Ease-out cubic. Fast at the start, settles at the end — reads as responsive rather than

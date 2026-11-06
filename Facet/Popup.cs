@@ -28,7 +28,7 @@ namespace Facet
         private Surface _owner;
         private EventCallback<DetachFromPanelEvent> _onDetach;
 
-        private static Surface _host;
+        private static Surface _popups;
         private static readonly List<Popup> _open = new List<Popup>();
 
         private const float Gap = 4f;      // between anchor and card
@@ -37,12 +37,11 @@ namespace Facet
         /// Open a popup under anchor (above it when there is no room below). build fills Content.
         public static Popup Open(VisualElement anchor, Action<VisualElement> build, Action onClose = null)
         {
-            if (anchor == null || anchor.panel == null) { Ui.Log("Popup: anchor is not on a panel"); return null; }
-            var host = Host();
-            if (host == null || host.Root == null) return null;
-            var p = new Popup(anchor, onClose, host.Root);
-            try { build?.Invoke(p.Content); }
-            catch (Exception e) { Ui.Log("Popup build threw: " + e.Message); }
+            if (anchor == null || anchor.panel == null) { Facet.Host.For(anchor).Log("Popup: anchor is not on a panel"); return null; }
+            var surface = PopupSurface();
+            if (surface == null || surface.Root == null) return null;
+            var p = new Popup(anchor, onClose, surface.Root);
+            if (build != null) Safe.Run(Facet.Host.For(anchor), "Popup.build", () => build(p.Content));
             return p;
         }
 
@@ -63,14 +62,13 @@ namespace Facet
                     Ui.SetRadius(row, 4f);
                     var label = Ui.Text(items[i], row, Tokens.FontSizeSmall, i == selected ? Theme.For(row).Accent : Theme.For(row).Text);
                     label.pickingMode = PickingMode.Ignore;
-                    row.RegisterCallback<MouseEnterEvent>(_ => row.style.backgroundColor = Theme.For(row).RowHover);
-                    row.RegisterCallback<MouseLeaveEvent>(_ => row.style.backgroundColor = Color.clear);
-                    row.RegisterCallback<PointerUpEvent>(e =>
+                    Events.On<MouseEnterEvent>(row, _ => row.style.backgroundColor = Theme.For(row).RowHover);
+                    Events.On<MouseLeaveEvent>(row, _ => row.style.backgroundColor = Color.clear);
+                    Events.On<PointerUpEvent>(row, e =>
                     {
                         if (e.button != 0) return;
                         menu?.Close();
-                        try { onPick?.Invoke(index); }
-                        catch (Exception ex) { Ui.Log("Popup.Menu handler threw: " + ex.Message); }
+                        if (onPick != null) Safe.Run(Facet.Host.For(anchor), "Popup.Menu handler", () => onPick(index));
                     });
                 }
             });
@@ -87,13 +85,14 @@ namespace Facet
             _catcher.style.left = 0f; _catcher.style.top = 0f;
             _catcher.style.right = 0f; _catcher.style.bottom = 0f;   // all four, or it sizes to nothing
             _catcher.pickingMode = PickingMode.Position;
-            _catcher.RegisterCallback<PointerDownEvent>(e => { e.StopPropagation(); Close(); });
+            Events.On<PointerDownEvent>(_catcher, e => { e.StopPropagation(); Close(); });
             root.Add(_catcher);
 
             // The anchor's scheme, not the shared popup host's: a menu opened from a Quartz window is Quartz's.
             var theme = Theme.For(anchor);
             using (Theme.Use(theme)) Content = Ui.Card();
             Theme.Set(Content, theme);
+            Host.For(anchor).Attach(Content);   // its handlers log to the consumer that opened it, not to Facet
             Content.style.position = Position.Absolute;
             Content.style.paddingLeft = 4f; Content.style.paddingRight = 4f;
             Content.style.paddingTop = 4f; Content.style.paddingBottom = 4f;
@@ -110,7 +109,7 @@ namespace Facet
                 if (_owner.Root != null) Content.style.unityFontDefinition = _owner.Root.style.unityFontDefinition;
             }
             _onDetach = _ => Close();
-            anchor.RegisterCallback(_onDetach);
+            Events.On(anchor, _onDetach);
 
             /* Match the window's scale: Window magnifies its contents with a transform, which
                worldBound includes and layout does not, so their ratio is the scale in effect. */
@@ -124,13 +123,13 @@ namespace Facet
             EventCallback<GeometryChangedEvent> place = null;
             place = _ =>
             {
-                Content.UnregisterCallback(place);
+                Events.Off(Content, place);
                 Place(s);
             };
-            Content.RegisterCallback(place);
+            Events.On(Content, place);
 
             _open.Add(this);
-            _host.Visible = true;
+            _popups.Visible = true;
         }
 
         /* Every Facet surface shares one PanelSettings scale, so the anchor's panel coordinates are
@@ -141,7 +140,7 @@ namespace Facet
             var a = _anchor.worldBound;
             // The panel's own size: the host surface was only just attached and has no layout yet,
             // which clamped every first popup to the top margin.
-            var screen = Content.panel != null ? Content.panel.visualTree.layout : _host.Root.layout;
+            var screen = Content.panel != null ? Content.panel.visualTree.layout : _popups.Root.layout;
             float w = Content.layout.width * scale, h = Content.layout.height * scale;
 
             float top = a.yMax + Gap;
@@ -158,12 +157,11 @@ namespace Facet
         {
             if (!_open.Remove(this)) return;
             if (_owner != null) _owner.Hidden -= Close;
-            _anchor.UnregisterCallback(_onDetach);
+            Events.Off(_anchor, _onDetach);
             _catcher.RemoveFromHierarchy();
             Content.RemoveFromHierarchy();
-            if (_open.Count == 0 && _host != null) _host.Visible = false;
-            try { _onClose?.Invoke(); }
-            catch (Exception e) { Ui.Log("Popup onClose threw: " + e.Message); }
+            if (_open.Count == 0 && _popups != null) _popups.Visible = false;
+            if (_onClose != null) Safe.Run(Facet.Host.For(_anchor), "Popup.onClose", _onClose);
         }
 
         /// Close every open popup — for a host tearing its UI down.
@@ -177,23 +175,23 @@ namespace Facet
         {
             for (var e = anchor; e != null; e = e.parent)
                 foreach (var s in Ui.Stack)
-                    if (s != _host && s.Root == e) return s;
+                    if (s != _popups && s.Root == e) return s;
             return null;
         }
 
-        private static Surface Host()
+        private static Surface PopupSurface()
         {
-            if (_host != null && _host.Root != null) return _host;
-            _host = new Surface("FacetPopups", Layer.Popup);
-            if (_host.Root == null) return _host;
-            _host.EscapeHandler = () =>
+            if (_popups != null && _popups.Root != null) return _popups;
+            _popups = new Surface(Facet.Host.Fallback, "FacetPopups", Layer.Popup);
+            if (_popups.Root == null) return _popups;
+            _popups.EscapeHandler = () =>
             {
                 if (_open.Count == 0) return false;
                 _open[_open.Count - 1].Close();
                 return true;
             };
-            _host.Visible = false;
-            return _host;
+            _popups.Visible = false;
+            return _popups;
         }
     }
 }

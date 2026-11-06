@@ -4,8 +4,8 @@ using Facet;
 
 static class FacetTest {
     static int _fail;
-    static void Check(bool ok, string what) {
-        if (!ok) { _fail++; Console.WriteLine("FAIL: " + what); }
+    static void Check(bool ok, string what, string detail = "") {
+        if (!ok) { _fail++; Console.WriteLine("FAIL: " + what + " " + detail); }
     }
 
     static void Main() {
@@ -56,6 +56,21 @@ static class FacetTest {
         var re = new List<object[]> { mr(ao), mr(bo) };
         float hi = Coord.Renumber(re, 0, 10f, lg);
         Check(hi == 14f && ao[0] == 11f && bo[0] == 12f && ao[1] == 13f && bo[1] == 14f, "Renumber ranks orders across versions");
+
+        Throttle.Reset();
+        var slog = new List<string>();
+        Action<string> sl = m => slog.Add(m);
+        Action boom = () => { throw new InvalidOperationException("bad"); };
+        Check(!Safe.Run("A", "site", boom, sl), "Safe.Run returns false when the action throws");
+        Check(slog.Count == 1 && slog[0].StartsWith("[A] site: bad @ "), "...and logs owner, site, message and the first stack line", slog.Count > 0 ? slog[0] : "none");
+        Safe.Run("A", "site", boom, sl);
+        Check(slog.Count == 1, "a second throw from the same site inside 10 s logs nothing");
+        Safe.Run("B", "site", boom, sl);
+        Check(slog.Count == 2, "another owner at the same site is logged");
+        Check(Safe.Run("A", "ok", () => { }, sl), "Safe.Run returns true when the action runs");
+        Check(Safe.Get("A", "get", () => { if (slog != null) throw new Exception("x"); return 5; }, 7, sl) == 7, "Safe.Get returns the fallback on a throw");
+        Check(Safe.Get("A", "get2", () => 5, 7, sl) == 5, "Safe.Get returns the value otherwise");
+        Check(Safe.Run("A", "nolog", boom, null) == false, "a null log is tolerated");
         Console.WriteLine(_fail == 0 ? "ALL PASS" : _fail + " FAILED");
     }
 }

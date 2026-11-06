@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -22,11 +23,21 @@ namespace Facet.Mod
         public static Model Model { get; private set; } = new Model();
         static Window _win;
 
+        /// What the Gallery's host was asked to persist, by key.
+        public static readonly Dictionary<string, string> Store = new Dictionary<string, string>();
+
+        public static readonly Host Host = Host.Create("Gallery", o =>
+        {
+            o.Log = m => Main.Log("[ui] " + m);
+            o.Read = k => Store.TryGetValue(k, out var v) ? v : null;
+            o.Write = (k, v) => Store[k] = v;
+        });
+
         public static Window Open()
         {
             if (Surface != null) { Surface.Visible = true; return _win; }
-            Surface = new Surface("FacetGallery", Layer.Window);
-            _win = new Window(Surface.Root, "facet-gallery", "Facet Gallery", new Rect(120, 80, 640, 640), Close);
+            Surface = new Surface(Host, "FacetGallery", Layer.Window);
+            _win = new Window(Surface.Root, "Gallery", "Facet Gallery", new Rect(120, 80, 640, 640), Close);
             var scroll = new ScrollView();
             Skin.Scroll(scroll);
             scroll.style.flexGrow = 1f; scroll.style.minHeight = 0f;

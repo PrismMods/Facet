@@ -80,7 +80,7 @@ namespace Facet
         private static int Score(string text, string query)
         {
             if (string.IsNullOrEmpty(text)) return -1;
-            if (Scorer != null) return Scorer(text, query);
+            if (Scorer != null) return Safe.Get(Host.Fallback, "SearchIndex.Scorer", () => Scorer(text, query), -1);
             return text.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0 ? 0 : -1;
         }
     }

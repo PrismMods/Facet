@@ -49,14 +49,14 @@ namespace Facet
 
         public static bool HeldThisFrame => Time.frameCount == _holdFrame;
 
-        public static bool AnyWindowOpen { get { return Coord.Any(Entries, 2, Ui.Log); } }
-        public static bool TextFocused { get { return Coord.Any(Entries, 3, Ui.Log); } }
-        public static bool BlocksGameInput { get { return Coord.Any(Entries, 4, Ui.Log); } }
+        public static bool AnyWindowOpen { get { return Coord.Any(Entries, 2, Host.Fallback.LogFn); } }
+        public static bool TextFocused { get { return Coord.Any(Entries, 3, Host.Fallback.LogFn); } }
+        public static bool BlocksGameInput { get { return Coord.Any(Entries, 4, Host.Fallback.LogFn); } }
 
         public static bool PointerOverWindow(Vector2 screen)
         {
             foreach (var e in Coord.Snapshot(Entries))
-                if (Coord.Pointer(e, screen.x, screen.y, Ui.Log)) return true;
+                if (Coord.Pointer(e, screen.x, screen.y, Host.Fallback.LogFn)) return true;
             return false;
         }
 
@@ -68,7 +68,7 @@ namespace Facet
         {
             if (_stamp[0] == Time.frameCount) return _stamp[1] != 0f;
             _stamp[0] = Time.frameCount; _stamp[1] = 0f;
-            if (Coord.TakeEscape(Entries, Ui.Log)) _stamp[1] = 1f;
+            if (Coord.TakeEscape(Entries, Host.Fallback.LogFn)) _stamp[1] = 1f;
             return _stamp[1] != 0f;
         }
 
@@ -95,16 +95,15 @@ namespace Facet
                 // The focus controller is the shared panel's, so only a field inside THIS surface counts.
                 if (focused != null && s.Root.Contains(focused))
                     for (var e = focused; e != null; e = e.parent)
-                        if (IsTextInput(e.GetType())) { focused.Blur(); Ui.Log("Escape: blurred a field in " + s.Name); return true; }
+                        if (IsTextInput(e.GetType())) { focused.Blur(); s.Host.Log("Escape: blurred a field in " + s.Name); return true; }
                 if (s.EscapeHandler != null)
                 {
-                    bool r;
-                    try { r = s.EscapeHandler(); Ui.Log("Escape: " + s.Name + " handler -> " + r); }
-                    catch (Exception e) { Ui.Log("Escape handler threw: " + e.Message); r = true; }
+                    bool r = Safe.Get(s.Host, "Escape handler of " + s.Name, s.EscapeHandler, true);
+                    s.Host.Log("Escape: " + s.Name + " handler -> " + r);
                     return r;
                 }
                 s.Visible = false;
-                Ui.Log("Escape: hid " + s.Name);
+                s.Host.Log("Escape: hid " + s.Name);
                 return true;
             }
             return false;

@@ -13,13 +13,6 @@ namespace Facet
        factories do not cover is just UI Toolkit and needs no escape hatch. */
     public static class Ui
     {
-        /* Where this half reports what it did. The game prints "Mods detected! Disabling exception
-           capturing", so a throw in here reaches no log at all and a broken panel is
-           indistinguishable from a key that did nothing. Each mod points this at its own log. */
-        public static Action<string> Log = _ => { };
-
-        static Ui() { History.Log = m => Log(m); }
-
         /* How many Facet windows are on screen.
 
            The mods need this for the same reason each of them already guards its own panels: the
@@ -113,7 +106,8 @@ namespace Facet
 
         public static Button Btn(string text, Action onClick, VisualElement parent = null)
         {
-            var b = new Button(onClick != null ? () => onClick() : (Action)null) { text = Words.T(text ?? "") };
+            var b = new Button { text = Words.T(text ?? "") };
+            if (onClick != null) b.clicked += () => Safe.Run(Host.For(b), "Button '" + b.text + "'", onClick);
             var t = Theme.For(parent);
             var c = new BtnColors { Rest = t.RowAlt, Hover = t.RowHover, Text = t.Text };
             b.userData = c;
@@ -125,8 +119,8 @@ namespace Facet
             SetPadding(b, 5f);
             b.style.marginLeft = 0f; b.style.marginRight = Tokens.Gap;
             b.style.marginTop = 0f; b.style.marginBottom = 0f;
-            b.RegisterCallback<MouseEnterEvent>(_ => b.style.backgroundColor = c.Hover);
-            b.RegisterCallback<MouseLeaveEvent>(_ => b.style.backgroundColor = c.Rest);
+            Events.On<MouseEnterEvent>(b, _ => b.style.backgroundColor = c.Hover);
+            Events.On<MouseLeaveEvent>(b, _ => b.style.backgroundColor = c.Rest);
             parent?.Add(b);
             return b;
         }

@@ -33,13 +33,9 @@ namespace Facet.Mod
                 return File.Exists(p) ? Assembly.LoadFrom(p) : null;
             };
             e.OnUpdate = (m, dt) => Tick();
-            Hook();
             Log("Facet.Mod loaded");
             return true;
         }
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        static void Hook() => Ui.Log = m => Log("[ui] " + m);
 
         static void Tick()
         {

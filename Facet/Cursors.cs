@@ -26,11 +26,11 @@ namespace Facet
         public static void Set(VisualElement e, Kind kind)
         {
             if (e == null) return;
-            e.RegisterCallback<MouseEnterEvent>(_ => Apply(kind));
-            e.RegisterCallback<MouseLeaveEvent>(_ => Apply(Kind.Default));
+            Events.On<MouseEnterEvent>(e, _ => Apply(kind));
+            Events.On<MouseLeaveEvent>(e, _ => Apply(Kind.Default));
             // A panel can be hidden with the pointer still over it, which would otherwise strand
             // the cursor in whatever shape it last took.
-            e.RegisterCallback<DetachFromPanelEvent>(_ => Apply(Kind.Default));
+            Events.On<DetachFromPanelEvent>(e, _ => Apply(Kind.Default));
         }
 
         public static void Apply(Kind kind)
@@ -55,7 +55,7 @@ namespace Facet
                         break;
                 }
             }
-            catch (Exception e) { Ui.Log("Cursors: " + e.Message); }
+            catch (Exception e) { Host.Fallback.Log("Cursors: " + e.Message); }
         }
 
         private const int S = 23;   // odd, so the shapes have a true centre to point from

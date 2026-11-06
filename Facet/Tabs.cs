@@ -58,7 +58,7 @@ namespace Facet
             Selected = index;
             Paint();
             Anim.Pop(_buttons[index]);
-            if (_onSelect != null) _onSelect(index);
+            if (_onSelect != null) Safe.Run(Host.For(_bar), "Tabs.onSelect", () => _onSelect(index));
         }
 
         private void Paint()
