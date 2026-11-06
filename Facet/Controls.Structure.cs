@@ -12,14 +12,17 @@ namespace Facet
         private const float ArrowSlot = 22f;
         private const float ArrowSize = 20f;   // the chevron was a speck at body size
 
-        /* Makes `row` findable: the shown label (translated, so a search in the player's language
-           finds it) is how a result finds the row again, and the index notes both forms. Every row
-           that is a setting by itself, not by way of Row, calls this. */
+        /// What Noted records on a row, through Data (element userData is the consumer's): the English
+        /// key a search hit reveals it by.
+        internal sealed class Noting { public string Key; }
+
+        /* Makes `row` findable: the index notes the label as shown (translated, so a search in the
+           player's language finds it) and its English key, which is also how a result finds the row
+           again. Every row that is a setting by itself, not by way of Row, calls this. */
         internal static void Noted(VisualElement row, string label)
         {
-            string shown = Words.Show(label, Host.For(row), false);
-            row.userData = shown;
-            SearchIndex.Note(label, shown);
+            Data.Get<Noting>(row).Key = label;
+            SearchIndex.Note(label, Words.Show(label, Host.For(row), false));
         }
 
         /// Label on the left, whatever the caller adds on the right.

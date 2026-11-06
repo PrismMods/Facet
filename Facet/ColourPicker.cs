@@ -282,7 +282,7 @@ namespace Facet
                 readout.text = Mathf.RoundToInt(e.newValue * 255f).ToString();
                 set(e.newValue);
             });
-            s.userData = readout;
+            Data.Get<Readout>(s).Label = readout;
             row.Insert(1, s);
             return s;
         }
@@ -352,11 +352,14 @@ namespace Facet
             }
         }
 
+        // A channel slider's number, kept through Data: element userData is the consumer's.
+        private sealed class Readout { public Label Label; }
+
         private static void Set(Slider s, float v)
         {
             if (s == null) return;
             s.SetValueWithoutNotify(v);
-            var readout = s.userData as Label;
+            var readout = Data.Find<Readout>(s)?.Label;
             if (readout != null) readout.text = Mathf.RoundToInt(v * 255f).ToString();
         }
 

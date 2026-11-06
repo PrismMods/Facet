@@ -134,15 +134,17 @@ namespace Facet
 
         /* Unfold every Section on the way to the row (through the fold Section itself uses, so its
            state and the host's copy follow), then — once layout has seen the unfolded sections —
-           scroll each enclosing ScrollView to it and flash it. Of several rows with the same label
-           the one in the hit's Section wins. Layout is polled for (16 ms, bounded); giving up is
-           logged once and the scroll is tried anyway. */
+           scroll each enclosing ScrollView to it and flash it. Only rows Facet noted match (by the
+           hit's English key); of several with the same key the one in the hit's Section wins.
+           Layout is polled for (16 ms, bounded); giving up is logged once and the scroll is tried
+           anyway. */
         private void Reveal(SearchIndex.Hit hit)
         {
             VisualElement row = null;
             foreach (var e in _content.Query<VisualElement>().ToList())
             {
-                if (!(e.userData is string) || (string)e.userData != hit.Label) continue;
+                var n = Data.Find<Controls.Noting>(e);
+                if (n == null || n.Key != hit.Key) continue;
                 if (row == null) row = e;
                 var f = EnclosingFold(e);
                 if (f != null && f.Title == hit.Section) { row = e; break; }

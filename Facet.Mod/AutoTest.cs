@@ -881,7 +881,7 @@ namespace Facet.Mod
             var w = new Window(s.Root, "navidx", "Nav index", new Rect(40, 40, 700, 500));
             var built = new int[7];
             bool shown = false, hideBeta2 = false;
-            Func<string, VisualElement> rowOf = t => w.Body.Query<VisualElement>().ToList().Find(e => e.userData as string == t);
+            Func<string, VisualElement> rowOf = id => w.Body.Q(id);
             Func<string, Label> lab = t => w.Body.Query<Label>().ToList().Find(l => l.text == t);
             var pages = new[] {
                 new NavItem("Alpha", p => { built[0]++; Controls.Info(p, "Page Alpha", () => "a"); }) { Owner = "A" },
@@ -895,7 +895,9 @@ namespace Facet.Mod
                     var f = Controls.Section(p, "Filler");
                     for (int i = 0; i < 40; i++) Controls.Info(f, "Filler " + i, () => "f");
                     var c = Controls.Section(p, "Colours", false);
-                    Controls.Colour(c, "Tint", Bind.Value(Color.cyan));
+                    // A consumer's element whose userData happens to equal the label: not a row, never revealed.
+                    var decoy = Ui.Box(c); decoy.userData = "Tint"; decoy.style.height = 600f;
+                    Controls.Colour(c, "Tint", Bind.Value(Color.cyan), o => o.Id = "tint");
                     for (int i = 0; i < 10; i++) Controls.Info(c, "After " + i, () => "f");
                 }) { Owner = "B" },
                 new NavItem("Hidden", p => { built[4]++; Controls.Info(p, "Page Hidden", () => "h"); }) { VisibleWhen = () => shown },
@@ -919,7 +921,8 @@ namespace Facet.Mod
             nav.Filter("page hidden"); yield return null;
             Check(lab("Nothing matches.") != null, "a hidden page is not searchable");
             nav.Go(pages[2]); yield return null; yield return null;
-            var tint0 = rowOf("Tint");
+            var tint0 = rowOf("tint");
+            Check(tint0 != null && tint0.userData == null, "Facet leaves a row's userData to the consumer", tint0?.userData?.ToString());
             Check(tint0 != null && tint0.parent.resolvedStyle.display == DisplayStyle.None, "the Colours section is folded before the hit is clicked");
             nav.Filter("tint"); yield return null;
             ClickEl(lab("Tint"));
@@ -927,13 +930,13 @@ namespace Facet.Mod
             var ms = new double[1];
             Func<bool> revealed = () =>
             {
-                var r = rowOf("Tint"); if (r == null) return false;
+                var r = rowOf("tint"); if (r == null) return false;
                 var sv = r.GetFirstAncestorOfType<ScrollView>(); if (sv == null) return false;
                 var vp = sv.contentViewport.worldBound;
                 return r.worldBound.yMin >= vp.yMin - 1f && r.worldBound.yMax <= vp.yMax + 1f && r.worldBound.height > 0f;
             };
             yield return Until(revealed, ms, 2000);
-            var tint = rowOf("Tint");
+            var tint = rowOf("tint");
             Check(lab("Page Alpha") == null && tint != null, "clicking the hit opens the Gamma page");
             var body = tint == null ? null : tint.parent;
             Check(body != null && body.resolvedStyle.display != DisplayStyle.None, "the folded Colours section was unfolded");
@@ -983,10 +986,10 @@ namespace Facet.Mod
             {
                 var a = Controls.Section(p, "First");
                 for (int i = 0; i < 30; i++) Controls.Info(a, "Pad " + i, () => "f");
-                Controls.Info(a, "Enabled", () => "1");
+                Controls.Info(a, "Enabled", () => "1", o => o.Id = "en1");
                 var b = Controls.Section(p, "Second", false);
                 for (int i = 0; i < 30; i++) Controls.Info(b, "Fill " + i, () => "f");
-                Controls.Info(b, "Enabled", () => "2");
+                Controls.Info(b, "Enabled", () => "2", o => o.Id = "en2");
             }) });
             yield return null; yield return null;
             navd.Filter("enabled"); yield return null;
@@ -996,7 +999,7 @@ namespace Facet.Mod
             {
                 ClickEl(hits[1]);
                 var msd = new double[1];
-                Func<VisualElement> second = () => { var all = wd.Body.Query<VisualElement>().ToList().FindAll(e => e.userData as string == "Enabled"); return all.Count == 2 ? all[1] : null; };
+                Func<VisualElement> second = () => wd.Body.Q("en2");
                 yield return Until(() =>
                 {
                     var r = second(); if (r == null || r.layout.height <= 0f) return false;
