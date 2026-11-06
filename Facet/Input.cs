@@ -57,12 +57,7 @@ namespace Facet
 
         public static bool BlocksGameInput { get { return Coord.Any(Entries, 4, Host.Fallback.LogFn); } }
 
-        public static bool PointerOverWindow(Vector2 screen)
-        {
-            foreach (var e in Coord.Snapshot(Entries))
-                if (Coord.Pointer(e, screen.x, screen.y, Host.Fallback.LogFn)) return true;
-            return false;
-        }
+        public static bool PointerOverWindow(Vector2 screen) => Coord.Pointer(Entries, screen.x, screen.y, Host.Fallback.LogFn);
 
         /* Escape, answered once per frame for every loaded version: the version whose topmost
            escapable window sits highest takes it. Returns false when nothing was open, so the caller
@@ -167,8 +162,9 @@ namespace Facet
                 var surface = Ui.Stack[i];
                 if (!surface.Visible || surface.Root == null || surface.Root.panel == null) continue;
                 var point = RuntimePanelUtils.ScreenToPanel(surface.Root.panel, new Vector2(x, Screen.height - y));
-                foreach (var e in surface.Root.Children())
-                    if (e.worldBound.Contains(point)) return true;
+                var h = surface.Root.hierarchy;   // by index: Children() allocates an enumerator per call
+                for (int c = 0; c < h.childCount; c++)
+                    if (h[c].worldBound.Contains(point)) return true;
             }
             return false;
         }

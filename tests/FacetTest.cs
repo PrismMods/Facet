@@ -80,6 +80,20 @@ static class FacetTest {
         var re = new List<object[]> { mr(ao), mr(bo) };
         float hi = Coord.Renumber(re, 0, 10f, lg);
         Check(hi == 14f && ao[0] == 11f && bo[0] == 12f && ao[1] == 13f && bo[1] == 14f, "Renumber ranks orders across versions");
+        // An older version registered a shorter entry (no [7]/[8]): it is skipped, not an IndexOutOfRange.
+        var olog = new List<string>();
+        var older = mk("Older", true, 1f); Array.Resize(ref older, 7);
+        var mixed = new List<object[]> { older, mr(new List<float> { 500f }) };
+        Coord.Renumber(mixed, 0, 10f, olog.Add);
+        Check(olog.Count == 0 && !Coord.Any(mixed, 8, olog.Add) && olog.Count == 0, "a shorter entry from an older version is skipped without a throw or a log line", string.Join(" | ", olog));
+        // The queries sit on a host's per-key input path: they allocate nothing.
+        var q = new List<object[]> { mk("Q1", false, 1f), mk("Q2", true, 2f) };
+        q[0][4] = q[1][4] = (Func<bool>)(() => false);
+        Coord.Any(q, 2, lg); Coord.Any(q, 4, lg); Coord.Pointer(q, 1f, 1f, lg); Coord.TakeEscape(q, lg);   // JIT first
+        long bytes = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 100000; i++) { Coord.Any(q, 2, lg); Coord.Any(q, 4, lg); Coord.Pointer(q, 1f, 1f, lg); Coord.TakeEscape(q, lg); }
+        bytes = GC.GetAllocatedBytesForCurrentThread() - bytes;
+        Check(bytes == 0, "100000 rounds of Coord queries allocate nothing", bytes + " bytes");
 
         Throttle.Reset();
         var slog = new List<string>();
