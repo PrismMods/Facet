@@ -109,10 +109,17 @@ it bubbling. Three causes hid behind "scrolling is broken", all found by logging
   it out of the real settings file: a mid-write crash must not corrupt settings.
 - **Keybind capture is polled by the HOST, not read from a UI event.** Tab, the arrows and Escape are
   all worth binding and all get eaten as navigation inside a panel.
-- **Colours are per window (`Theme`); sizes stay global (`Tokens`).** Widgets read
-  `Theme.For(element)`: the nearest themed ancestor (a Surface, a popup card that took its
-  anchor's), else the `Theme.Use` scope being built, else `Theme.Default`, which IS the Tokens
-  fields. Windows build inside their own scheme; setting `.Theme` afterwards misses the chrome.
+- **Colours are per window (`Theme`); sizes stay global (`Tokens`).** An element records the ROLE
+  it draws with (`Paint.Bg/Fg/Border/Look`), never a `Color`, so `Theme.Recolour` re-themes open
+  windows: each surface wearing the theme re-applies (`Paint.Apply`) inside `Safe`. `Theme.For`
+  is the nearest themed ancestor (a Surface, a popup card that took its anchor's), else the
+  `Theme.Use` scope, else the host's theme, else `Theme.Dark`. An element painted before it joins
+  the tree is repainted on `AttachToPanelEvent`.
+- **There is no `:hover` at runtime; `Paint` tracks hover, pressed and focus.** A `Button`'s
+  clickable stops the mouse's `PointerDownEvent` before any bubbling callback, so Paint registers
+  pointer down/up with `TrickleDown`, which Unity 6 runs first (verified 2026-11-06). In a synthetic
+  test, read a pressed colour in the same frame: the panel sends a `MouseLeaveEvent` next frame
+  because the real pointer is elsewhere, and leave clears pressed.
 - **Text goes through `Words.T`** (`Ui.Text`, `Ui.Btn`, row labels), so page code never calls it.
   English is the key. **A string is translated only by the table of whoever wrote it**: English keys
   carry no context, so one mod's "Undo" (remove a camera patch) once came out as the editor's
