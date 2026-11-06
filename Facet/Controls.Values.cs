@@ -180,7 +180,7 @@ namespace Facet
             inner.style.flexGrow = 1f;
             inner.style.minWidth = 0f;
             Control<Color> c = null;
-            var picker = new ColourPicker(inner, label, Color.white, o.Alpha, col => { if (c != null) c.Set(col); });
+            var picker = new ColourPicker(inner, label, Color.white, o.Alpha, col => { if (c != null) c.Set(col); }, col => { if (c != null) c.Edit(col); }, () => { if (c != null) c.Commit(); });
             c = new Control<Color>(root, inner, label, Tracked(parent, label, o, bind), picker.SetColour, o);
             // The dot sits in the flow before the picker: level it with the header, not the whole picker.
             var dot = root.Q("changed");
@@ -301,6 +301,7 @@ namespace Facet
         // Id naming, tooltips, EnabledWhen, VisibleWhen and ContextMenu the others have.
         private static void Hook(VisualElement row, Button b, string label, ControlOptions o)
         {
+            o.NoRead = true;
             new Control<string>(row, b, label, Bind.To<string>(() => null, null), null, o);
         }
 
@@ -424,7 +425,11 @@ namespace Facet
         {
             var d = new Dragging();
             Events.On<PointerDownEvent>(s, e => { if (e.button == 0) d.On = true; }, TrickleDown.TrickleDown);
-            Events.On<PointerUpEvent>(s, e => { if (d.On) { d.On = false; c.Commit(); } }, TrickleDown.TrickleDown);
+            Action end = () => { if (d.On) { d.On = false; c.Commit(); } };
+            Events.On<PointerUpEvent>(s, e => end(), TrickleDown.TrickleDown);
+            // The dragger follows the pointer with mouse capture: the moves and the release never reach
+            // the slider as pointer events, but the capture ending does (measured in game).
+            Events.On<PointerCaptureOutEvent>(s, e => end(), TrickleDown.TrickleDown);
             return d;
         }
 

@@ -697,11 +697,50 @@ namespace Facet.Mod
             var longKo = Controls.Toggle(w.Body, string.Concat(System.Linq.Enumerable.Repeat("\uC544\uC8FC \uAE34 \uD55C\uAD6D\uC5B4 \uB77C\uBCA8 ", 10)), Bind.Value(false));
             yield return null; yield return null; yield return null;
 
+            int ch = 0, cm = 0;
+            st.Changed += _ => ch++; st.Committed += _ => cm++;
+            var tint = Controls.Colour(w.Body, "Swatch", Bind.Value(Color.red), o => o.Id = "swatch");
+            tint.Changed += _ => ch++;
             var sd = st.Input.Q(className: "unity-base-slider__dragger");
             var sl = (Slider)st.Input;
             yield return Drag(Ctr(sd), new Vector2(sl.worldBound.x / K() + sl.worldBound.width / K() * 0.37f, Ctr(sd).y), 6, w.Body);
             float q = stepped / 0.25f;
             Check(stepped > 0f && Mathf.Abs(q - Mathf.Round(q)) < 1e-4f, "with Step = 0.25 the dragged value is a multiple of 0.25", stepped.ToString());
+
+            Check(ch >= 2 && cm == 1, "a slider drag raises Changed per frame and Committed once, at release", "changed=" + ch + " committed=" + cm);
+
+            var sn = w.Body.Q<TextField>("stepped-number");
+            cm = 0; Type(sn, "1.5"); yield return null;
+            Check(cm == 1 && Mathf.Abs(stepped - 1.5f) < 1e-4f, "a typed number + Enter commits once", "committed=" + cm);
+            cm = 0; sn.Focus(); yield return null;
+            sn.SetValueWithoutNotify("0.75");
+            (sn.focusController?.focusedElement as VisualElement)?.Blur(); yield return null;
+            Check(cm == 1 && Mathf.Abs(stepped - 0.75f) < 1e-4f, "leaving the number field commits once", "committed=" + cm + " v=" + stepped);
+
+            // A colour swatch drag: Changed per frame, Committed once at release
+            int tm = 0; tint.Committed += _ => tm++;
+            ch = 0;
+            var head = tint.Root.Q("facet-picker")[0];
+            ClickEl(head); yield return null; yield return null; yield return null;
+            VisualElement square = null;
+            foreach (var e in tint.Root.Query<VisualElement>().ToList())
+                if (e.pickingMode == PickingMode.Position && Mathf.Abs(e.layout.width - 132f) < 1f && Mathf.Abs(e.layout.height - 132f) < 1f) square = e;
+            Check(square != null, "the open colour picker has its saturation square");
+            if (square != null)
+            {
+                var c0 = Ctr(square);
+                yield return Drag(c0, c0 + new Vector2(20f, 20f), 6, w.Body);
+                Check(ch >= 2 && tm == 1, "a colour drag raises Changed per frame and Committed once, at release", "changed=" + ch + " committed=" + tm);
+            }
+
+            // Button rows have nothing to poll
+            var s20 = new Surface(h, "FacetValues20", Layer.Window);
+            var w20 = new Window(s20.Root, "values20", "Twenty", new Rect(60, 60, 400, 300));
+            for (int i = 0; i < 20; i++) Controls.Action(w20.Body, "Act " + i, "Go", () => { });
+            Controls.Action(w20.Body, "Gated", "Go", () => { }, o => o.EnabledWhen = () => true);
+            yield return null; yield return null;
+            Check(Bound(RefresherOf(s20)) == 1, "20 Action rows without predicates add 0 to the refresher; one with EnabledWhen adds 1", Bound(RefresherOf(s20)).ToString());
+            s20.Dispose();
 
             History.Clear();
             ClickEl(w.Body.Q("ena-input")); yield return null;

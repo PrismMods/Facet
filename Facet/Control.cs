@@ -126,7 +126,7 @@ namespace Facet
         {
             if (Unavailable) return;
             Conditions();
-            if (Editing()) return;
+            if (_o.NoRead || Editing()) return;
             if (!Safe.Run(_host, _getSite, _read))
             {
                 if (++_fails >= FailLimit) Fail();
@@ -219,6 +219,7 @@ namespace Facet
         private void Attach()
         {
             if (_refresher != null) return;
+            if (_o.NoRead && _o.EnabledWhen == null && _o.VisibleWhen == null) return;   // nothing to poll
             _host = Host.For(Root);
             for (var e = Root; e != null && _refresher == null; e = e.hierarchy.parent) _refresher = Data.Find<Refresher>(e);
             if (_refresher != null) _refresher.Add(_refresh, _refreshSite);

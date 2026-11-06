@@ -25,6 +25,9 @@ namespace Facet
         /// A right-click on the row lists these names; picking one runs its action.
         public List<KeyValuePair<string, Action>> ContextMenu { get; set; }
 
+        /// A button row: nothing to read, so the refresher polls it only for EnabledWhen/VisibleWhen.
+        internal bool NoRead;
+
         /// Runs `configure` on a fresh options object, through Safe: it is the consumer's code.
         internal static O Make<O>(VisualElement at, string label, Action<O> configure) where O : ControlOptions, new()
         {

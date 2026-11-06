@@ -27,14 +27,19 @@ namespace Facet
         private Label _hexLabel;
         private TextField _hexField;
         private Slider _r, _g, _b, _a;
+        private readonly Action<Color> _onEdit;
+        private readonly Action _onCommit;
+        private bool _dragging;     // a pointer drag is in progress: changes are edits, the release commits
         private bool _writing;      // guards the channel sliders against their own updates
 
         public VisualElement Root { get; private set; }
 
         public ColourPicker(VisualElement parent, string label, Color initial, bool hasAlpha,
-                            Action<Color> onChange)
+                            Action<Color> onChange, Action<Color> onEdit = null, Action onCommit = null)
         {
             _onChange = onChange;
+            _onEdit = onEdit;
+            _onCommit = onCommit;
             _hasAlpha = hasAlpha;
             _colour = initial;
             Color.RGBToHSV(initial, out _h, out _s, out _v);
@@ -159,7 +164,8 @@ namespace Facet
             Skin.When<TextField>(_hexField, Skin.Field);
             Cursors.Set(_hexField, Cursors.Kind.Text);
             // Commit on Enter or focus loss, never per keystroke: "#1a" is not a colour yet.
-            Events.On<BlurEvent>(_hexField, _ => ParseHex());
+            // FocusOut, not Blur: focus sits on the inner input, and Blur does not fire on the TextField.
+            Events.On<FocusOutEvent>(_hexField, _ => ParseHex());
             Events.On<KeyDownEvent>(_hexField, e =>
             {
                 if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) ParseHex();
@@ -228,6 +234,7 @@ namespace Facet
             {
                 if (ev.button != 0) return;
                 e.CapturePointer(ev.pointerId);
+                _dragging = true;
                 apply(ev.localPosition);
                 ev.StopPropagation();
             });
@@ -239,7 +246,15 @@ namespace Facet
             Events.On<PointerUpEvent>(e, ev =>
             {
                 if (e.HasPointerCapture(ev.pointerId)) e.ReleasePointer(ev.pointerId);
+                EndDrag();
             });
+        }
+
+        private void EndDrag()
+        {
+            if (!_dragging) return;
+            _dragging = false;
+            if (_onCommit != null) Safe.Run(Host.For(_swatch), "ColourPicker commit", _onCommit);
         }
 
         private Slider Channel(string name, Action<float> set)
@@ -252,6 +267,9 @@ namespace Facet
             var s = new Slider(0f, 1f);
             s.style.flexGrow = 1f;
             Skin.When<Slider>(s, Skin.Slider);
+            // The slider's own manipulators stop the pointer events they handle: watch in the trickle phase.
+            Events.On<PointerDownEvent>(s, e => { if (e.button == 0) _dragging = true; }, TrickleDown.TrickleDown);
+            Events.On<PointerUpEvent>(s, e => EndDrag(), TrickleDown.TrickleDown);
             var readout = Ui.Muted("", row);
             readout.style.minWidth = 34f;
             readout.style.unityTextAlign = TextAnchor.MiddleRight;
@@ -287,6 +305,7 @@ namespace Facet
             if (!text.StartsWith("#")) text = "#" + text;
             if (!ColorUtility.TryParseHtmlString(text, out c)) { Sync(false); return; }
             if (!_hasAlpha) c.a = _colour.a;
+            if (c == _colour) { Sync(true); return; }   // Enter then focus-out: one change, not two
             _colour = c;
             Color.RGBToHSV(_colour, out _h, out _s, out _v);
             Sync(false);
@@ -323,9 +342,10 @@ namespace Facet
             }
             finally { _writing = false; }
 
-            if (!initial && _onChange != null)
+            var cb = _dragging && _onEdit != null ? _onEdit : _onChange;
+            if (!initial && cb != null)
             {
-                Safe.Run(Host.For(_swatch), "ColourPicker handler", () => _onChange(_colour));
+                Safe.Run(Host.For(_swatch), "ColourPicker handler", () => cb(_colour));
             }
         }
 
