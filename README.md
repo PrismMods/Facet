@@ -27,9 +27,19 @@ static void Open()
     var window = new Window(surface.Root, "main", "My Mod", new Rect(120, 80, 480, 320));
     Controls.Toggle(window.Body, "Enabled", Bind.To(() => Cfg.Enabled, v => Cfg.Enabled = v));
 }
+
+// Every frame, from your mod's update: Escape closes the topmost window, and the wheel is polled
+// because a runtime panel does not reliably receive WheelEvent.
+static void Update()
+{
+    if (UnityEngine.Input.GetKeyDown(KeyCode.Escape)) Facet.Input.HandleEscape();
+    Facet.Input.TickWheel(UnityEngine.Input.mousePosition, UnityEngine.Input.mouseScrollDelta.y);
+}
 ```
 
 The getter is re-read on every refresh, so replacing `Cfg` wholesale (a profile switch) shows through.
+The host also owns the game's side of input: skip the game's keys while `Facet.Input.BlocksGameInput`
+or `Facet.Input.HeldThisFrame` (the Escape that just closed a window is still down).
 `Facet.Mod/Gallery.cs` has one of every control.
 
 ## Coexistence

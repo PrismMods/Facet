@@ -64,6 +64,16 @@ namespace Facet.Mod
                 Start();
             }
             else if (UnityEngine.Input.GetKeyDown(KeyCode.F8)) Toggle();
+            Frame();
+        }
+
+        // The host's per-frame duties: Escape closes the topmost window, and the wheel is polled
+        // because a runtime panel does not reliably receive WheelEvent.
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static void Frame()
+        {
+            if (UnityEngine.Input.GetKeyDown(KeyCode.Escape)) Facet.Input.HandleEscape();
+            Facet.Input.TickWheel(UnityEngine.Input.mousePosition, UnityEngine.Input.mouseScrollDelta.y);
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
