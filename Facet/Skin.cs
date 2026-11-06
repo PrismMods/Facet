@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -124,7 +123,8 @@ namespace Facet
 
            Reports once whether the event ever arrived on its own, so the workaround can be dropped
            if a future game or Unity version starts delivering it. */
-        private static readonly Dictionary<ScrollView, float> _offsets = new Dictionary<ScrollView, float>();
+        // The offset the wheel last left a ScrollView at, per element through Data so a dropped view is not kept alive.
+        private sealed class WheelSeen { public float Y; public bool Set; }
         private static bool _sawWheelEvent, _reported, _movedOnce, _reportedFit;
         private static int _lastWheelFrame = -99;
 
@@ -233,17 +233,16 @@ namespace Facet
             /* If the native handler already moved this one this frame, leave it alone. That is the
                precise version of "the host handles the wheel" — asked of the element that matters
                rather than of the panel as a whole. */
-            float lastSeen;
-            if (WheelHandledThisFrame && _offsets.TryGetValue(target, out lastSeen)
-                && !Mathf.Approximately(lastSeen, before))
+            var seen = Data.Get<WheelSeen>(target);
+            if (WheelHandledThisFrame && seen.Set && !Mathf.Approximately(seen.Y, before))
             {
-                _offsets[target] = before;
+                seen.Y = before;
                 return;
             }
 
             o.y = Mathf.Clamp(before - px, 0f, max);
             target.scrollOffset = o;
-            _offsets[target] = o.y;
+            seen.Y = o.y; seen.Set = true;
 
             if (!_movedOnce)
             {
