@@ -1461,6 +1461,7 @@ namespace Facet.Mod
         {
             var w = Gallery.Open(); yield return null; yield return null;
             Check(w.Root.layout.width > 300f, "the Gallery window lays out", "w=" + w.Root.layout.width);
+            Check(typeof(Controls).Assembly.GetName().Name == "Facet.0.2", "the Gallery runs on the Facet it was built with");
         }
     }
 }

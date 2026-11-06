@@ -2,7 +2,7 @@
   "Id": "Facet",
   "DisplayName": "Facet Gallery",
   "Author": "PrismMods",
-  "Version": "0.1.0",
+  "Version": "0.2.0",
   "ManagerVersion": "0.32.4.0",
   "AssemblyName": "Facet.Mod.dll",
   "EntryMethod": "Facet.Mod.Main.Load"

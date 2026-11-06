@@ -70,7 +70,7 @@ namespace Facet.Mod
             Controls.Key(p, "Key", Bind.To(() => Model.Key, v => Model.Key = v), o => { o.Id = "key"; o.Capture = done => done(Model.Key); });
             Controls.Action(p, "Action", "Run", () => { });
             Controls.Danger(p, "Danger", "Wipe", () => { });
-            Controls.Info(p, "Info", () => "Facet " + "0.1");
+            Controls.Info(p, "Info", () => typeof(Controls).Assembly.GetName().Name);
             return w;
         }
 

@@ -6,7 +6,7 @@ using UnityEngine;
 #if ML
 using MelonLoader;
 
-[assembly: MelonInfo(typeof(Facet.Mod.FacetMelon), "Facet Gallery", "0.1.0", "PrismMods")]
+[assembly: MelonInfo(typeof(Facet.Mod.FacetMelon), "Facet Gallery", "0.2.0", "PrismMods")]
 // No game named: MelonLoader loads a mod with no MelonGame attribute into every game.
 #else
 using UnityModManagerNet;
@@ -15,7 +15,7 @@ using UnityModManagerNet;
 namespace Facet.Mod
 {
     // The only place that names a loader. Facet types are touched in NoInlining methods only, so
-    // Load itself can run before Facet.0.1.dll has resolved.
+    // Load itself can run before Facet.0.2.dll has resolved.
     public static class Main
     {
         static string _log, _dir;
@@ -94,7 +94,7 @@ namespace Facet.Mod
     {
         public override void OnInitializeMelon()
         {
-            // MelonLoader already loaded UserLibs/Facet.0.1.dll; the log and trigger live in UserData/Facet.
+            // MelonLoader already loaded UserLibs/Facet.0.2.dll; the log and trigger live in UserData/Facet.
             Main.Init(MelonLoader.Utils.MelonEnvironment.UserLibsDirectory, Path.Combine(MelonLoader.Utils.MelonEnvironment.UserDataDirectory, "Facet"), "gallery.log", "autotest");
         }
 
