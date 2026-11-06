@@ -5,7 +5,11 @@ namespace Facet
 {
     /* State every loaded Facet version agrees on. One Dictionary in AppDomain data: the AppDomain is
        the only thing two Facet.<major>.<minor> assemblies share. Values must be BCL types or
-       delegates -- a Facet type from another version cannot be cast. */
+       delegates -- a Facet type from another version cannot be cast.
+
+       Cross-version contract: a key's value type never changes; an array value (Coord's entries,
+       the band counters) only gains slots at the end, and a reader checks its Length before
+       reading a slot, so an older version's shorter value is skipped rather than throwing. */
     internal static class Shared
     {
         private const string Slot = "Facet.Shared";
