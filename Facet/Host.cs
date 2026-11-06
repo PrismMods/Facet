@@ -43,7 +43,17 @@ namespace Facet {
         public static Host Create(string name, Action<HostOptions> configure = null) {
             var o = new HostOptions();
             if (configure != null) configure(o);
-            return new Host(name ?? "Host", o);
+            var h = new Host(name ?? "Host", o);
+            Named_[h.Name] = h;
+            return h;
+        }
+
+        static readonly System.Collections.Generic.Dictionary<string, Host> Named_ = new System.Collections.Generic.Dictionary<string, Host>();
+
+        /// The host last created under `name`, else null.
+        public static Host Named(string name) {
+            Host h;
+            return name != null && Named_.TryGetValue(name, out h) ? h : null;
         }
 
         static Host _fallback;

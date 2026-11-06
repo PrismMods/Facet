@@ -101,6 +101,7 @@ namespace Facet.Mod
             yield return Run("SectionStructure", SectionStructure());
             yield return Run("SectionInput", SectionInput());
             yield return Run("SectionNavIndex", SectionNavIndex());
+            yield return Run("SectionForm", SectionForm());
             // Later tasks: yield return Run("Section...", Section...());
 
             Main.Log("AUTOTEST DONE pass=" + _pass + " fail=" + _fail);
@@ -678,6 +679,59 @@ namespace Facet.Mod
             nav2.Refresh(); yield return null; yield return null;
             Check(bare().style.display == DisplayStyle.None, "with a host that has no Read/Write, a folded section stays folded after a rebuild");
             s2.Dispose();
+        }
+
+        // Task 15: Form builds bound controls from Field data; bad getters give unavailable rows.
+        IEnumerator SectionForm()
+        {
+            var logs = new List<string>();
+            var ha = Host.Create("FormA", o => { o.Log = m => logs.Add(m); o.Translate = s => s == "Greeting" ? "\uC548\uB155" : null; });
+            var hp = Host.Create("FormP", o => o.Log = m => logs.Add(m));
+            var surf = new Surface(hp, "FacetForm", Layer.Window);
+            var w = new Window(surf.Root, "form", "Form", new Rect(60, 60, 600, 700));
+            bool b = false; int i = 3; float f = 0.5f; string t = "hi", key = "F1", col = "#ff0000"; var set = new List<object>();
+            bool acted = false;
+            var fields = new[] {
+                new Field { Group = "G", Label = "fb", Kind = FieldKind.Bool, Get = () => b, Set = v => b = (bool)v },
+                new Field { Group = "G", Label = "fi", Kind = FieldKind.Int, Min = 0, Max = 10, Get = () => i, Set = v => i = (int)v },
+                new Field { Group = "G", Label = "ff", Kind = FieldKind.Float, Min = 0, Max = 1, Get = () => f, Set = v => f = (float)v },
+                new Field { Group = "G", Label = "fc", Kind = FieldKind.Choice, Options = new[] { "a", "b" }, Get = () => 1, Set = v => set.Add(v) },
+                new Field { Group = "G", Label = "ft", Kind = FieldKind.Text, Get = () => t, Set = v => t = (string)v },
+                new Field { Group = "G", Label = "fa", Kind = FieldKind.Action, ActionLabel = "Go", Set = v => acted = true },
+                new Field { Group = "G", Label = "fcol", Kind = FieldKind.Colour, Get = () => col, Set = v => col = (string)v },
+                new Field { Group = "G", Label = "fk", Kind = FieldKind.Key, Get = () => key, Set = v => key = (string)v, Capture = cb => cb("F2") },
+                new Field { Group = "G", Label = "fin", Kind = FieldKind.Info, Get = () => "info" },
+                new Field { Group = "H", Label = "fd", Kind = FieldKind.Dropdown, Options = new[] { "x", "y" }, Get = () => 0, Set = v => set.Add(v) },
+                new Field { Group = "H", Label = "fn", Kind = FieldKind.Number, Min = 0, Max = 5, Get = () => 2f, Set = v => set.Add(v) },
+                new Field { Group = "H", Label = "badf", Kind = FieldKind.Float, Get = () => null },
+                new Field { Group = "H", Label = "badi", Kind = FieldKind.Int, Get = () => "x" },
+                new Field { Group = "H", Label = "after", Kind = FieldKind.Bool, Get = () => true, Set = v => { } },
+                new Field { Owner = "FormA", Group = "H", Label = "Greeting", Kind = FieldKind.Bool, Get = () => true, Set = v => { } },
+            };
+            var page = Ui.Box(w.Body);
+            bool threw = false;
+            try { Form.Build(page, fields); } catch (Exception e) { threw = true; Main.Log("form threw " + e); }
+            Check(!threw, "Form.Build returns normally with bad getters");
+            yield return null; yield return null;
+            foreach (var n in new[] { "fb", "fi", "ff", "fc", "ft", "fa", "fcol", "fk", "fin", "fd", "fn", "after" })
+                Check(page.Q(n) != null, "a " + n + " row is built, found by its label");
+            Check(page.Query<Label>().ToList().Exists(l => l.text == "G") && page.Query<Label>().ToList().Exists(l => l.text == "H"), "consecutive groups become two sections");
+            Check(page.Q("fi-input") is SliderInt, "an Int field builds an IntSlider");
+            Check(page.Q("ft-input") is TextField, "a Text field builds a TextField");
+            ClickEl(page.Q("fb-input")); yield return null; yield return null;
+            Check(b, "toggling the Bool row writes through Field.Set");
+            Submit(page.Q<Button>("fk-input")); yield return null; yield return null;
+            Check(key == "F2", "a Key field captures through Field.Capture", key);
+            Submit(page.Q("fa").Q<Button>()); yield return null;
+            Check(acted, "an Action field runs Set when pressed");
+            // Unavailable rows: three reads fail by the end of the build.
+            yield return null;
+            Check(page.Q("badf") != null && !page.Q("badf").enabledSelf, "a Float field whose Get returns null is an unavailable row");
+            Check(page.Q("badi") != null && !page.Q("badi").enabledSelf, "an Int field whose Get returns \"x\" is an unavailable row");
+            Check(page.Q("after") != null && page.Q("after").enabledSelf, "the rows after the bad ones still build");
+            var greet = page.Query<Label>().ToList().Find(l => l.text == "\uC548\uB155");
+            Check(greet != null, "a field owned by host FormA translates with FormA's table, not the surface's");
+            surf.Dispose();
         }
 
         // Task 14: one lazy index per Nav, reveal through folded sections, owners, last leaf, VisibleWhen.
