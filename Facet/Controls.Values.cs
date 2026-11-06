@@ -58,6 +58,15 @@ namespace Facet
     {
         /// Counter for controls built without an Id; Nav resets it before every page build.
         internal static int Seq;
+        private static int KeySeq;
+
+        /// Reachable by Tab / NavigationMove, and draws Role.Focus around itself while focused.
+        internal static void Ring(VisualElement e)
+        {
+            e.focusable = true;
+            Ui.SetBorderWidth(e, 1f);
+            Paint.Look(e, Look.Ring);
+        }
 
         public static Control<bool> Toggle(VisualElement parent, string label, Bind<bool> bind, Action<Options<bool>> configure = null)
         {
@@ -65,6 +74,7 @@ namespace Facet
             var right = Controls.Row(parent, label);
             Action<bool> show;
             var track = Switch(right, out show);
+            Ring(track);
             var c = new Control<bool>(right.parent, track, label, Tracked(parent, label, o, bind), show, o);
             Events.On<ClickEvent>(track, e => { c.Set(!c.Value); e.StopPropagation(); });
             return c;
@@ -88,6 +98,7 @@ namespace Facet
             var s = new SliderInt(o.Min, o.Max);
             s.style.width = 180f;
             Skin.When<SliderInt>(s, Skin.Slider);
+            Ring(s);
             var field = NumberField(right, o.Id);
             right.Insert(0, s);
 
@@ -198,19 +209,29 @@ namespace Facet
             var right = Controls.Row(parent, label);
             Control<string> c = null;
             Button b = null;
+            // One owner name per control; a claim by another control (any mod, any Facet version) cancels this one.
+            string me = "key#" + (++KeySeq) + "@" + Host.For(parent).Name + "/" + typeof(Controls).Assembly.GetName().Name;
+            int gen = 0;   // a callback from a cancelled capture arrives late and is ignored
+            Action cancel = () => { gen++; Paint.Select(b, false); Draw(b, c.Value); };
             b = Ui.Btn("", () =>
             {
                 if (o.Capture == null) return;
+                var host = Host.For(b);
+                KeyCapture.Claim(me, cancel, host.LogFn);
+                int mine = ++gen;
                 Words.Label(b, "press a key…", true);
                 Paint.Select(b, true);
-                bool ok = Safe.Run(Host.For(b), "Key capture", () => o.Capture(name =>
+                bool ok = Safe.Run(host, "Key capture", () => o.Capture(name =>
                 {
+                    if (mine != gen) return;
+                    gen++;
+                    KeyCapture.Release(me);
                     Paint.Select(b, false);
                     Anim.Pop(b);
                     name = name ?? "";
                     if (name != (c.Value ?? "")) c.Set(name); else Draw(b, name);
                 }));
-                if (!ok) { Paint.Select(b, false); Draw(b, c.Value); }
+                if (!ok) { KeyCapture.Release(me); cancel(); }
             }, right);
             b.style.minWidth = 110f;
             c = new Control<string>(right.parent, b, label, Tracked(parent, label, o, bind), v => Draw(b, v), o);
@@ -349,6 +370,7 @@ namespace Facet
                 s = new Slider(0f, 1f);
                 s.style.width = 180f;
                 Skin.When<Slider>(s, Skin.Slider);
+                Ring(s);
                 right.Insert(0, s);
             }
             var scale = o.Scale ?? ValueScale.Linear;

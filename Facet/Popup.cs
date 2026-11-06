@@ -175,6 +175,10 @@ namespace Facet
             if (_owner != null) _owner.Hidden -= Close;
             _theme.Changed -= _retheme;
             Events.Off(_anchor, _onDetach);
+            // A field focused inside the card lets go first, so its FocusOut is heard before it leaves the tree.
+            var fc = Content.panel != null ? Content.panel.focusController : null;
+            var fe = fc != null ? fc.focusedElement as VisualElement : null;
+            if (fe != null && Content.Contains(fe)) fe.Blur();
             _catcher.RemoveFromHierarchy();
             Content.RemoveFromHierarchy();
             if (_open.Count == 0 && _popups != null) _popups.Visible = false;

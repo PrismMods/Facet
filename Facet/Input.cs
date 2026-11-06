@@ -13,7 +13,8 @@ namespace Facet
        the queries OR over all entries and Escape goes to the version with the topmost window. */
     public static class Input
     {
-        private static int _holdFrame = -1;
+        // Shared: a window of one version closing on Escape holds the key from a host reading another version.
+        private static readonly int[] _holdFrame = Shared.Get("Facet.HoldFrame", () => new[] { -1 });
 
         // Entry layout: see Coord.
         internal static readonly List<object[]> Entries = Shared.Get("Facet.Entries", () => new List<object[]>());
@@ -45,12 +46,15 @@ namespace Facet
             foreach (var s in Ui.Stack) if ((int)s.Layer == layer && s.Order >= 0f) s.Order = f(s.Order);
         }
 
-        public static void HoldThisFrame() => _holdFrame = Time.frameCount;
+        public static void HoldThisFrame() => _holdFrame[0] = Time.frameCount;
 
-        public static bool HeldThisFrame => Time.frameCount == _holdFrame;
+        public static bool HeldThisFrame => Time.frameCount == _holdFrame[0];
 
         public static bool AnyWindowOpen { get { return Coord.Any(Entries, 2, Host.Fallback.LogFn); } }
         public static bool TextFocused { get { return Coord.Any(Entries, 3, Host.Fallback.LogFn); } }
+        /// One question for a host's input gate: is the pointer or the keyboard ours right now?
+        public static bool WantsInput(Vector2 pointerScreen) => BlocksGameInput || PointerOverWindow(pointerScreen) || TextFocused;
+
         public static bool BlocksGameInput { get { return Coord.Any(Entries, 4, Host.Fallback.LogFn); } }
 
         public static bool PointerOverWindow(Vector2 screen)
@@ -94,8 +98,7 @@ namespace Facet
                     ? s.Root.panel.focusController.focusedElement as VisualElement : null;
                 // The focus controller is the shared panel's, so only a field inside THIS surface counts.
                 if (focused != null && s.Root.Contains(focused))
-                    for (var e = focused; e != null; e = e.parent)
-                        if (IsTextInput(e.GetType())) { focused.Blur(); s.Host.Log("Escape: blurred a field in " + s.Name); return true; }
+                    if (InTextInput(focused)) { focused.Blur(); s.Host.Log("Escape: blurred a field in " + s.Name); return true; }
                 if (s.EscapeHandler != null)
                 {
                     bool r = Safe.Get(s.Host, "Escape handler of " + s.Name, s.EscapeHandler, true);
@@ -117,18 +120,34 @@ namespace Facet
         }
 
         /* The user is typing into one of our windows. The game's "editing a field" test asks the
-           uGUI EventSystem, which has never heard of a UI Toolkit TextField. Walks up from the
-           focused element because focus usually sits on the field's inner text input. */
+           uGUI EventSystem, which has never heard of a UI Toolkit TextField. Each surface keeps a
+           flag set by its FocusIn / FocusOut (Surface.TextIn), so this is a bool per surface, not a
+           walk of focus controllers. The flag is re-checked here only when set, because focus can
+           also leave without an event (the page holding the field was rebuilt away); hide and
+           Dispose clear it outright. */
         private static bool LocalText()
         {
+            bool any = false;
             for (int i = Ui.Stack.Count - 1; i >= 0; i--)
             {
-                var surface = Ui.Stack[i];
-                if (!surface.Visible || surface.Root == null || surface.Root.panel == null) continue;
-                var fc = surface.Root.panel.focusController;
-                for (var e = fc != null ? fc.focusedElement as VisualElement : null; e != null; e = e.parent)
-                    if (IsTextInput(e.GetType())) return true;
+                var s = Ui.Stack[i];
+                if (!s.TextIn) continue;
+                if (s.Visible && s.Root != null && s.Root.panel != null)
+                {
+                    var fc = s.Root.panel.focusController;
+                    var f = fc != null ? fc.focusedElement as VisualElement : null;
+                    if (f != null && s.Root.Contains(f) && InTextInput(f)) { any = true; continue; }
+                }
+                s.TextIn = false;
             }
+            return any;
+        }
+
+        /// Is e, or an ancestor (focus sits on the field's inner input), a text field?
+        internal static bool InTextInput(VisualElement e)
+        {
+            for (; e != null; e = e.parent)
+                if (IsTextInput(e.GetType())) return true;
             return false;
         }
 

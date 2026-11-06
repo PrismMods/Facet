@@ -25,6 +25,8 @@ namespace Facet
         public static readonly Look RailItem = new Look { Text = Role.TextMuted, HoverBg = Role.Row, HoverText = Role.Text,
             SelectedBg = Role.RowHover, SelectedText = Role.Text };
         public static readonly Look Field = new Look { Bg = Role.Row, Text = Role.Text, Border = Role.PanelBorder, FocusBorder = Role.Focus };
+        /// Only the focus ring: for a control that is not a button (a switch, a slider).
+        public static readonly Look Ring = new Look { FocusBorder = Role.Focus };
         public static readonly Look Card = new Look { Bg = Role.Panel, Border = Role.PanelBorder };
         /// Title bar and footer.
         public static readonly Look Chrome = new Look { Bg = Role.TitleBar };

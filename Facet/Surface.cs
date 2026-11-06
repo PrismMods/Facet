@@ -81,6 +81,18 @@ namespace Facet
            close only its newest popup rather than every one at once. Return true when consumed. */
         internal Func<bool> EscapeHandler;
 
+        /// A text input under Root has focus (kept by FocusIn / FocusOut; Input.LocalText reads it).
+        internal bool TextIn;
+
+        // Focus leaves a hidden or dying surface, so the flag cannot outlive the field.
+        private void DropFocus()
+        {
+            var p = Root != null ? Root.panel : null;
+            var f = p != null && p.focusController != null ? p.focusController.focusedElement as VisualElement : null;
+            if (f != null && Root.Contains(f)) f.Blur();
+            TextIn = false;
+        }
+
         /// Raised when the surface hides or is disposed — a popup closes with the window it came from.
         internal event Action Hidden;
 
@@ -130,6 +142,8 @@ namespace Facet
                 // TextCore FontAsset, and TMP_FontAsset is NOT one. A mod that only has the TMP
                 // asset should pass the plain Font it was built from instead — see SetFont.
                 Skin.WatchWheel(Root);
+                Events.On<FocusInEvent>(Root, e => TextIn = Input.InTextInput(e.target as VisualElement), TrickleDown.TrickleDown);
+                Events.On<FocusOutEvent>(Root, e => { if (Input.InTextInput(e.target as VisualElement)) TextIn = false; }, TrickleDown.TrickleDown);
                 if (font != null)
                 {
                     Fonts.Apply(Root, font);
@@ -201,6 +215,7 @@ namespace Facet
                 if (_refresher != null) _refresher.Show(value);   // hidden reads nothing
                 if (!value)
                 {
+                    DropFocus();
                     if (BlocksGameInput) Input.HoldThisFrame();
                     RaiseHidden();
                 }
@@ -274,6 +289,7 @@ namespace Facet
             _theme.Changed -= Retheme;
             if (_refresher != null) { _refresher.Stop(); _refresher = null; }
             Ui.Stack.Remove(this);
+            DropFocus();
             if (_visible) { _visible = false; if (Layer != Layer.Hud) Ui.OpenWindows--; RaiseHidden(); }
             if (_go != null) UnityEngine.Object.Destroy(_go);
             if (_settings != null) UnityEngine.Object.Destroy(_settings);

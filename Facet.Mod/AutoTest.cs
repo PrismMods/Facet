@@ -99,6 +99,7 @@ namespace Facet.Mod
             yield return Run("SectionRefreshIsolation", SectionRefreshIsolation());
             yield return Run("SectionValues", SectionValues());
             yield return Run("SectionStructure", SectionStructure());
+            yield return Run("SectionInput", SectionInput());
             // Later tasks: yield return Run("Section...", Section...());
 
             Main.Log("AUTOTEST DONE pass=" + _pass + " fail=" + _fail);
@@ -845,6 +846,69 @@ namespace Facet.Mod
             Check(first && !Input.AnyWindowOpen, "the first Escape hides the Gallery", "first=" + first);
             Check(second, "a second Escape in the same frame returns the cached true");
             Check(!Input.AnyWindowOpen, "AnyWindowOpen is false afterwards");
+        }
+
+        // Focus, Escape order with a field in a popup over a window, one key capture at a time, the focus ring.
+        IEnumerator SectionInput()
+        {
+            Gallery.Model = new Model();
+            var win = Gallery.Open(); yield return null; yield return null;
+            var anchor = Root.Q("name-input");
+            TextField tf = null;
+            var pop = Popup.Open(anchor, c => { tf = new TextField(); c.Add(tf); });
+            yield return null; yield return null;
+            Check(pop != null && tf != null, "a popup holding a TextField opens over the Gallery");
+            if (pop == null || tf == null) yield break;
+            tf.Focus(); yield return null;
+            Check(Input.TextFocused, "TextFocused is true with the popup's field focused");
+            Input.HandleEscape(); yield return null;
+            Check(!Input.TextFocused && pop.IsOpen && Gallery.Surface.Visible, "Escape 1 only blurs: field blurred, popup and window stay", "text=" + Input.TextFocused + " pop=" + pop.IsOpen);
+            Input.HandleEscape(); yield return null;
+            Check(!pop.IsOpen && Gallery.Surface.Visible, "Escape 2 closes the popup, the window stays");
+            Input.HandleEscape(); yield return null;
+            Check(!Gallery.Surface.Visible && !Input.AnyWindowOpen, "Escape 3 hides the window");
+
+            // A surface hidden with a field focused must not leave the count stuck.
+            Gallery.Open(); yield return null; yield return null;
+            var name = Root.Q<TextField>("name-input");
+            name.Focus(); yield return null;
+            Check(Input.TextFocused, "focusing the Text row's field sets TextFocused");
+            Gallery.Surface.Visible = false; yield return null;
+            Check(!Input.TextFocused, "hiding the surface with the field focused clears TextFocused");
+            Gallery.Surface.Visible = true; yield return null;
+            name = Root.Q<TextField>("name-input"); name.Focus(); yield return null;
+            Gallery.Close(); yield return null;
+            Check(!Input.TextFocused, "disposing the surface with the field focused clears TextFocused");
+            Check(Input.WantsInput(new Vector2(-10f, -10f)) == (Input.BlocksGameInput || Input.TextFocused), "WantsInput is the OR of the three queries");
+
+            // Key capture: the second claim cancels the first.
+            var sf = new Surface(Gallery.Host, "FacetKeyTest", Layer.Window);
+            var kw = new Window(sf.Root, "keytest", "Key test", new Rect(100, 100, 500, 300));
+            string v1 = "F1", v2 = "F2";
+            var k1 = Controls.Key(kw.Body, "One", Bind.To(() => v1, v => v1 = v), o => { o.Id = "k1"; o.Capture = done => { }; });
+            var k2 = Controls.Key(kw.Body, "Two", Bind.To(() => v2, v => v2 = v), o => { o.Id = "k2"; o.Capture = done => { }; });
+            yield return null; yield return null;
+            var b1 = (Button)k1.Input; var b2 = (Button)k2.Input;
+            Check(b1.text == "F1" && b2.text == "F2", "the Key buttons show their bound values", b1.text + "/" + b2.text);
+            Submit(b1); yield return null;
+            Check(b1.text != "F1" && KeyCapture.Owner != null, "clicking Key one starts its capture", b1.text);
+            string owner1 = KeyCapture.Owner;
+            Submit(b2); yield return null;
+            Check(b1.text == "F1" && b2.text != "F2" && KeyCapture.Owner != owner1, "Key two's capture cancels Key one: its button is back to F1", b1.text + "/" + b2.text);
+            KeyCapture.Release(KeyCapture.Owner);
+            sf.Dispose(); yield return null;
+
+            // Focus ring: Next from flag-input moves to the next control, which draws Role.Focus.
+            Gallery.Open(); yield return null; yield return null;
+            var flag = Root.Q("flag-input"); var size = Root.Q("size-input");
+            Check(flag != null && flag.focusable && size != null && size.focusable, "the switch and the slider are focusable");
+            flag.Focus(); yield return null;
+            using (var e = NavigationMoveEvent.GetPooled(NavigationMoveEvent.Direction.Next)) { e.target = flag; flag.SendEvent(e); }
+            yield return null; yield return null;
+            var foc = Root.panel.focusController.focusedElement as VisualElement;
+            Check(foc != null && (foc == size || size.Contains(foc)), "NavigationMove Next from flag-input focuses size-input", foc == null ? "none" : foc.GetType().Name + " " + foc.name);
+            var want = Gallery.Host.Theme[Role.Focus];
+            Check(size.resolvedStyle.borderTopColor == want, "the focused slider's border resolves to Role.Focus", size.resolvedStyle.borderTopColor + " vs " + want);
         }
 
         IEnumerator SectionOpen()
