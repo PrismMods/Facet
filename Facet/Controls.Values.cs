@@ -49,6 +49,9 @@ namespace Facet
     {
         /// Starts a capture: the host calls back with the next key's name (null or empty for none).
         public Action<Action<string>> Capture { get; set; }
+        /// Stops the host's key poll. Called (guarded) when this capture is cancelled: another control
+        /// claimed the capture, the control left its panel, or its surface hid. Not called when a key was captured.
+        public Action CancelCapture { get; set; }
     }
 
     /* The value rows. Each is a labelled row bound to a Bind<T> and handed back as a Control<T>;
@@ -211,28 +214,45 @@ namespace Facet
             Button b = null;
             // One owner name per control; a claim by another control (any mod, any Facet version) cancels this one.
             string me = "key#" + (++KeySeq) + "@" + Host.For(parent).Name + "/" + typeof(Controls).Assembly.GetName().Name;
+            bool active = false;
             int gen = 0;   // a callback from a cancelled capture arrives late and is ignored
-            Action cancel = () => { gen++; Paint.Select(b, false); Draw(b, c.Value); };
+            Surface owner = null;
+            Action cancel = null;
+            // Ends the capture on the control's side; the host hears about it only when cancelled.
+            Action<bool> end = tellHost =>
+            {
+                if (!active) return;
+                active = false; gen++;
+                KeyCapture.Release(me);
+                if (owner != null) { owner.Hidden -= cancel; owner = null; }
+                Paint.Select(b, false);
+                Draw(b, c.Value);
+                if (tellHost && o.CancelCapture != null) Safe.Run(Host.For(b), "Key CancelCapture", o.CancelCapture);
+            };
+            cancel = () => end(true);
             b = Ui.Btn("", () =>
             {
                 if (o.Capture == null) return;
                 var host = Host.For(b);
+                end(true);   // a second click while waiting restarts cleanly
                 KeyCapture.Claim(me, cancel, host.LogFn);
+                active = true;
                 int mine = ++gen;
+                foreach (var st in Ui.Stack) if (st.Root != null && st.Root.Contains(b)) { owner = st; break; }
+                if (owner != null) owner.Hidden += cancel;
                 Words.Label(b, "press a key…", true);
                 Paint.Select(b, true);
                 bool ok = Safe.Run(host, "Key capture", () => o.Capture(name =>
                 {
                     if (mine != gen) return;
-                    gen++;
-                    KeyCapture.Release(me);
-                    Paint.Select(b, false);
+                    end(false);
                     Anim.Pop(b);
                     name = name ?? "";
                     if (name != (c.Value ?? "")) c.Set(name); else Draw(b, name);
                 }));
-                if (!ok) { KeyCapture.Release(me); cancel(); }
+                if (!ok) end(false);
             }, right);
+            Events.On<DetachFromPanelEvent>(b, _ => cancel());
             b.style.minWidth = 110f;
             c = new Control<string>(right.parent, b, label, Tracked(parent, label, o, bind), v => Draw(b, v), o);
             return c;

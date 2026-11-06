@@ -102,7 +102,7 @@ namespace Facet
             var b = new Button();
             if (onClick != null) b.clicked += () => Safe.Run(Host.For(b), "Button '" + b.text + "'", onClick);
             b.style.fontSize = Tokens.FontSizeSmall;
-            SetBorderWidth(b, 0f);
+            SetBorderWidth(b, 1f);   // the focus ring (Look.FocusBorder) paints this; unfocused it stays unset/clear
             SetRadius(b, 4f);
             SetPadding(b, 5f);
             b.style.marginLeft = 0f; b.style.marginRight = Tokens.Gap;

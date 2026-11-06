@@ -884,8 +884,8 @@ namespace Facet.Mod
             // Key capture: the second claim cancels the first.
             var sf = new Surface(Gallery.Host, "FacetKeyTest", Layer.Window);
             var kw = new Window(sf.Root, "keytest", "Key test", new Rect(100, 100, 500, 300));
-            string v1 = "F1", v2 = "F2";
-            var k1 = Controls.Key(kw.Body, "One", Bind.To(() => v1, v => v1 = v), o => { o.Id = "k1"; o.Capture = done => { }; });
+            string v1 = "F1", v2 = "F2"; int cc1 = 0, cc3 = 0;
+            var k1 = Controls.Key(kw.Body, "One", Bind.To(() => v1, v => v1 = v), o => { o.Id = "k1"; o.Capture = done => { }; o.CancelCapture = () => cc1++; });
             var k2 = Controls.Key(kw.Body, "Two", Bind.To(() => v2, v => v2 = v), o => { o.Id = "k2"; o.Capture = done => { }; });
             yield return null; yield return null;
             var b1 = (Button)k1.Input; var b2 = (Button)k2.Input;
@@ -895,8 +895,36 @@ namespace Facet.Mod
             string owner1 = KeyCapture.Owner;
             Submit(b2); yield return null;
             Check(b1.text == "F1" && b2.text != "F2" && KeyCapture.Owner != owner1, "Key two's capture cancels Key one: its button is back to F1", b1.text + "/" + b2.text);
-            KeyCapture.Release(KeyCapture.Owner);
+            Check(cc1 == 1, "...and called Key one's CancelCapture exactly once", cc1.ToString());
+            // Teardown mid-capture: the surface hiding releases the capture and tells the host.
+            var k3 = Controls.Key(kw.Body, "Three", Bind.To(() => v1, v => v1 = v), o => { o.Id = "k3"; o.Capture = done => { }; o.CancelCapture = () => cc3++; });
+            yield return null;
+            Submit((Button)k3.Input); yield return null;
+            Check(KeyCapture.Owner != null, "Key three starts a capture");
+            sf.Visible = false; yield return null;
+            Check(KeyCapture.Owner == null && cc3 == 1, "hiding the surface mid-capture releases it and runs CancelCapture once", KeyCapture.Owner + " cc=" + cc3);
+            sf.Visible = true; yield return null;
+            Submit((Button)k3.Input); yield return null;
+            Check(KeyCapture.Owner != null, "Key three captures again");
+            k3.Root.RemoveFromHierarchy(); yield return null;
+            Check(KeyCapture.Owner == null && cc3 == 2, "the control leaving its panel mid-capture releases it and runs CancelCapture", KeyCapture.Owner + " cc=" + cc3);
             sf.Dispose(); yield return null;
+
+            // Focus ring on a button-based control: border present, clear until focused, Role.Focus after.
+            Gallery.Open(); yield return null; yield return null;
+            var pick = Root.Q<Button>("pick-input");
+            Check(pick != null && pick.style.borderTopWidth.value >= 1f && pick.resolvedStyle.borderTopWidth > 0.3f, "a Dropdown button has a 1px border", pick == null ? "none" : pick.resolvedStyle.borderTopWidth.ToString());
+            Check(pick != null && pick.resolvedStyle.borderTopColor.a < 0.01f, "...clear while unfocused", pick?.resolvedStyle.borderTopColor.ToString());
+            pick.Focus(); yield return null; yield return null;
+            Check(pick.resolvedStyle.borderTopColor == Gallery.Host.Theme[Role.Focus], "...Role.Focus once focused", pick.resolvedStyle.borderTopColor.ToString());
+            var mode = Root.Q("mode-input")?.Q<Button>();
+            if (mode != null)
+            {
+                using (var e = NavigationMoveEvent.GetPooled(NavigationMoveEvent.Direction.Previous)) { e.target = pick; pick.SendEvent(e); }
+                yield return null; yield return null;
+                var f2 = Root.panel.focusController.focusedElement as Button;
+                Check(f2 != null && f2.resolvedStyle.borderTopColor == Gallery.Host.Theme[Role.Focus], "Navigation onto a Choice segment shows Role.Focus", f2 == null ? "none" : f2.resolvedStyle.borderTopColor.ToString());
+            }
 
             // Focus ring: Next from flag-input moves to the next control, which draws Role.Focus.
             Gallery.Open(); yield return null; yield return null;
