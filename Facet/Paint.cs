@@ -67,6 +67,11 @@ namespace Facet
             Draw(e, s);
         }
 
+        /// Stop painting `e`: forget its recorded roles, look and states, so a literal colour you set
+        /// on it afterwards (style.color, a border colour) survives re-themes, hover, focus and
+        /// re-attach. What is drawn now stays until you overwrite it. Paint.Bg/Fg/Look start over.
+        public static void Forget(VisualElement e) { if (e != null) Data.Clear<State>(e); }
+
         /// The tint of the element's background image (a text field's caret).
         internal static void Tint(VisualElement e, Role r) { if (e != null) { var s = Data.Get<State>(e); s.Tint = r; Draw(e, s); } }
 

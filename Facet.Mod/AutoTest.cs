@@ -238,6 +238,19 @@ namespace Facet.Mod
             mine.Bg = Role.RowAlt;   // were it shared, put it back for the sections after this one
             pb.RemoveFromHierarchy();
 
+            // Paint.Forget: a literal colour set afterwards survives a re-theme and a hover.
+            var fl = Ui.Text("Forgotten", w.Body); var fb = Ui.Btn("Forgotten", null, w.Body);
+            yield return null;
+            Paint.Forget(fl); Paint.Forget(fb);
+            fl.style.color = Color.red; fb.style.backgroundColor = Color.red;
+            t.Recolour(new Color(.9f, .2f, .2f));
+            using (var e = MouseEnterEvent.GetPooled()) { e.target = fb; fb.SendEvent(e); }
+            yield return null;
+            Check(fl.style.color.value == Color.red && fb.style.backgroundColor.value == Color.red, "after Paint.Forget, a literal colour survives a re-theme and a hover",
+                fl.style.color.value + " / " + fb.style.backgroundColor.value);
+            using (var e = MouseLeaveEvent.GetPooled()) { e.target = fb; fb.SendEvent(e); }
+            fl.RemoveFromHierarchy(); fb.RemoveFromHierarchy();
+
             // A throwing subscriber does not stop the surfaces after it; replacing and disposing unsubscribe.
             var tt = new Theme();
             tt.Changed += () => { throw new InvalidOperationException("subscriber"); };
