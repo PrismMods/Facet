@@ -117,6 +117,13 @@ static class FacetTest {
         History.Clear();
         Check(Words.OwnF("Undo {0}", "ko", "x") == "\uC2E4\uD589 \uCDE8\uC18C: x", "OwnF fills the translated pattern");
 
+        Check(Math.Abs(ValueScale.Log.FromT(ValueScale.Log.ToT(10, 1, 100), 1, 100) - 10) < 1e-3, "Log.FromT inverts Log.ToT");
+        Check(Math.Abs(ValueScale.Linear.ToT(5, 0, 10) - .5f) < 1e-6, "Linear.ToT(5, 0, 10) is .5");
+        Check(Math.Abs(ValueScale.Snap(0.37f, 0.25f, 0) - 0.25f) < 1e-6, "Snap(.37, .25) rounds down to .25");
+        Check(Math.Abs(ValueScale.Snap(0.38f, 0.25f, 0) - 0.5f) < 1e-6, "Snap(.38, .25) rounds up to .5");
+        Check(ValueScale.Snap(3, 0, 0) == 3, "a step of 0 means no snapping");
+        Check(ValueScale.Linear.FromT(1f, 0.5f, 2f) == 2f && ValueScale.Linear.FromT(0f, 0.5f, 2f) == 0.5f, "the ends of the track are exactly Min and Max");
+
         Console.WriteLine(_fail == 0 ? "ALL PASS" : _fail + " FAILED");
     }
 }
