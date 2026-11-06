@@ -6,3 +6,5 @@ out="${TMPDIR:-/tmp}/facettest.exe"
 mcs -out:"$out" tests/FacetTest.cs Facet/Core/*.cs
 last=$(mono "$out" | tee /dev/stderr | tail -n 1)
 [ "$last" = "ALL PASS" ]
+if grep -rnE 'RDInput|Assembly-CSharp|UnityModManager|MelonLoader|Harmony|scnEditor|ADOFAI' Facet/ --include='*.cs'; then
+    echo "game knowledge in Facet/"; exit 1; fi
