@@ -13,8 +13,8 @@ if grep -rn 'RegisterCallback\|ConditionalWeakTable' Facet/ --include='*.cs' | g
     echo "RegisterCallback/ConditionalWeakTable outside Events.cs/Data.cs"; exit 1; fi
 if grep -rnE 'class \w+ *: *(VisualElement|Button|Label|TextField|ScrollView|MonoBehaviour)' Facet/ --include='*.cs'; then
     echo "a Facet type derives from a Unity type (IL2CPP rule 1)"; exit 1; fi
-# Colour is painted by role (Paint.cs); only the pickers' swatches may write a literal.
-if grep -rnE 'style\.(backgroundColor|color|border[A-Za-z]*Color|unity[A-Za-z]*Color) *=' Facet/ --include='*.cs' | grep -v 'Paint.cs\|ColourPicker.cs\|GradientEditor.cs'; then
+# Colour is painted by role (Paint.cs); only the pickers' swatches and a tile's data colour may write a literal.
+if grep -rnE 'style\.(backgroundColor|color|border[A-Za-z]*Color|unity[A-Za-z]*Color) *=' Facet/ --include='*.cs' | grep -v 'Paint.cs\|ColourPicker.cs\|GradientEditor.cs\|Controls.Tiles.cs'; then
     echo "direct colour write outside Paint.cs and the pickers: paint by role"; exit 1; fi
 # Sizes and looks come from the part's theme (Theme.For(e).Sizes / .Looks), never a literal or a preset.
 if grep -rnE 'SetRadius\([^,]+, *([1-9][0-9.]*|0\.[0-9]+)f?\)|fontSize *= *[0-9]' Facet/ --include='*.cs'; then

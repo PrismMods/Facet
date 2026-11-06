@@ -80,6 +80,7 @@ namespace Facet
             var track = Switch(right, out show);
             var c = new Control<bool>(right.parent, track, label, Tracked(parent, label, o, bind), show, o);
             Events.On<ClickEvent>(track, e => { c.Set(!c.Value); e.StopPropagation(); });
+            Events.On<NavigationSubmitEvent>(track, e => { c.Set(!c.Value); e.StopPropagation(); });
             return c;
         }
 

@@ -23,6 +23,11 @@ namespace Facet.Mod
         public string Desc = "one";
         /// The Feature page's preview: how often each callback ran.
         public int Shows, Hides, Ticks, Links;
+        /// The Tiles page: seven feature tiles (0..6), one judgement tile, how often Open ran, and which tiles VisibleWhen hides.
+        public bool[] Tile = new bool[7];
+        public bool Judge;
+        public int Opens;
+        public bool HideTiles;
     }
 
     // The parts window: one Nav page per part this plan adds, on the Gallery's host.
@@ -36,6 +41,7 @@ namespace Facet.Mod
         /// The Feature page, for the autotest to go to.
         public static NavItem FeatureItem { get; private set; }
         public static NavItem CardsItem { get; private set; }
+        public static NavItem TilesItem { get; private set; }
 
         public static Window Open()
         {
@@ -43,7 +49,7 @@ namespace Facet.Mod
             Surface = new Surface(Gallery.Host, "FacetGalleryParts", Layer.Window);
             _win = new Window(Surface.Root, "parts", "Facet Parts", new Rect(100, 60, 960, 600));
             _win.CloseRequested += _ => Close();
-            Nav = new Nav(_win.Body, new[] { CardsItem = new NavItem("Cards", Cards), FeatureItem = new NavItem("Feature", Feature) });
+            Nav = new Nav(_win.Body, new[] { CardsItem = new NavItem("Cards", Cards), FeatureItem = new NavItem("Feature", Feature), TilesItem = new NavItem("Tiles", Tiles) });
             return _win;
         }
 
@@ -95,6 +101,27 @@ namespace Facet.Mod
             var box = Ui.Box(right);
             box.name = "feat-box";
             box.style.height = 200f;
+        }
+
+        // Task 11: feature tiles (switch + Open) in a 5-column grid, and judgement tiles (no switch, coloured).
+        static void Tiles(VisualElement p)
+        {
+            var grid = Controls.Tiles(p);
+            grid.name = "tiles";
+            for (int i = 0; i < 7; i++)
+            {
+                int k = i;
+                Controls.Tile(grid, i == 0 ? "Judgement counter" : i == 1 ? new string('W', 200) : i == 2 ? new string('한', 80) : "Feature " + i,
+                    Bind.To(() => Model.Tile[k], v => Model.Tile[k] = v), o =>
+                    {
+                        o.Id = "tile" + k;
+                        o.Open = () => Model.Opens++;
+                        if (k == 0) o.Tooltip = "Counts each judgement";
+                        if (k < 3) o.VisibleWhen = () => !Model.HideTiles;
+                    });
+            }
+            var j = Controls.Tiles(p, o => o.Columns = 4);
+            Controls.Tile(j, "Perfect", Bind.To(() => Model.Judge, v => Model.Judge = v), o => { o.Id = "judge"; o.Switch = false; o.Colour = new Color(1f, 0f, 0f); });
         }
 
         public static void Close()

@@ -1,3 +1,4 @@
+using System.Linq;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -442,6 +443,123 @@ namespace Facet.Mod
                 for (int i = 0; i < 5; i++) { yield return null; if (i >= 2) seen.Add(wr.worldBound.yMin >= wl.worldBound.yMax - 1f); }
                 Check(seen.TrueForAll(x => x == seen[0]), "Columns in a shrink-wrapping parent holds one mode across frames", string.Join(",", seen));
                 wrap.RemoveFromHierarchy();
+            }
+            finally { GalleryParts.Close(); GalleryParts.Model = new PartsModel(); }
+        }
+
+        // Task 11: the tile grid: five across, switch vs body clicks, a coloured judgement tile, refresh, undo, search.
+        IEnumerator SectionTiles()
+        {
+            GalleryParts.Model = new PartsModel();
+            var win = GalleryParts.Open(); yield return null; yield return null;
+            try
+            {
+                var m = GalleryParts.Model; var th = Gallery.Host.Theme;
+                GalleryParts.Nav.Go(GalleryParts.TilesItem); yield return null; yield return null; yield return null;
+                Func<int, VisualElement> tile = k => win.Body.Q("tile" + k);
+                Check(tile(0) != null && tile(6) != null, "the Tiles page has its seven tiles");
+                if (tile(0) == null || tile(6) == null) yield break;
+                float w0 = tile(0).worldBound.width; bool eq = true, line = true;
+                for (int k = 1; k < 5; k++)
+                {
+                    eq &= Mathf.Abs(tile(k).worldBound.width - w0) <= 1f;
+                    line &= Mathf.Abs(tile(k).worldBound.yMin - tile(0).worldBound.yMin) <= 1f;
+                }
+                Check(eq && line && w0 > 20f, "the first five tiles are equal width +-1 on one line", w0 + "");
+                Check(tile(5).worldBound.yMin > tile(0).worldBound.yMax - 1f, "the 6th wraps", tile(5).worldBound.ToString());
+
+                m.Opens = 0; History.Clear();
+                var sw = win.Body.Q("tile0-input");
+                Check(sw != null, "a feature tile has its switch, tile0-input");
+                if (sw != null) ClickEl(sw);
+                yield return null;
+                Check(m.Tile[0] && m.Opens == 0, "a click on the switch flips the model and does not run Open", m.Opens.ToString());
+                History.Undo(); yield return null;
+                Check(!m.Tile[0], "History.Undo restores a click");
+                var lab0 = tile(0).Query<Label>().ToList().Find(l => l.text == "Judgement counter");
+                if (lab0 != null) ClickEl(lab0);
+                yield return null;
+                Check(!m.Tile[0] && m.Opens == 1, "a click on the label runs Open once and does not flip the model", m.Opens.ToString());
+                var ms = new double[1];
+                var sel = Gallery.Host.Theme.Looks.Tile.SelectedBg;
+                var selBg = sel.HasValue ? th[sel.Value] : th[Role.Row];
+                var lab3 = tile(3).Query<Label>().ToList()[0];
+                m.Tile[3] = true;
+                yield return Until(() => Near(win.Body.Q("tile3-input").style.backgroundColor.value, th[Role.Accent]), ms, 400);
+                Check(ms[0] >= 0 && ms[0] <= 150, "a flip behind the UI shows within 150 ms", Ms(ms));
+                Check(Near(tile(3).style.backgroundColor.value, selBg) && Near(lab3.resolvedStyle.color, th[Role.Text]), "...as the selected look and Text on the label");
+                m.Tile[3] = false;
+                yield return Until(() => Near(lab3.resolvedStyle.color, th[Role.TextMuted]), ms, 400);
+                Check(ms[0] >= 0, "...and flipping back restores TextMuted");
+
+                // Keyboard: one tab stop, Submit does what a click does.
+                Check(!win.Body.Q("tile0-input").focusable && tile(0).focusable, "the tile is the one tab stop, its switch is not focusable");
+                m.Opens = 0; using (var e0 = NavigationSubmitEvent.GetPooled()) { e0.target = tile(2); tile(2).SendEvent(e0); }
+                yield return null;
+                Check(!m.Tile[2] && m.Opens == 1, "Submit on a tile body runs Open, not the toggle", m.Opens.ToString());
+                var jj = win.Body.Q("judge");
+                using (var e1 = NavigationSubmitEvent.GetPooled()) { e1.target = jj; jj.SendEvent(e1); }
+                yield return null;
+                Check(m.Judge, "Submit on a Switch=false tile flips the model");
+                using (var e1 = NavigationSubmitEvent.GetPooled()) { e1.target = jj; jj.SendEvent(e1); }
+                yield return null;
+                Check(!m.Judge, "...and again flips it back");
+
+                var j = win.Body.Q("judge");
+                var red = new Color(1f, 0f, 0f);
+                Check(j != null && j.Q("judge-input") == null, "a Switch=false tile has no switch");
+                if (j == null) yield break;
+                var edge = j.Children().First(c => c.pickingMode == PickingMode.Ignore && c.style.position == Position.Absolute && c.style.width.value.value > 0f);
+                var jl = j.Query<Label>().ToList()[0];
+                Check(Near(edge.style.backgroundColor.value, red) && Mathf.Abs(edge.style.width.value.value - Gallery.Host.Theme.Sizes.Indicator) < 0.01f, "the edge is the colour, Sizes.Indicator wide");
+                Check(Near(jl.resolvedStyle.color, th[Role.TextMuted]), "off: the label is TextMuted");
+                VisualElement tint = j.Children().First(c => c.style.position == Position.Absolute && c != edge);
+                Check(tint.resolvedStyle.display == DisplayStyle.None, "off: no tint");
+                ClickEl(j); yield return null; yield return null;
+                Check(m.Judge, "a click anywhere on a Switch=false tile flips the model");
+                var tc = tint.style.backgroundColor.value;
+                Check(tint.resolvedStyle.display == DisplayStyle.Flex && Near(new Color(tc.r, tc.g, tc.b, 1f), red) && Mathf.Abs(tc.a - 0.18f) < 0.01f, "on: red at alpha .18", tc.ToString());
+                Check(Near(edge.style.backgroundColor.value, red), "on: the edge stays red");
+                Check(Near(jl.resolvedStyle.color, th[Role.Text]), "on: the label is Text", jl.resolvedStyle.color.ToString());
+                // Re-theme: the literal colour survives.
+                Paint.Apply(win.Body); yield return null;
+                Check(Near(edge.style.backgroundColor.value, red) && Mathf.Abs(tint.style.backgroundColor.value.a - 0.18f) < 0.01f, "...and survives a re-paint");
+                ClickEl(j); yield return null; yield return null;
+                Check(!m.Judge && tint.resolvedStyle.display == DisplayStyle.None && Near(j.style.backgroundColor.value, th[Role.Row]) && Near(jl.resolvedStyle.color, th[Role.TextMuted]),
+                    "off again: the tile is back to the look's background");
+
+                m.Judge = true;
+                yield return Until(() => tint.resolvedStyle.display == DisplayStyle.Flex, ms, 400);
+                Check(ms[0] >= 0 && ms[0] <= 150 && Near(edge.style.backgroundColor.value, red) && Near(jl.resolvedStyle.color, th[Role.Text]), "an external flip of the judgement tile shows the tint, red edge and Text label", Ms(ms));
+                // M3: the tint never takes the pointer.
+                var pc = j.worldBound.center;
+                var picked = j.panel.Pick(pc);
+                Check(picked != tint && picked != edge, "a pick at the tile's centre does not return the tint", picked?.name ?? picked?.GetType().Name);
+                m.Judge = false;
+                yield return Until(() => tint.resolvedStyle.display == DisplayStyle.None, ms, 400);
+
+                // Long labels keep one height and the switch inside.
+                for (int k = 1; k <= 2; k++)
+                {
+                    var t = tile(k); var s = win.Body.Q("tile" + k + "-input");
+                    Check(Mathf.Abs(t.worldBound.height - tile(0).worldBound.height) <= 1f && s.worldBound.xMax <= t.worldBound.xMax + 0.5f && s.worldBound.xMin >= t.worldBound.xMin,
+                        "a " + (k == 1 ? "200-character" : "80-Hangul") + " label keeps the tile's height and the switch inside", t.worldBound + " " + s.worldBound);
+                }
+
+                m.HideTiles = true;
+                yield return Until(() => tile(0).resolvedStyle.display == DisplayStyle.None && tile(2).resolvedStyle.display == DisplayStyle.None, ms);
+                yield return null; yield return null;
+                float y1 = tile(3).worldBound.yMin; bool one = true;
+                for (int k = 4; k < 6; k++) one &= Mathf.Abs(tile(k).worldBound.yMin - y1) <= 1f;
+                Check(one && tile(5).worldBound.yMin <= tile(3).worldBound.yMin + 1f, "hiding the first row's tiles pulls the 6th tile up to the first line", tile(5).worldBound + " vs " + tile(3).worldBound);
+                m.HideTiles = false;
+
+                GalleryParts.Nav.Filter("Feature 3"); yield return null; yield return null;
+                var l3 = win.Body.Query<Label>().ToList().Find(l => l.text == "Feature 3");
+                Check(l3 != null && !win.Body.Query<Label>().ToList().Exists(l => l.text.StartsWith("Nothing matches")), "Filter finds a tile by its label", l3?.text);
+                GalleryParts.Nav.Filter("counts each"); yield return null; yield return null;
+                Check(win.Body.Query<Label>().ToList().Exists(l => l.text == "Judgement counter") && !win.Body.Query<Label>().ToList().Exists(l => l.text.StartsWith("Nothing matches")), "...and by its tooltip");
+                GalleryParts.Nav.Filter(""); yield return null;
             }
             finally { GalleryParts.Close(); GalleryParts.Model = new PartsModel(); }
         }
