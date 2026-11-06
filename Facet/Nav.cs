@@ -129,31 +129,55 @@ namespace Facet
             if (page == null) return;
             _filter = "";
             Go(page);
-            Reveal(hit.Label);
+            Reveal(hit);
         }
 
         /* Unfold every Section on the way to the row (through the fold Section itself uses, so its
            state and the host's copy follow), then — once layout has seen the unfolded sections —
-           scroll each enclosing ScrollView to it and flash it. */
-        private void Reveal(string label)
+           scroll each enclosing ScrollView to it and flash it. Of several rows with the same label
+           the one in the hit's Section wins. Layout is polled for (16 ms, bounded); giving up is
+           logged once and the scroll is tried anyway. */
+        private void Reveal(SearchIndex.Hit hit)
         {
             VisualElement row = null;
             foreach (var e in _content.Query<VisualElement>().ToList())
-                if (e.userData is string && (string)e.userData == label) { row = e; break; }
+            {
+                if (!(e.userData is string) || (string)e.userData != hit.Label) continue;
+                if (row == null) row = e;
+                var f = EnclosingFold(e);
+                if (f != null && f.Title == hit.Section) { row = e; break; }
+            }
             if (row == null) return;
             for (var e = row.hierarchy.parent; e != null && e != _content; e = e.hierarchy.parent)
             {
                 var f = Data.Find<Controls.Fold>(e);
                 if (f != null && !f.IsOpen()) f.Set(true, false);
             }
+            int tries = 0;
+            bool done = false;
             row.schedule.Execute(() =>
             {
+                if (done) return;
+                bool ready = row.layout.height > 0f;   // NaN or 0 until a layout pass has seen it displayed
+                if (!ready && ++tries <= 30) return;
+                done = true;
+                if (!ready) Host.For(_host).Log("Nav: reveal of '" + hit.Label + "' gave up waiting for layout");
                 for (var sv = row.GetFirstAncestorOfType<ScrollView>(); sv != null; sv = sv.hierarchy.parent?.GetFirstAncestorOfType<ScrollView>())
                     sv.ScrollTo(row);
                 /* Fade a highlight out rather than in: the row is on screen by now, so starting
                    lit and settling is what draws the eye to it. */
                 Paint.Flash(row, Role.Accent, 900);
-            }).ExecuteLater(50);
+            }).Every(16).Until(() => done);
+        }
+
+        private static Controls.Fold EnclosingFold(VisualElement e)
+        {
+            for (e = e.hierarchy.parent; e != null; e = e.hierarchy.parent)
+            {
+                var f = Data.Find<Controls.Fold>(e);
+                if (f != null) return f;
+            }
+            return null;
         }
 
         /* Below CollapseAt the rail is worth less than the space it costs, so it snaps shut — and
@@ -415,8 +439,8 @@ namespace Facet
             return false;
         }
 
-        private static bool Visible(NavItem item, Host host)
-            => item.VisibleWhen == null || Safe.Get(host, "Nav.VisibleWhen", item.VisibleWhen, true);
+        private bool Visible(NavItem item, Host host)
+            => Live(item) && (item.VisibleWhen == null || Safe.Get(host, "Nav.VisibleWhen", item.VisibleWhen, true));
 
         private bool Visible(NavItem item) => Visible(item, Host.For(_host));
 
@@ -424,12 +448,9 @@ namespace Facet
         {
             foreach (var item in items)
             {
-                if (item.VisibleWhen != null)
-                {
-                    bool v = Visible(item, host);
-                    b.Vis[item] = v;
-                    if (!v) continue;
-                }
+                bool v = Visible(item, host);
+                if (item.VisibleWhen != null) b.Vis[item] = v;
+                if (!v) continue;
                 if (item.IsBranch) { IndexInto(item.Children, b, host); continue; }
                 if (item.Build == null) continue;
                 if (item.Revision != null) b.Revs[item] = Safe.Get(host, "Nav.Revision", item.Revision, 0);
@@ -468,13 +489,17 @@ namespace Facet
         }
 
         /// The last leaf opened under each branch, which clicking the branch reopens.
+        /// Owners taken out by RemoveOwner. The caller's NavItems are never edited: they are filtered by this.
+        private readonly HashSet<string> _removed = new HashSet<string>();
+
         private readonly Dictionary<NavItem, NavItem> _last = new Dictionary<NavItem, NavItem>();
 
         /// Remove every page `owner` put in (and any branch or group left empty by it), drop the
         /// search index, and move off the open page if it went.
         public void RemoveOwner(string owner)
         {
-            if (owner == null || !Prune(_roots, owner)) return;
+            if (owner == null || _removed.Contains(owner) || !HasOwner(_roots, owner)) return;
+            _removed.Add(owner);
             _built.Clear();
             _last.Clear();
             var open = _path.Count > 0 ? _path[_path.Count - 1] : null;
@@ -490,26 +515,27 @@ namespace Facet
             if (_filter.Length > 0) ShowResults();
         }
 
-        private static bool Prune(List<NavItem> items, string owner)
+        private static bool HasOwner(List<NavItem> items, string owner)
         {
-            bool any = false;
-            for (int i = items.Count - 1; i >= 0; i--)
-            {
-                var it = items[i];
-                if (it.Owner == owner) { items.RemoveAt(i); any = true; }
-                else if (it.IsBranch && Prune(it.Children, owner))
-                {
-                    any = true;
-                    if (it.Children.Count == 0) items.RemoveAt(i);
-                }
-            }
-            return any;
+            foreach (var it in items)
+                if (it.Owner == owner || (it.IsBranch && HasOwner(it.Children, owner))) return true;
+            return false;
         }
 
-        private static bool FindPath(List<NavItem> items, NavItem target, List<NavItem> path)
+        /// Not removed with its owner, and — for a branch or group — something left under it.
+        private bool Live(NavItem it)
+        {
+            if (it.Owner != null && _removed.Contains(it.Owner)) return false;
+            if (!it.IsBranch) return true;
+            foreach (var c in it.Children) if (Live(c)) return true;
+            return false;
+        }
+
+        private bool FindPath(List<NavItem> items, NavItem target, List<NavItem> path)
         {
             foreach (var i in items)
             {
+                if (!Visible(i)) continue;
                 path.Add(i);
                 if (i == target) return true;
                 if (i.IsBranch && FindPath(i.Children, target, path)) return true;
@@ -586,7 +612,12 @@ namespace Facet
                        in just folds or unfolds: it does not steal the content pane, the page you
                        were reading stays until you pick another one. */
                     NavItem back;
-                    if (!_path.Contains(item) && _last.TryGetValue(item, out back)) { Go(back); return; }
+                    if (!_path.Contains(item) && _last.TryGetValue(item, out back))
+                    {
+                        // The remembered leaf, unless it (or a branch above it) has since gone or hidden.
+                        if (!FindPath(_roots, back, new List<NavItem>())) back = FirstLeaf(item.Children);
+                        if (back != null) { Go(back); return; }
+                    }
                     if (!_expanded.Remove(item.Title)) _expanded.Add(item.Title);
                     RebuildRail();
                 }

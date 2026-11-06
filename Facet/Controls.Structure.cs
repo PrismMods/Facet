@@ -79,7 +79,7 @@ namespace Facet
         private static readonly System.Collections.Generic.Dictionary<string, bool> _folds = new System.Collections.Generic.Dictionary<string, bool>();
 
         /// How a Section body is folded from outside (Nav's reveal), set by Section.
-        internal sealed class Fold { public Action<bool, bool> Set; public Func<bool> IsOpen; }
+        internal sealed class Fold { public string Title; public Action<bool, bool> Set; public Func<bool> IsOpen; }
 
         public static VisualElement Section(VisualElement parent, string title, bool defaultOpen = true)
         {
@@ -118,6 +118,7 @@ namespace Facet
                 else if (animate) Anim.SlideIn(body, -6f, Anim.Fast);
                 else body.style.display = DisplayStyle.Flex;
             };
+            Data.Get<Fold>(body).Title = title;
             Data.Get<Fold>(body).Set = fold;
             Data.Get<Fold>(body).IsOpen = () => open;
             Events.On<ClickEvent>(head, _ => fold(!open, true));

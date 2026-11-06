@@ -687,15 +687,16 @@ namespace Facet.Mod
             var h = Host.Create("NavIdx", o => o.Log = m => { logs.Add(m); Main.Log("[navidx] " + m); });
             var s = new Surface(h, "FacetNavIdx", Layer.Window);
             var w = new Window(s.Root, "navidx", "Nav index", new Rect(40, 40, 700, 500));
-            var built = new int[6];
-            bool shown = false;
+            var built = new int[7];
+            bool shown = false, hideBeta2 = false;
             Func<string, VisualElement> rowOf = t => w.Body.Query<VisualElement>().ToList().Find(e => e.userData as string == t);
             Func<string, Label> lab = t => w.Body.Query<Label>().ToList().Find(l => l.text == t);
             var pages = new[] {
                 new NavItem("Alpha", p => { built[0]++; Controls.Info(p, "Page Alpha", () => "a"); }) { Owner = "A" },
                 new NavItem("Branch").With(
                     new NavItem("Beta1", p => { built[1]++; Controls.Info(p, "Page Beta1", () => "b"); }) { Owner = "A" },
-                    new NavItem("Beta2", p => { built[2]++; Controls.Info(p, "Page Beta2", () => "b"); }) { Owner = "A" }),
+                    new NavItem("Beta2", p => { built[2]++; Controls.Info(p, "Page Beta2", () => "b"); }) { Owner = "A", VisibleWhen = () => !hideBeta2 },
+                    new NavItem("Beta3", p => { built[5]++; Controls.Info(p, "Page Beta3", () => "b"); }) { Owner = "B" }),
                 new NavItem("Gamma", p =>
                 {
                     built[3]++;
@@ -715,18 +716,21 @@ namespace Facet.Mod
 
             nav.Filter("tint"); yield return null; yield return null;
             Check(nav.Index != null, "the first non-empty Filter builds the index");
-            Check(built[0] >= 2 && built[1] == 1 && built[2] == 1 && built[3] == 1 && built[4] == 0, "the index builds each visible page once and skips hidden ones", string.Join(",", built));
+            Check(built[0] >= 2 && built[1] == 1 && built[2] == 1 && built[3] == 1 && built[5] == 1 && built[4] == 0, "the index builds each visible page once and skips hidden ones", string.Join(",", built));
             Check(lab("Tint") != null, "Filter(tint) lists the Tint row");
             nav.Filter("ti"); nav.Filter("tin"); yield return null;
             int perf = logs.FindAll(m => m.StartsWith("[perf] search index ")).Count;
             Check(perf == 1, "the index is built and logged once for several queries", perf.ToString());
             var line = logs.Find(m => m.StartsWith("[perf] search index "));
             var parts = (line ?? "").Split(' ');   // [perf] search index N pages M ms
-            Check(parts.Length >= 7 && parts[4] == "pages" && int.Parse(parts[3]) == 4 && int.Parse(parts[5]) <= 100, "index of 4 pages built within 100 ms", line);
+            Check(parts.Length >= 7 && parts[4] == "pages" && int.Parse(parts[3]) == 5 && int.Parse(parts[5]) <= 100, "index of 5 pages built within 100 ms", line);
             nav.Filter("page hidden"); yield return null;
             Check(lab("Nothing matches.") != null, "a hidden page is not searchable");
+            nav.Go(pages[2]); yield return null; yield return null;
+            var tint0 = rowOf("Tint");
+            Check(tint0 != null && tint0.parent.resolvedStyle.display == DisplayStyle.None, "the Colours section is folded before the hit is clicked");
             nav.Filter("tint"); yield return null;
-            ClickEl(lab("Tint")); 
+            ClickEl(lab("Tint"));
 
             var ms = new double[1];
             Func<bool> revealed = () =>
@@ -741,7 +745,7 @@ namespace Facet.Mod
             Check(lab("Page Alpha") == null && tint != null, "clicking the hit opens the Gamma page");
             var body = tint == null ? null : tint.parent;
             Check(body != null && body.resolvedStyle.display != DisplayStyle.None, "the folded Colours section was unfolded");
-            Check(ms[0] >= 0, "the Tint row ends inside the content viewport", tint == null ? "no row" : tint.worldBound + " vs " + tint.GetFirstAncestorOfType<ScrollView>().contentViewport.worldBound);
+            Check(ms[0] >= 0 && revealed(), "the Tint row ends inside the content viewport", tint == null ? "no row" : tint.worldBound + " vs " + tint.GetFirstAncestorOfType<ScrollView>().contentViewport.worldBound);
             var csv = tint?.GetFirstAncestorOfType<ScrollView>();
             float y = csv == null ? 0f : csv.scrollOffset.y;
             Check(y > 0f, "the page scrolled to the row", y.ToString());
@@ -755,6 +759,13 @@ namespace Facet.Mod
             ClickEl(lab("Branch").parent); yield return null; yield return null;
             Check(lab("Page Beta2") != null, "clicking a branch reopens the last leaf opened in it");
 
+            // A remembered leaf that has since hidden is not reopened: the first visible leaf is.
+            hideBeta2 = true;
+            nav.Go(pages[0]); yield return null; yield return null;
+            ClickEl(lab("Branch").parent); yield return null; yield return null;
+            Check(lab("Page Beta2") == null && lab("Page Beta1") != null, "a hidden last leaf is skipped for the first visible one");
+            hideBeta2 = false;
+
             // VisibleWhen is re-read by Rebuild.
             shown = true; nav.Rebuild(); yield return null; yield return null;
             Check(lab("Hidden") != null, "Rebuild shows a page whose VisibleWhen turned true");
@@ -764,9 +775,45 @@ namespace Facet.Mod
             nav.RemoveOwner("B"); yield return null; yield return null;
             Check(lab("Gamma") == null && lab("Alpha") != null, "RemoveOwner(B) drops B's pages from the rail");
             Check(nav.Index == null, "RemoveOwner drops the index");
+            Check(pages[1].Children.Count == 3 && pages[2].Owner == "B", "RemoveOwner leaves the caller's NavItems alone");
+            var w2 = new Window(s.Root, "navidx2", "Nav index 2", new Rect(760, 40, 400, 400));
+            new Nav(w2.Body, pages); yield return null; yield return null;
+            Check(w2.Body.Query<Label>().ToList().Find(l => l.text == "Gamma") != null, "the same items in a second Nav still show B's pages");
+            w2.Body.Clear();
             nav.Filter("tint"); yield return null;
             Check(lab("Nothing matches.") != null, "...and a rebuilt index no longer finds B's rows");
             s.Dispose();
+
+            // Two rows with one label in two sections: the second hit reveals the second.
+            var sd = new Surface(Gallery.Host, "FacetNavIdxDup", Layer.Window);
+            var wd = new Window(sd.Root, "navidxdup", "Nav dup", new Rect(40, 40, 500, 400));
+            var navd = new Nav(wd.Body, new[] { new NavItem("Dup", p =>
+            {
+                var a = Controls.Section(p, "First");
+                for (int i = 0; i < 30; i++) Controls.Info(a, "Pad " + i, () => "f");
+                Controls.Info(a, "Enabled", () => "1");
+                var b = Controls.Section(p, "Second", false);
+                for (int i = 0; i < 30; i++) Controls.Info(b, "Fill " + i, () => "f");
+                Controls.Info(b, "Enabled", () => "2");
+            }) });
+            yield return null; yield return null;
+            navd.Filter("enabled"); yield return null;
+            var hits = wd.Body.Query<Label>().ToList().FindAll(l => l.text == "Enabled");
+            Check(hits.Count == 2, "two same-labelled rows give two hits", hits.Count.ToString());
+            if (hits.Count == 2)
+            {
+                ClickEl(hits[1]);
+                var msd = new double[1];
+                Func<VisualElement> second = () => { var all = wd.Body.Query<VisualElement>().ToList().FindAll(e => e.userData as string == "Enabled"); return all.Count == 2 ? all[1] : null; };
+                yield return Until(() =>
+                {
+                    var r = second(); if (r == null || r.layout.height <= 0f) return false;
+                    var vp = r.GetFirstAncestorOfType<ScrollView>().contentViewport.worldBound;
+                    return r.worldBound.yMin >= vp.yMin - 1f && r.worldBound.yMax <= vp.yMax + 1f;
+                }, msd, 2000);
+                Check(msd[0] >= 0, "the hit for the second Enabled row reveals the second one");
+            }
+            sd.Dispose();
 
             // Korean: a hit matches in both languages, and a jamo query finds it.
             var sk = new Surface(Gallery.Host, "FacetNavIdxKo", Layer.Window);
