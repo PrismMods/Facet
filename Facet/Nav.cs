@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -20,6 +21,13 @@ namespace Facet
            why the font list used to need a tab switch to appear: Refresh() returns long before the
            fetch does, and nothing asked again. */
         public Func<int> Revision;
+
+        /// Who put this page here, for Nav.RemoveOwner: a mod that unloads takes its pages with it.
+        public string Owner;
+
+        /// Asked whenever the rail is built (Nav.Rebuild re-asks); false hides the page and its subtree
+        /// from the rail and from search.
+        public Func<bool> VisibleWhen;
 
         /* A GROUP is a heading whose children are always visible — no chevron, nothing to expand,
            the heading itself is not a page. It buys the organisation of a tree without the cost of
@@ -61,6 +69,7 @@ namespace Facet
 
         private string _filter = "";
         private VisualElement _railScroll;
+        private ScrollView _contentScroll;
         private bool _railOpen = true;
 
         /* Search shows RESULTS, not a filtered rail. Filtering the rail answers "which page might
@@ -88,7 +97,7 @@ namespace Facet
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
 
             _content.Clear();
-            var hits = SearchIndex.Find(_filter);
+            var hits = EnsureIndex().Find(_filter);
             if (hits.Count == 0) { Ui.Muted("Nothing matches.", _content, true); return; }
 
             foreach (var hit in hits)
@@ -105,7 +114,7 @@ namespace Facet
                 label.pickingMode = PickingMode.Ignore;
 
                 // Where it lives, so the result teaches the menu rather than bypassing it.
-                var where = Ui.Muted(string.IsNullOrEmpty(h.Group) ? h.Page : h.Page + " · " + h.Group, row);
+                var where = Ui.Muted(string.IsNullOrEmpty(h.Section) ? h.Page : h.Page + " · " + h.Section, row);
                 where.pickingMode = PickingMode.Ignore;
 
                 Paint.Look(row, Look.Row);
@@ -113,26 +122,38 @@ namespace Facet
             }
         }
 
-        /// Open the page a hit lives on and flash its row, so the eye lands on the right one.
+        /// Open the page a hit lives on and bring its row into view.
         private void GoTo(SearchIndex.Hit hit)
         {
             var page = hit.PageRef as NavItem;
             if (page == null) return;
             _filter = "";
             Go(page);
-            Flash(hit.Label);
+            Reveal(hit.Label);
         }
 
-        private void Flash(string label)
+        /* Unfold every Section on the way to the row (through the fold Section itself uses, so its
+           state and the host's copy follow), then — once layout has seen the unfolded sections —
+           scroll each enclosing ScrollView to it and flash it. */
+        private void Reveal(string label)
         {
+            VisualElement row = null;
             foreach (var e in _content.Query<VisualElement>().ToList())
+                if (e.userData is string && (string)e.userData == label) { row = e; break; }
+            if (row == null) return;
+            for (var e = row.hierarchy.parent; e != null && e != _content; e = e.hierarchy.parent)
             {
-                if (!(e.userData is string) || (string)e.userData != label) continue;
-                /* Fade a highlight out rather than in: the row is already on screen by the time
-                   this runs, so starting lit and settling is what draws the eye to it. */
-                Paint.Flash(e, Role.Accent, 900);
-                return;
+                var f = Data.Find<Controls.Fold>(e);
+                if (f != null && !f.IsOpen()) f.Set(true, false);
             }
+            row.schedule.Execute(() =>
+            {
+                for (var sv = row.GetFirstAncestorOfType<ScrollView>(); sv != null; sv = sv.hierarchy.parent?.GetFirstAncestorOfType<ScrollView>())
+                    sv.ScrollTo(row);
+                /* Fade a highlight out rather than in: the row is on screen by now, so starting
+                   lit and settling is what draws the eye to it. */
+                Paint.Flash(row, Role.Accent, 900);
+            }).ExecuteLater(50);
         }
 
         /* Below CollapseAt the rail is worth less than the space it costs, so it snaps shut — and
@@ -328,6 +349,7 @@ namespace Facet
             Skin.When<ScrollView>(contentScroll, Skin.Scroll);
             right.Add(contentScroll);
             _content = contentScroll.contentContainer;
+            _contentScroll = contentScroll;
 
             /* Siblings draw in the order they were added, so the scrolling pane was painting over
                the title that is supposed to sit above it — the rows slid under it and both stayed
@@ -337,7 +359,6 @@ namespace Facet
 
             PaintHandle();
             ReportInset();
-            IndexPages();
 
             // Open the first leaf, so the pane is never blank on arrival.
             var first = FirstLeaf(_roots);
@@ -347,24 +368,76 @@ namespace Facet
 
         /* Pages are built on demand, so nothing would know what a page contains until it is
            opened — and a search that only finds pages you have already visited is not a search.
-           Each is built once into a container that is never added to the panel. */
-        private void IndexPages()
+           The first query builds each visible page once into a container that is never added to
+           the panel, with SearchIndex.Building pointing at this Nav's index; nothing is built at
+           construction. One index per language (labels are indexed as the host shows them), kept
+           until a page's Revision or visibility changes or an owner is removed. */
+        private sealed class Built
         {
-            SearchIndex.Clear();
-            IndexInto(_roots);
-            SearchIndex.EndPage();
+            public SearchIndex Index;
+            public readonly Dictionary<NavItem, int> Revs = new Dictionary<NavItem, int>();
+            public readonly Dictionary<NavItem, bool> Vis = new Dictionary<NavItem, bool>();
+            public int Pages;
         }
 
-        private void IndexInto(List<NavItem> items)
+        private readonly Dictionary<string, Built> _built = new Dictionary<string, Built>();
+
+        /// The index for the host's current language: null until the first non-empty Filter builds it.
+        public SearchIndex Index
+        {
+            get { Built b; return _built.TryGetValue(Host.For(_host).Language, out b) ? b.Index : null; }
+        }
+
+        private SearchIndex EnsureIndex()
+        {
+            var host = Host.For(_host);
+            string lang = host.Language;
+            Built b;
+            if (_built.TryGetValue(lang, out b) && !Stale(b, host)) return b.Index;
+
+            var sw = Stopwatch.StartNew();
+            b = new Built { Index = new SearchIndex(host.Translate) };
+            var was = SearchIndex.Building;
+            SearchIndex.Building = b.Index;
+            try { IndexInto(_roots, b, host); }
+            finally { SearchIndex.Building = was; b.Index.End(); }
+            _built[lang] = b;
+            host.Log("[perf] search index " + b.Pages + " pages " + sw.ElapsedMilliseconds + " ms");
+            return b.Index;
+        }
+
+        private bool Stale(Built b, Host host)
+        {
+            foreach (var kv in b.Revs)
+                if (Safe.Get(host, "Nav.Revision", kv.Key.Revision, kv.Value) != kv.Value) return true;
+            foreach (var kv in b.Vis)
+                if (Visible(kv.Key, host) != kv.Value) return true;
+            return false;
+        }
+
+        private static bool Visible(NavItem item, Host host)
+            => item.VisibleWhen == null || Safe.Get(host, "Nav.VisibleWhen", item.VisibleWhen, true);
+
+        private bool Visible(NavItem item) => Visible(item, Host.For(_host));
+
+        private void IndexInto(List<NavItem> items, Built b, Host host)
         {
             foreach (var item in items)
             {
-                if (item.IsBranch) { IndexInto(item.Children); continue; }
+                if (item.VisibleWhen != null)
+                {
+                    bool v = Visible(item, host);
+                    b.Vis[item] = v;
+                    if (!v) continue;
+                }
+                if (item.IsBranch) { IndexInto(item.Children, b, host); continue; }
                 if (item.Build == null) continue;
-                SearchIndex.BeginPage(item, item.Title);
-                using (Host.Use(Host.For(_host)))   // the throwaway has no surface to name its host
-                    Safe.Run(Host.For(_host), "Nav.build '" + item.Title + "'", () => item.Build(new VisualElement()));
-                SearchIndex.EndPage();
+                if (item.Revision != null) b.Revs[item] = Safe.Get(host, "Nav.Revision", item.Revision, 0);
+                b.Index.Begin(item, item.Title);
+                using (Host.Use(host))   // the throwaway has no surface to name its host
+                    Safe.Run(host, "Nav.build '" + item.Title + "'", () => item.Build(new VisualElement()));
+                b.Index.End();
+                b.Pages++;
             }
         }
 
@@ -372,6 +445,7 @@ namespace Facet
         {
             foreach (var i in items)
             {
+                if (!Visible(i)) continue;
                 if (!i.IsBranch) return i;
                 var deep = FirstLeaf(i.Children);
                 if (deep != null) return deep;
@@ -382,13 +456,54 @@ namespace Facet
         /// Open a page, expanding whatever contains it.
         public void Go(NavItem target)
         {
+            var path = new List<NavItem>();
+            if (!FindPath(_roots, target, path)) return;
             _stack.Clear();
             _path.Clear();
-            if (!FindPath(_roots, target, _path)) return;
-            foreach (var step in _path) if (step.IsBranch) _expanded.Add(step.Title);
+            _path.AddRange(path);
+            foreach (var step in _path) if (step.IsBranch) { _expanded.Add(step.Title); _last[step] = target; }
             RebuildRail();
             RebuildCrumbs();
             RebuildContent();
+        }
+
+        /// The last leaf opened under each branch, which clicking the branch reopens.
+        private readonly Dictionary<NavItem, NavItem> _last = new Dictionary<NavItem, NavItem>();
+
+        /// Remove every page `owner` put in (and any branch or group left empty by it), drop the
+        /// search index, and move off the open page if it went.
+        public void RemoveOwner(string owner)
+        {
+            if (owner == null || !Prune(_roots, owner)) return;
+            _built.Clear();
+            _last.Clear();
+            var open = _path.Count > 0 ? _path[_path.Count - 1] : null;
+            if (open != null && !FindPath(_roots, open, new List<NavItem>()))
+            {
+                _path.Clear();
+                _stack.Clear();
+                var first = FirstLeaf(_roots);
+                if (first != null) { Go(first); return; }
+                RebuildRail(); RebuildCrumbs(); RebuildContent();
+            }
+            else RebuildRail();
+            if (_filter.Length > 0) ShowResults();
+        }
+
+        private static bool Prune(List<NavItem> items, string owner)
+        {
+            bool any = false;
+            for (int i = items.Count - 1; i >= 0; i--)
+            {
+                var it = items[i];
+                if (it.Owner == owner) { items.RemoveAt(i); any = true; }
+                else if (it.IsBranch && Prune(it.Children, owner))
+                {
+                    any = true;
+                    if (it.Children.Count == 0) items.RemoveAt(i);
+                }
+            }
+            return any;
         }
 
         private static bool FindPath(List<NavItem> items, NavItem target, List<NavItem> path)
@@ -411,6 +526,7 @@ namespace Facet
 
         private void AddRailItem(NavItem item, int depth)
         {
+            if (!Visible(item)) return;
             if (item.Group)
             {
                 /* A heading has to be obviously NOT clickable, or it reads as a page that does
@@ -466,8 +582,11 @@ namespace Facet
             {
                 if (item.IsBranch)
                 {
-                    // A branch toggles open. It does not steal the content pane: the page you were
-                    // reading stays until you pick another one.
+                    /* A branch you are not in reopens the leaf you last had open in it. One you are
+                       in just folds or unfolds: it does not steal the content pane, the page you
+                       were reading stays until you pick another one. */
+                    NavItem back;
+                    if (!_path.Contains(item) && _last.TryGetValue(item, out back)) { Go(back); return; }
                     if (!_expanded.Remove(item.Title)) _expanded.Add(item.Title);
                     RebuildRail();
                 }
@@ -595,7 +714,23 @@ namespace Facet
         }
 
         /// Rebuild the open page in place, for a host whose values changed underneath it.
-        public void Refresh() => RebuildContent();
+        public void Refresh() => Rebuild();
+
+        /* Rebuild the open page and keep where it was scrolled to. The rail is rebuilt too, so a
+           VisibleWhen that turned over shows up. Layout only knows the new height a frame later,
+           so the offset is put back until it takes (bounded: this never polls for long). */
+        public void Rebuild()
+        {
+            var sv = _contentScroll;
+            var off = sv.scrollOffset;
+            RebuildRail();
+            RebuildContent();
+            if (off.y <= 0f && off.x <= 0f) return;
+            sv.scrollOffset = off;
+            int tries = 0;
+            sv.schedule.Execute(() => sv.scrollOffset = off).Every(16)
+              .Until(() => (Mathf.Abs(sv.scrollOffset.y - off.y) < 1f && Mathf.Abs(sv.scrollOffset.x - off.x) < 1f) || ++tries > 30);
+        }
 
         private int _lastRevision;
 

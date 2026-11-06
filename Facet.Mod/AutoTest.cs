@@ -100,6 +100,7 @@ namespace Facet.Mod
             yield return Run("SectionValues", SectionValues());
             yield return Run("SectionStructure", SectionStructure());
             yield return Run("SectionInput", SectionInput());
+            yield return Run("SectionNavIndex", SectionNavIndex());
             // Later tasks: yield return Run("Section...", Section...());
 
             Main.Log("AUTOTEST DONE pass=" + _pass + " fail=" + _fail);
@@ -272,10 +273,7 @@ namespace Facet.Mod
         // no widget may keep a colour from the old scheme.
         IEnumerator SectionNoStale()
         {
-            // The warm-up window builds a Nav, whose constructor clears the shared search index:
-            // landing mid-section it wiped this page's entries and the search found nothing.
-            var warm = typeof(Surface).Assembly.GetType("Facet.WarmUp").GetField("Done", BindingFlags.NonPublic | BindingFlags.Static);
-            for (var sw = Stopwatch.StartNew(); !(bool)warm.GetValue(null) && sw.ElapsedMilliseconds < 3000;) yield return null;
+            // No wait for the warm-up window: its Nav has its own index, so it cannot wipe this one.
             var t = new Theme();
             var h = Host.Create("NoStale", o => { o.Log = m => Main.Log("[nostale] " + m); o.Theme = t; });
             var s = new Surface(h, "FacetNoStale", Layer.Window);
@@ -680,6 +678,110 @@ namespace Facet.Mod
             nav2.Refresh(); yield return null; yield return null;
             Check(bare().style.display == DisplayStyle.None, "with a host that has no Read/Write, a folded section stays folded after a rebuild");
             s2.Dispose();
+        }
+
+        // Task 14: one lazy index per Nav, reveal through folded sections, owners, last leaf, VisibleWhen.
+        IEnumerator SectionNavIndex()
+        {
+            var logs = new List<string>();
+            var h = Host.Create("NavIdx", o => o.Log = m => { logs.Add(m); Main.Log("[navidx] " + m); });
+            var s = new Surface(h, "FacetNavIdx", Layer.Window);
+            var w = new Window(s.Root, "navidx", "Nav index", new Rect(40, 40, 700, 500));
+            var built = new int[6];
+            bool shown = false;
+            Func<string, VisualElement> rowOf = t => w.Body.Query<VisualElement>().ToList().Find(e => e.userData as string == t);
+            Func<string, Label> lab = t => w.Body.Query<Label>().ToList().Find(l => l.text == t);
+            var pages = new[] {
+                new NavItem("Alpha", p => { built[0]++; Controls.Info(p, "Page Alpha", () => "a"); }) { Owner = "A" },
+                new NavItem("Branch").With(
+                    new NavItem("Beta1", p => { built[1]++; Controls.Info(p, "Page Beta1", () => "b"); }) { Owner = "A" },
+                    new NavItem("Beta2", p => { built[2]++; Controls.Info(p, "Page Beta2", () => "b"); }) { Owner = "A" }),
+                new NavItem("Gamma", p =>
+                {
+                    built[3]++;
+                    var f = Controls.Section(p, "Filler");
+                    for (int i = 0; i < 40; i++) Controls.Info(f, "Filler " + i, () => "f");
+                    var c = Controls.Section(p, "Colours", false);
+                    Controls.Colour(c, "Tint", Bind.Value(Color.cyan));
+                    for (int i = 0; i < 10; i++) Controls.Info(c, "After " + i, () => "f");
+                }) { Owner = "B" },
+                new NavItem("Hidden", p => { built[4]++; Controls.Info(p, "Page Hidden", () => "h"); }) { VisibleWhen = () => shown },
+            };
+            var nav = new Nav(w.Body, pages);
+            yield return null; yield return null;
+            Check(built[0] == 1 && built[1] + built[2] + built[3] + built[4] == 0, "constructing a Nav builds only the first page", string.Join(",", built));
+            Check(nav.Index == null, "no search index exists before the first query");
+            Check(lab("Hidden") == null, "a page whose VisibleWhen is false is not in the rail");
+
+            nav.Filter("tint"); yield return null; yield return null;
+            Check(nav.Index != null, "the first non-empty Filter builds the index");
+            Check(built[0] >= 2 && built[1] == 1 && built[2] == 1 && built[3] == 1 && built[4] == 0, "the index builds each visible page once and skips hidden ones", string.Join(",", built));
+            Check(lab("Tint") != null, "Filter(tint) lists the Tint row");
+            nav.Filter("ti"); nav.Filter("tin"); yield return null;
+            int perf = logs.FindAll(m => m.StartsWith("[perf] search index ")).Count;
+            Check(perf == 1, "the index is built and logged once for several queries", perf.ToString());
+            var line = logs.Find(m => m.StartsWith("[perf] search index "));
+            var parts = (line ?? "").Split(' ');   // [perf] search index N pages M ms
+            Check(parts.Length >= 7 && parts[4] == "pages" && int.Parse(parts[3]) == 4 && int.Parse(parts[5]) <= 100, "index of 4 pages built within 100 ms", line);
+            nav.Filter("page hidden"); yield return null;
+            Check(lab("Nothing matches.") != null, "a hidden page is not searchable");
+            nav.Filter("tint"); yield return null;
+            ClickEl(lab("Tint")); 
+
+            var ms = new double[1];
+            Func<bool> revealed = () =>
+            {
+                var r = rowOf("Tint"); if (r == null) return false;
+                var sv = r.GetFirstAncestorOfType<ScrollView>(); if (sv == null) return false;
+                var vp = sv.contentViewport.worldBound;
+                return r.worldBound.yMin >= vp.yMin - 1f && r.worldBound.yMax <= vp.yMax + 1f && r.worldBound.height > 0f;
+            };
+            yield return Until(revealed, ms, 2000);
+            var tint = rowOf("Tint");
+            Check(lab("Page Alpha") == null && tint != null, "clicking the hit opens the Gamma page");
+            var body = tint == null ? null : tint.parent;
+            Check(body != null && body.resolvedStyle.display != DisplayStyle.None, "the folded Colours section was unfolded");
+            Check(ms[0] >= 0, "the Tint row ends inside the content viewport", tint == null ? "no row" : tint.worldBound + " vs " + tint.GetFirstAncestorOfType<ScrollView>().contentViewport.worldBound);
+            var csv = tint?.GetFirstAncestorOfType<ScrollView>();
+            float y = csv == null ? 0f : csv.scrollOffset.y;
+            Check(y > 0f, "the page scrolled to the row", y.ToString());
+            nav.Rebuild(); yield return null; yield return null; yield return null;
+            Check(csv != null && Mathf.Abs(csv.scrollOffset.y - y) < 1f, "Rebuild keeps the scroll offset", y + " -> " + (csv == null ? -1f : csv.scrollOffset.y));
+
+            // Last leaf per branch.
+            nav.Go(pages[1].Children[1]); yield return null;
+            nav.Go(pages[0]); yield return null; yield return null;
+            Check(lab("Page Alpha") != null, "Alpha is open");
+            ClickEl(lab("Branch").parent); yield return null; yield return null;
+            Check(lab("Page Beta2") != null, "clicking a branch reopens the last leaf opened in it");
+
+            // VisibleWhen is re-read by Rebuild.
+            shown = true; nav.Rebuild(); yield return null; yield return null;
+            Check(lab("Hidden") != null, "Rebuild shows a page whose VisibleWhen turned true");
+
+            // Owners.
+            Check(lab("Gamma") != null, "Gamma is in the rail");
+            nav.RemoveOwner("B"); yield return null; yield return null;
+            Check(lab("Gamma") == null && lab("Alpha") != null, "RemoveOwner(B) drops B's pages from the rail");
+            Check(nav.Index == null, "RemoveOwner drops the index");
+            nav.Filter("tint"); yield return null;
+            Check(lab("Nothing matches.") != null, "...and a rebuilt index no longer finds B's rows");
+            s.Dispose();
+
+            // Korean: a hit matches in both languages, and a jamo query finds it.
+            var sk = new Surface(Gallery.Host, "FacetNavIdxKo", Layer.Window);
+            var wk = new Window(sk.Root, "navidxko", "Nav index ko", new Rect(40, 40, 500, 400));
+            var navk = new Nav(wk.Body, new[] { new NavItem("Colours", p => Controls.Colour(p, "Tint", Bind.Value(Color.cyan))) });
+            try
+            {
+                Gallery.Lang = "ko";
+                navk.Filter("\u314C"); yield return null; yield return null;
+                Check(wk.Body.Query<Label>().ToList().Find(l => l.text == "\uD2F4\uD2B8") != null, "Filter(jamo) with the host in Korean finds the translated Tint row");
+                navk.Filter("tint"); yield return null; yield return null;
+                Check(wk.Body.Query<Label>().ToList().Find(l => l.text == "\uD2F4\uD2B8") != null, "the English key still finds the translated row");
+            }
+            finally { Gallery.Lang = "en"; }
+            sk.Dispose();
         }
 
         static Label LiveLabel(string text)

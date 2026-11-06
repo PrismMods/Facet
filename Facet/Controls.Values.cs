@@ -189,6 +189,7 @@ namespace Facet
         {
             var o = ControlOptions.Make(parent, label, configure);
             var root = Ui.Row(parent);
+            Controls.Noted(root, label);
             root.style.alignItems = Align.FlexStart;
             var inner = Ui.Box(root);
             inner.style.flexGrow = 1f;
@@ -307,7 +308,7 @@ namespace Facet
             var row = Ui.Row(parent);
             row.style.minHeight = Controls.RowHeight;
             row.style.marginBottom = 2f;
-            SearchIndex.Note(Words.Show(text, Host.For(row), false));
+            Controls.Noted(row, text);
             var b = Armed(text, onConfirm, row);
             Hook(row, b, text, o);
             return b;

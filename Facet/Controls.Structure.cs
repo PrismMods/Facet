@@ -12,16 +12,23 @@ namespace Facet
         private const float ArrowSlot = 22f;
         private const float ArrowSize = 20f;   // the chevron was a speck at body size
 
+        /* Makes `row` findable: the shown label (translated, so a search in the player's language
+           finds it) is how a result finds the row again, and the index notes both forms. Every row
+           that is a setting by itself, not by way of Row, calls this. */
+        internal static void Noted(VisualElement row, string label)
+        {
+            string shown = Words.Show(label, Host.For(row), false);
+            row.userData = shown;
+            SearchIndex.Note(label, shown);
+        }
+
         /// Label on the left, whatever the caller adds on the right.
         public static VisualElement Row(VisualElement parent, string label, string tooltip = null)
         {
             var row = Ui.Row(parent);
-            // Translated before Note, so a search in the player's language finds it.
-            string shown = Words.Show(label, Host.For(row), false);
+            Noted(row, label);
             row.style.minHeight = RowHeight;
             row.style.marginBottom = 2f;
-            row.userData = shown;          // how a search result finds this row again
-            SearchIndex.Note(shown);
             row.style.justifyContent = Justify.SpaceBetween;
             row.style.paddingLeft = 4f;
             row.style.paddingRight = 4f;
@@ -71,9 +78,12 @@ namespace Facet
            "fold.<page>/<title>" as "0"/"1", so a page does not refold on every rebuild or restart. */
         private static readonly System.Collections.Generic.Dictionary<string, bool> _folds = new System.Collections.Generic.Dictionary<string, bool>();
 
+        /// How a Section body is folded from outside (Nav's reveal), set by Section.
+        internal sealed class Fold { public Action<bool, bool> Set; public Func<bool> IsOpen; }
+
         public static VisualElement Section(VisualElement parent, string title, bool defaultOpen = true)
         {
-            SearchIndex.CurrentGroup = title;
+            SearchIndex.EnterSection(title);
             var nav = Nav.Active;
             string key = "fold." + (nav != null ? nav.PageTitle : "") + "/" + title;
             var host = Host.For(parent);
@@ -97,15 +107,20 @@ namespace Facet
             body.style.display = open ? DisplayStyle.Flex : DisplayStyle.None;
             body.style.marginBottom = Tokens.Gap;
 
-            Events.On<ClickEvent>(head, _ =>
+            // One path for a click and for a search hit revealing the row: state, host and look stay in step.
+            Action<bool, bool> fold = (to, animate) =>
             {
-                open = !open;
+                open = to;
                 _folds[mem] = open;
                 Host.For(head).Write(key, open ? "1" : "0");
                 arrow.text = open ? "▾" : "▸";
-                if (open) Anim.SlideIn(body, -6f, Anim.Fast);
-                else body.style.display = DisplayStyle.None;
-            });
+                if (!open) body.style.display = DisplayStyle.None;
+                else if (animate) Anim.SlideIn(body, -6f, Anim.Fast);
+                else body.style.display = DisplayStyle.Flex;
+            };
+            Data.Get<Fold>(body).Set = fold;
+            Data.Get<Fold>(body).IsOpen = () => open;
+            Events.On<ClickEvent>(head, _ => fold(!open, true));
             return body;
         }
 

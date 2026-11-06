@@ -35,7 +35,7 @@ namespace Facet.Mod
         public static readonly Host Host = Host.Create("Gallery", o =>
         {
             o.Language = () => Lang;
-            o.Translate = s => Lang == "ko" && s == "Size" ? "\uD06C\uAE30" : null;
+            o.Translate = s => Lang != "ko" ? null : s == "Size" ? "\uD06C\uAE30" : s == "Tint" ? "\uD2F4\uD2B8" : null;
             o.Log = m => Main.Log("[ui] " + m);
             o.Read = k => Store.TryGetValue(k, out var v) ? v : null;
             o.Write = (k, v) => Store[k] = v;
