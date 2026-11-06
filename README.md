@@ -47,5 +47,5 @@ or `Facet.Input.HeldThisFrame` (the Escape that just closed a window is still do
 Several mods can load Facet at once, so the rules are fixed:
 
 - The DLL name carries the version: `Facet.<major>.<minor>.dll`. Different minors load side by side and never share state.
-- Within a minor the API is append-only: enum members go last, signatures never change. A mod built against 0.1.0 runs on any 0.1.x.
+- A patch release adds no public API; any new public member bumps the minor. Append-only within a minor is not safe: the first-loaded copy of a minor wins, so a mod built against a later 0.1.x could be handed an earlier one without the member. Signatures never change and enum members go last. A mod built against 0.1.0 runs on any 0.1.x.
 - Ship `Facet.<major>.<minor>.dll` beside your mod, or depend on the standalone Facet mod. Never rename or merge it.

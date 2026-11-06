@@ -160,8 +160,10 @@ it bubbling. Three causes hid behind "scrolling is broken", all found by logging
 - Rig: one in-game test at a time; wait about 5 s after a quit; `ingame.sh` refuses to run while another
   suite's trigger (LayoutProbe `autotest`, CamDisplay `selftest`) is armed. Never run the UMM and ML copies
   together: remove one before installing the other, and `./build.sh` afterwards to restore the default.
-- Packaging rule: only `Facet.Mod/` names a loader. The assembly is `Facet.<major>.<minor>.dll`, append-only
-  within a minor, shipped beside every consumer or via the standalone mod.
+- Packaging rule: only `Facet.Mod/` names a loader. The assembly is `Facet.<major>.<minor>.dll`, shipped
+  beside every consumer or via the standalone mod. A patch release adds no public API; any new public
+  member bumps the minor (R21: append-only within a minor is unsafe because the first-loaded copy of a
+  minor wins).
 
 ## Rulings that shaped the code
 
@@ -171,3 +173,4 @@ it bubbling. Three causes hid behind "scrolling is broken", all found by logging
   or anything in the row holds pointer capture, not merely while its own input has focus.
 - R14: `History.Apply` calls an internal Facet-only refresh hook before the public `AfterApply`, so a
   consumer assigning `AfterApply` cannot clobber Facet's in-place refresh.
+- R21: a patch release adds no public API; any new public member bumps the minor.
