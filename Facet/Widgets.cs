@@ -87,14 +87,13 @@ namespace Facet
             return BuildSwitch(host, label, value, onChange);
         }
 
-        private static VisualElement BuildSwitch(VisualElement host, string label, bool value,
-                                                 Action<bool> onChange)
+        /// A track and its knob; `show` draws a state without raising anything.
+        private static VisualElement Switch(VisualElement host, out Action<bool> show)
         {
             var track = new VisualElement();
             track.style.width = 36f;
             track.style.height = 18f;
             Ui.SetRadius(track, 9f);
-            Paint.Bg(track, value ? Role.Accent : Role.RowAlt);
             track.pickingMode = PickingMode.Position;
 
             var knob = new VisualElement();
@@ -104,16 +103,31 @@ namespace Facet
             knob.style.height = 14f;
             Ui.SetRadius(knob, 7f);
             Paint.Bg(knob, Role.Text);
-            knob.style.left = value ? 20f : 2f;
             knob.pickingMode = PickingMode.Ignore;
             track.Add(knob);
+            host.Add(track);
+
+            // Before the first layout `left` resolves to NaN and Anim.Move starts at the target: a new switch does not slide in.
+            show = v =>
+            {
+                Paint.Bg(track, v ? Role.Accent : Role.RowAlt);
+                Anim.Move(knob, v ? 20f : 2f, Anim.Fast);
+            };
+            return track;
+        }
+
+        private static VisualElement BuildSwitch(VisualElement host, string label, bool value,
+                                                 Action<bool> onChange)
+        {
+            Action<bool> show;
+            var track = Switch(host, out show);
+            show(value);
 
             bool state = value;
             var set = Track(host, label, value, v =>
             {
                 state = v;
-                Paint.Bg(track, v ? Role.Accent : Role.RowAlt);
-                Anim.Move(knob, v ? 20f : 2f, Anim.Fast);
+                show(v);
                 Safe.Run(Host.For(track), "Toggle handler", () => { if (onChange != null) onChange(v); });
             });
             Events.On<ClickEvent>(track, e =>
@@ -122,7 +136,6 @@ namespace Facet
                 // Or the row underneath would also take the click and navigate.
                 e.StopPropagation();
             });
-            host.Add(track);
             return track;
         }
 
