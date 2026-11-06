@@ -167,5 +167,7 @@ it bubbling. Three causes hid behind "scrolling is broken", all found by logging
 
 - Facet targets netstandard2.1 (Unity 2022.3's reference assemblies reference it).
 - Colours are per host (`Theme`); a host without a theme gets a copy, `Theme.Dark` itself is frozen.
-- R13: editing rule, an edit is never applied from inside a refresh pass.
-- R14: `History` refreshes through an internal hook (`AfterApply`), not a public one.
+- R13: a bound control is "being edited" (skipped by the refresher) while a text field in its row has focus
+  or anything in the row holds pointer capture, not merely while its own input has focus.
+- R14: `History.Apply` calls an internal Facet-only refresh hook before the public `AfterApply`, so a
+  consumer assigning `AfterApply` cannot clobber Facet's in-place refresh.
