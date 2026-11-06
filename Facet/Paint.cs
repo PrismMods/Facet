@@ -9,7 +9,7 @@ namespace Facet
        text, no border colour. */
     public sealed class Look
     {
-        public Role? Bg, Text, Border, HoverBg, PressedBg, SelectedBg, SelectedText, FocusBorder;
+        public Role? Bg, Text, Border, HoverBg, PressedBg, SelectedBg, SelectedText, FocusBorder, HoverText;
         public float DisabledOpacity = 0.35f;
 
         public static readonly Look Button = new Look { Bg = Role.RowAlt, Text = Role.Text, HoverBg = Role.RowHover,
@@ -21,7 +21,8 @@ namespace Facet
         public static readonly Look DangerButton = new Look { Bg = Role.RowAlt, Text = Role.Danger, HoverBg = Role.RowHover,
             PressedBg = Role.Row, SelectedBg = Role.Danger, SelectedText = Role.AccentText, FocusBorder = Role.Focus };
         public static readonly Look Row = new Look { HoverBg = Role.Row };
-        public static readonly Look RailItem = new Look { Text = Role.TextMuted, HoverBg = Role.Row,
+        /// Its labels paint no role of their own (Paint.Inherit), so muted, hover and selected text reach them.
+        public static readonly Look RailItem = new Look { Text = Role.TextMuted, HoverBg = Role.Row, HoverText = Role.Text,
             SelectedBg = Role.RowHover, SelectedText = Role.Text };
         public static readonly Look Field = new Look { Bg = Role.Row, Text = Role.Text, Border = Role.PanelBorder, FocusBorder = Role.Focus };
         public static readonly Look Card = new Look { Bg = Role.Panel, Border = Role.PanelBorder };
@@ -33,13 +34,13 @@ namespace Facet
        and its look and states, so Apply can redraw a window that is already open in a new scheme.
 
        Precedence: background is selected, then pressed, then hover, then the element's own role,
-       then the look's; text is selected, then own, then look; border is focus, then own, then look.
+       then the look's; text is selected, then hover, then own, then look; border is focus, then own, then look.
        Disabled ignores hover and pressed and fades to the look's DisabledOpacity. */
     public static class Paint
     {
         private sealed class State
         {
-            public Role? Bg, Fg, Border;
+            public Role? Bg, Fg, Border, Tint;
             public Look Look;
             public bool Hover, Pressed, Focus, Selected, Disabled, Hooked, Waiting;
         }
@@ -59,6 +60,43 @@ namespace Facet
             s.Look = look;
             Hook(e, s);
             Draw(e, s);
+        }
+
+        /// The tint of the element's background image (a text field's caret).
+        internal static void Tint(VisualElement e, Role r) { if (e != null) { var s = Data.Get<State>(e); s.Tint = r; Draw(e, s); } }
+
+        /// Drop the element's own text role so it takes its parent's colour: a label inside a row
+        /// whose look carries the hover and selected text.
+        internal static void Inherit(VisualElement e)
+        {
+            var s = Data.Find<State>(e);
+            if (s == null || s.Fg == null) return;
+            s.Fg = null;
+            e.style.color = StyleKeyword.Null;
+        }
+
+        /// Hover set from outside: a hairline that lights when its wider hit area is hovered.
+        internal static void Hover(VisualElement e, bool on)
+        {
+            if (e == null) return;
+            var s = Data.Get<State>(e);
+            s.Hover = on;
+            Draw(e, s);
+        }
+
+        /// Light `e` in role `r`, fading out over `ms`, then back to what it was. Reads the scheme
+        /// every frame, so a re-theme mid-flash does not leave the old accent behind.
+        internal static void Flash(VisualElement e, Role r, int ms)
+        {
+            if (e == null) return;
+            var s = Data.Get<State>(e);
+            var a = e.experimental.animation.Start(1f, 0f, ms, (el, t) =>
+            {
+                var c = Theme.For(el)[r];
+                c.a = t * 0.5f;
+                el.style.backgroundColor = c;
+            });
+            a.onAnimationCompleted = () => { e.style.backgroundColor = StyleKeyword.Null; Draw(e, s, Theme.For(e)); };
         }
 
         /// The selected tab, segment or rail leaf. Survives the pointer leaving it.
@@ -114,7 +152,8 @@ namespace Facet
                 e.style.backgroundColor = C(t, (s.Selected ? k.SelectedBg : null) ?? (live && s.Pressed ? k.PressedBg : null)
                                                ?? (live && s.Hover ? k.HoverBg : null) ?? s.Bg ?? k.Bg);
             if (s.Look != null || s.Fg != null)
-                e.style.color = C(t, (s.Selected ? k.SelectedText : null) ?? s.Fg ?? k.Text);
+                e.style.color = C(t, (s.Selected ? k.SelectedText : null) ?? (live && s.Hover ? k.HoverText : null) ?? s.Fg ?? k.Text);
+            if (s.Tint != null) e.style.unityBackgroundImageTintColor = C(t, s.Tint);
             if (s.Look != null || s.Border != null)
             {
                 var c = C(t, (s.Focus ? k.FocusBorder : null) ?? s.Border ?? k.Border);
