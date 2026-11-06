@@ -171,8 +171,8 @@ namespace Facet
                 l.style.unityTextAlign = TextAnchor.MiddleLeft;
                 return l;
             };
-            lv.bindItem = (e, i) => bind(e, i);
-            lv.itemsSource = source();
+            lv.bindItem = (e, i) => Safe.Run(Host.For(lv), "Ui.List.bind", () => bind(e, i));
+            lv.itemsSource = Safe.Get(Host.For(parent), "Ui.List.source", source, (IList)new List<object>());
             lv.style.flexGrow = 1f;
             lv.style.minHeight = 0f;   // or the list sizes to its rows and the window clips it
             parent?.Add(lv);
