@@ -138,6 +138,112 @@ static class FacetTest {
         Check(KeyCapture.Owner == "d", "a throwing cancel does not stop the next claim");
         KeyCapture.Release("d");
 
+        Console.WriteLine("search");
+        Check(Search.Score("Effective BPM", "Effective BPM") == 0, "an exact hit scores best");
+        Check(Search.Score("Effective BPM", "eff") < Search.Score("Effective BPM", "bpm"),
+              "a prefix beats a hit in the middle");
+        Check(Search.Score("Grid snap", "snap") < Search.Score("Gridsnap", "snap"),
+              "a word start beats mid-word");
+        Check(Search.Score("Effective BPM", "efbpm") > Search.Score("Effective BPM", "bpm"),
+              "a scattered subsequence ranks below a real substring");
+        Check(Search.Matches("Effective BPM", "efbpm"), "subsequence matches out of contiguity");
+        Check(!Search.Matches("Effective BPM", "zq"), "absent characters do not match");
+        Check(Search.Score("anything", "") == 0 && Search.Matches("anything", null),
+              "an empty query matches everything");
+        Check(Search.Score("", "x") == Search.NoMatch, "an empty haystack matches nothing");
+        Check(Search.ScoreAny("bpm", null, "Effective BPM", "x") != Search.NoMatch,
+              "ScoreAny skips nulls and takes the best field");
+        var ranked = Search.Rank(new[] { "Buffer Padding Mode", "Effective BPM", "bpm" }, "bpm", x => new[] { x });
+        Check(ranked.Count == 3 && ranked[0] == "bpm", "Rank puts the exact hit first");
+        Check(Search.Filter(new[] { "keep me", "drop", "me too" }, "me").Count == 2,
+              "Filter keeps input order and drops non-matches");
+        Check(Search.ScoreAny("key rain", "Note Rain", "Key Viewer") != Search.NoMatch,
+              "query words may land in different fields");
+        Check(Search.ScoreAny("rain", "Note Rain", "Key Viewer") < Search.ScoreAny("rain", "Scale", "Rain"),
+              "a label hit outranks a context hit");
+        Check(Search.Matches("Key Viewer", "keyviewer"), "spaces in the label do not count");
+        Check(Search.Matches("Accent Color", "colour"), "a word answers to its alias");
+        Check(Search.Matches("a -> b", "->"), "a punctuation-only query is a plain substring");
+        var typo = Search.Rank(new[] { "Key Viewer", "Scale" }, "keyveiwer", x => new[] { x });
+        Check(typo.Count == 1 && typo[0] == "Key Viewer", "Rank allows typos when nothing matches exactly");
+        Check(!Search.Matches("Key Viewer", "keyveiwer"), "a per-item match never allows typos");
+        var midWord = Search.Rank(new[] { "Brain", "Reverse Rain", "Rainbow" }, "rain", x => new[] { x });
+        Check(midWord.Count == 3 && midWord[2] == "Brain", "a hit inside a word ranks below whole words and prefixes");
+
+        // Quartz's settings-search cases, through the structured API it will call.
+        Console.WriteLine("search (structured)");
+        Check(First(Find("Key Rain")) == "Note Rain", "'Key Rain' finds Note Rain on the Key Viewer page");
+        Check(First(Find("Keyviewer Rain")) == "Note Rain", "'Keyviewer Rain' ignores the missing space");
+        Check(First(Find("kv scale")) == "Scale", "the kv alias reaches Key Viewer");
+        Check(Find("key viewer size").Contains("Scale"), "size answers to scale");
+        Check(First(Find("note rain")) == "Note Rain", "an exact label outranks rows that only share words");
+        Check(!Find("Key Rain").Contains("Rain Offset Y"), "every word must land: 'key' is nowhere near Rain Offset Y");
+        Check(First(Find("keyveiwer rain")) == "Note Rain", "a swapped pair is one typo");
+        Check(First(Find("judgment font")) == "Judgement Popup Font", "the American spelling still finds Judgement");
+        Check(First(Find("acent colr")) == "Accent Color", "one typo per short word");
+        bool clean = true;
+        foreach (var l in Find("rain")) if (!l.Contains("Rain") && l != "This Tabub Is Mine") clean = false;
+        Check(clean, "an exact hit keeps typo matches out");
+        Check(Find("xyzzy").Count == 0, "nonsense finds nothing");
+        Check(Search.Rate(new Search.Query("cat"), new[] { new Search.Text("car") }, null, null, true) == 0,
+              "three-letter words get no typo allowance");
+        var tip = Find("pattern picture");
+        Check(tip.Count == 1 && tip[0] == "This Tabub Is Mine", "tooltip text is searchable");
+        var rain = Find("rain");
+        Check(rain[rain.Count - 1] == "This Tabub Is Mine", "a tooltip-only hit ranks below every label hit");
+
+        Check(Hangul.Initials("\uB178\uD2B8") == "\u3134\u314C", "Initials of a Korean word are its leading consonants");
+        Check(Hangul.Initials("A\uAC00") == "A\u3131", "other characters pass through Initials unchanged");
+        Check(Search.Score("\uB178\uD2B8 \uD06C\uAE30", "\u3134\u314C") != Search.NoMatch, "initials find a Korean label");
+        Check(Search.Score("\uB178\uD2B8", "\u3131\u3134") == Search.NoMatch, "wrong initials do not match");
+        Check(Search.Matches("\uB178\uD2B8 \uD06C\uAE30", "\u314B\u3131"), "initials may start at a later word");
+        var fps = Search.Rank(new[] { "Sound offset", "Show FPS" }, "fps", x => new[] { x });
+        Check(fps.Count == 1 && fps[0] == "Show FPS", "Rank finds Show FPS for fps");
+        var sohw = Search.Rank(new[] { "Sound offset", "Show FPS" }, "sohw", x => new[] { x });
+        Check(sohw.Count == 1 && sohw[0] == "Show FPS", "a typo finds Show FPS through the second pass");
+        Check(!Search.Matches("Show FPS", "sohw"), "...but never in a per-item match");
+        var both = Search.Rank(new[] { "Sohw thing", "Show FPS" }, "sohw", x => new[] { x });
+        Check(both.Count == 1 && both[0] == "Sohw thing", "...and not when an exact hit exists");
+
         Console.WriteLine(_fail == 0 ? "ALL PASS" : _fail + " FAILED");
+    }
+
+    static string First(List<string> l) { return l.Count > 0 ? l[0] : null; }
+
+    // Label, section, page, tooltip — the shape of a Quartz settings row.
+    static readonly string[][] Rows =
+    {
+        new[] { "Note Rain", "Key Viewer", "Key Viewer", null },
+        new[] { "Reverse Rain", "Key Viewer", "Key Viewer", null },
+        new[] { "Scale", "Key Viewer", "Key Viewer", null },
+        new[] { "Key Viewer", null, "Key Viewer", null },
+        new[] { "Judgement Popup Font", "Judgement", "Visuals", null },
+        new[] { "Accent Color", "Theme", "Settings", null },
+        new[] { "This Tabub Is Mine", "Key Viewer", "Key Viewer",
+                "Past a point in the level, note rain stops and a picture drops over the key viewer, so nobody watching can read your tapping pattern." },
+        new[] { "Rain Offset Y", "Rain", "Overlay", null },
+    };
+
+    // Quartz's two passes: exact first, typos only when that found nothing. Best first.
+    static List<string> Find(string query)
+    {
+        var q = new Search.Query(query);
+        var hits = new List<KeyValuePair<int, int>>();     // score, row
+        foreach (bool typos in new[] { false, true })
+        {
+            for (int i = 0; i < Rows.Length; i++)
+            {
+                var r = Rows[i];
+                int s = Search.Rate(q, new[] { new Search.Text(r[0]) },
+                                    new[] { new Search.Text(r[1]), new Search.Text(r[2]) },
+                                    r[3] == null ? null : new Search.Text(r[3]), typos);
+                if (s > 0) hits.Add(new KeyValuePair<int, int>(s, i));
+            }
+            if (hits.Count > 0) break;
+        }
+        hits.Sort((a, b) => a.Key != b.Key ? b.Key.CompareTo(a.Key) : a.Value.CompareTo(b.Value));   // stable, as Quartz's
+        var outp = new List<string>();
+        foreach (var h in hits) outp.Add(Rows[h.Value][0]);
+        return outp;
     }
 }
