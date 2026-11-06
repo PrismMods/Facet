@@ -238,6 +238,15 @@ namespace Facet.Mod
             mine.Bg = Role.RowAlt;   // were it shared, put it back for the sections after this one
             pb.RemoveFromHierarchy();
 
+            // A look with only HoverText still lights on hover.
+            var ht = new Label("Hover text"); w.Body.Add(ht);
+            Paint.Look(ht, new Look { Text = Role.TextMuted, HoverText = Role.Text });
+            yield return null;
+            using (var e = MouseEnterEvent.GetPooled()) { e.target = ht; ht.SendEvent(e); }
+            yield return null;
+            Check(Near(ht.style.color.value, t[Role.Text]), "a Look with only HoverText shows it on hover", ht.style.color.value + " vs " + t[Role.Text]);
+            ht.RemoveFromHierarchy();
+
             // Paint.Forget: a literal colour set afterwards survives a re-theme and a hover.
             var fl = Ui.Text("Forgotten", w.Body); var fb = Ui.Btn("Forgotten", null, w.Body);
             yield return null;

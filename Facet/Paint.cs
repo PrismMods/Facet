@@ -184,7 +184,7 @@ namespace Facet
         private static void Hook(VisualElement e, State s)
         {
             var k = s.Look;
-            if (s.Hooked || k == null || (k.HoverBg == null && k.PressedBg == null && k.FocusBorder == null)) return;
+            if (s.Hooked || k == null || (k.HoverBg == null && k.HoverText == null && k.PressedBg == null && k.FocusBorder == null)) return;
             s.Hooked = true;
             Events.On(e, OnEnter);
             Events.On(e, OnLeave);
