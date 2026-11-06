@@ -43,11 +43,11 @@ namespace Facet.Mod
             using (e) (via ?? Root).panel.visualTree.SendEvent(e);
         }
 
-        IEnumerator Drag(Vector2 from, Vector2 to, int steps = 6)
+        IEnumerator Drag(Vector2 from, Vector2 to, int steps = 6, VisualElement via = null)
         {
-            Pointer(EventType.MouseDown, from); yield return null;
-            for (int i = 1; i <= steps; i++) { Pointer(EventType.MouseDrag, Vector2.Lerp(from, to, i / (float)steps)); yield return null; }
-            Pointer(EventType.MouseUp, to); yield return null; yield return null;
+            Pointer(EventType.MouseDown, from, 0, via); yield return null;
+            for (int i = 1; i <= steps; i++) { Pointer(EventType.MouseDrag, Vector2.Lerp(from, to, i / (float)steps), 0, via); yield return null; }
+            Pointer(EventType.MouseUp, to, 0, via); yield return null; yield return null;
         }
 
         // Down and up in the same frame: a real pointer's own move event between them would turn
@@ -97,6 +97,7 @@ namespace Facet.Mod
             yield return Run("SectionBind", SectionBind());
             yield return Run("SectionRebuild", SectionRebuild());
             yield return Run("SectionRefreshIsolation", SectionRefreshIsolation());
+            yield return Run("SectionValues", SectionValues());
             // Later tasks: yield return Run("Section...", Section...());
 
             Main.Log("AUTOTEST DONE pass=" + _pass + " fail=" + _fail);
@@ -133,7 +134,7 @@ namespace Facet.Mod
             var wa = new Window(sa.Root, "hosta", "Host A", new Rect(60, 60, 400, 300));
             var wb = new Window(sb.Root, "hostb", "Host B", new Rect(500, 60, 400, 300));
             new Nav(wa.Body, new[] { new NavItem("Boom", p => throw new InvalidOperationException("boom")) });
-            new Nav(wb.Body, new[] { new NavItem("Fine", p => Widgets.Info(p, "Fine", "ok")) });
+            new Nav(wb.Body, new[] { new NavItem("Fine", p => Controls.Info(p, "Fine", () => "ok")) });
             yield return null; yield return null;
             var ea = la.FindAll(m => m.StartsWith("[A] "));
             Check(ea.Count == 1 && ea[0].Contains("Boom"), "A's list has one guard entry naming the page", string.Join(" | ", ea));
@@ -283,21 +284,21 @@ namespace Facet.Mod
             var pages = new[] {
                 new NavItem("Controls", p =>
                 {
-                    Widgets.Toggle(p, "Toggle", true, v => { });
-                    Widgets.Slider(p, "Slider", 1f, 0f, 2f, v => { });
-                    Widgets.Choice(p, "Choice", new[] { "One", "Two" }, 1, v => { });
-                    Widgets.Text(p, "Text", "x", v => { });
-                    Widgets.Danger(p, "Danger", "Wipe", () => { });
-                    Widgets.DangerButton(p, "Reset all", () => { });
-                    Widgets.Colour(p, "Colour", Color.cyan, v => { }, null, true);
+                    Controls.Toggle(p, "Toggle", Bind.Value(true));
+                    Controls.Slider(p, "Slider", Bind.Value(1f), o => o.Max = 2f);
+                    Controls.Choice(p, "Choice", Bind.Value(1), o => o.Items = new[] { "One", "Two" });
+                    Controls.Text(p, "Text", Bind.Value("x"));
+                    Controls.Danger(p, "Danger", "Wipe", () => { });
+                    Controls.DangerButton(p, "Reset all", () => { });
+                    Controls.Colour(p, "Colour", Bind.Value(Color.cyan), o => o.Alpha = true);
                     new GradientEditor(p, "Gradient", stops, () => { });
                     var item = Widgets.Item(p, "Item", "a note"); Widgets.MarkActive(item);
                     new Tabs(p, i => { }).Rebuild(new[] { "A", "B" });
-                    Widgets.ToggleSubPage(p, "Sub toggle", false, v => { }, q => Widgets.Info(q, "Inner", "x"));
-                    var sec = Widgets.Section(p, "Section"); Widgets.Info(sec, "Info", "v");
+                    Widgets.ToggleSubPage(p, "Sub toggle", false, v => { }, q => Controls.Info(q, "Inner", () => "x"));
+                    var sec = Widgets.Section(p, "Section"); Controls.Info(sec, "Info", () => "v");
                     anchor = Ui.Btn("Anchor", null, p);
                 }),
-                NavItem.Heading("Group", new NavItem("Other", p => Widgets.Action(p, "Other action", "Go", () => { }))),
+                NavItem.Heading("Group", new NavItem("Other", p => Controls.Action(p, "Other action", "Go", () => { }))),
             };
             var nav = new Nav(w.Body, pages);
             yield return null; yield return null;
@@ -470,7 +471,7 @@ namespace Facet.Mod
             // Probes sit at the top of the page, so a click on them lands inside the window.
             var probes = Ui.Box(); row.parent.Insert(0, probes);
 
-            var bad = Widgets.Toggle(probes, "Throwing probe", Bind.To<bool>(() => throw new InvalidOperationException("probe getter"), v => { }));
+            var bad = Controls.Toggle(probes, "Throwing probe", Bind.To<bool>(() => throw new InvalidOperationException("probe getter"), v => { }));
             yield return new WaitForSeconds(0.45f);
             Check(bad.Unavailable, "a getter that throws makes Unavailable true after 3 ticks");
             int lines = 0;
@@ -496,7 +497,7 @@ namespace Facet.Mod
             }
 
             int reads = 0;
-            Widgets.Toggle(probes, "Counting probe", Bind.To(() => { reads++; return false; }, v => { }));
+            Controls.Toggle(probes, "Counting probe", Bind.To(() => { reads++; return false; }, v => { }));
             yield return new WaitForSeconds(0.25f);
             Check(reads > 1, "a visible surface keeps reading its controls", reads + " reads");
             Gallery.Surface.Visible = false; reads = 0;
@@ -508,7 +509,7 @@ namespace Facet.Mod
 
             int acts = 0;
             var menu = new List<KeyValuePair<string, Action>> { new KeyValuePair<string, Action>("Reset all", () => acts++) };
-            var withMenu = Widgets.Toggle(probes, "Menu probe", Bind.Value(false), o => o.ContextMenu = menu);
+            var withMenu = Controls.Toggle(probes, "Menu probe", Bind.Value(false), o => o.ContextMenu = menu);
             yield return null; yield return null;
             yield return Click(Ctr(withMenu.Root), 1);
             Label item = null;
@@ -550,7 +551,7 @@ namespace Facet.Mod
             var page = new NavItem("Bound", p =>
             {
                 Ui.Btn("Rebuild", () => nav.Refresh(), p);
-                for (int i = 0; i < 100; i++) { int n = i; Widgets.Toggle(p, "Bound " + n, Bind.To(() => value, v => value = v), o => o.Id = "bound" + n); }
+                for (int i = 0; i < 100; i++) { int n = i; Controls.Toggle(p, "Bound " + n, Bind.To(() => value, v => value = v), o => o.Id = "bound" + n); }
             });
             nav = new Nav(w.Body, new[] { page });
             yield return null; yield return null;
@@ -604,7 +605,7 @@ namespace Facet.Mod
             typeof(Control<Unequal>).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance)[0]
                 .Invoke(new object[] { right.parent, right, "Unequal", Bind.To(() => new Unequal(), v => { }), null, null });
             bool flag = false;
-            var after = Widgets.Toggle(w.Body, "After it", Bind.To(() => flag, v => flag = v));
+            var after = Controls.Toggle(w.Body, "After it", Bind.To(() => flag, v => flag = v));
             yield return null; yield return null;
             flag = true;
             var ms = new double[1];
@@ -613,6 +614,107 @@ namespace Facet.Mod
             var errs = logs.FindAll(m => m.StartsWith("[Isolate] Refresh 'Unequal'"));
             Check(errs.Count == 1, "...and the throw is logged once, under the throwing control's name", string.Join(" | ", logs.FindAll(m => m.StartsWith("[Isolate] "))));
             s.Dispose();
+        }
+
+        static Label LiveLabel(string text)
+        {
+            Label hit = null;
+            foreach (var d in FindObjectsByType<UIDocument>(FindObjectsSortMode.None))
+                if (d.rootVisualElement != null)
+                    foreach (var l in d.rootVisualElement.Query<Label>().ToList()) if (l.text == text && l.panel != null) hit = l;
+            return hit;
+        }
+
+        void ClickEl(VisualElement e)
+        {
+            using (var ev = ClickEvent.GetPooled()) { ev.target = e; e.SendEvent(ev); }
+        }
+
+        // The value rows against the real panel: click, drag, type, menu, undo, and long labels.
+        IEnumerator SectionValues()
+        {
+            Gallery.Model = new Model();
+            Gallery.Open(); yield return null; yield return null;
+            History.Clear();
+
+            var flag = Root.Q("flag-input");
+            ClickEl(flag); yield return null;
+            Check(Gallery.Model.Flag, "clicking flag-input turns Model.Flag on");
+            History.Undo(); yield return null;
+            Check(!Gallery.Model.Flag, "History.Undo() puts Model.Flag back");
+
+            var size = Root.Q<Slider>("size-input");
+            var dragger = size?.Q(className: "unity-base-slider__dragger");
+            Check(size != null && dragger != null, "size-input is the slider, with a dragger");
+            if (size == null || dragger == null) yield break;
+            yield return Drag(Ctr(dragger), new Vector2(size.worldBound.xMax / K() + 25f, Ctr(dragger).y));
+            Check(Mathf.Abs(Gallery.Model.Size - 2f) < 1e-4f, "dragging size-input to its right end sets Model.Size to Max", Gallery.Model.Size.ToString());
+            History.Undo(); yield return null;
+            Check(Mathf.Abs(Gallery.Model.Size - 1f) < 1e-4f, "...and one Undo undoes the whole drag", Gallery.Model.Size.ToString());
+
+            var num = Root.Q<TextField>("size-number");
+            Check(num != null, "the slider's number field is size-number");
+            if (num != null)
+            {
+                Type(num, "1.5"); yield return null;
+                Check(Mathf.Abs(Gallery.Model.Size - 1.5f) < 1e-4f, "typing 1.5 + Enter into the size number sets 1.5", Gallery.Model.Size.ToString());
+                Type(num, "abc"); yield return null;
+                Check(Mathf.Abs(Gallery.Model.Size - 1.5f) < 1e-4f && num.value == "1.5", "typing abc + Enter restores the text and leaves the value", Gallery.Model.Size + " / " + num.value);
+            }
+
+            // Dropdown
+            var pick = Root.Q<Button>("pick-input");
+            Check(pick != null && pick.text == "Alpha", "the dropdown shows its current item", pick?.text);
+            if (pick != null)
+            {
+                Submit(pick); yield return null; yield return null;
+                var gamma = LiveLabel("Gamma");
+                Check(gamma != null, "clicking the dropdown opens a menu of its items");
+                if (gamma != null)
+                {
+                    var row = gamma.parent;
+                    using (var e = PointerUpEvent.GetPooled(new Event { type = EventType.MouseUp, button = 0 })) { e.target = row; row.SendEvent(e); }
+                    yield return null; yield return null;
+                }
+                Check(Gallery.Model.Pick == 2 && pick.text == "Gamma", "choosing item 2 sets Model.Pick = 2 and the button shows it", Gallery.Model.Pick + " / " + pick.text);
+                Submit(pick); yield return null; yield return null;
+                Check(LiveLabel("Alpha") != null, "the menu opens again");
+                yield return null;
+                bool esc = Input.HandleEscape();
+                yield return null; yield return null;
+                Check(esc && LiveLabel("Alpha") == null && Gallery.Surface.Visible && Input.AnyWindowOpen, "Escape on the open menu closes only the menu", "esc=" + esc);
+            }
+
+            // Snapping, undo keys, long labels: a window of their own
+            var h = Host.Create("Values", o => o.Log = m => Main.Log("[values] " + m));
+            var surf = new Surface(h, "FacetValues", Layer.Window);
+            var w = new Window(surf.Root, "values", "Values", new Rect(60, 60, 560, 520));
+            float stepped = 0f; bool a = false, b = false;
+            var st = Controls.Slider(w.Body, "Stepped", Bind.To(() => stepped, v => stepped = v), o => { o.Id = "stepped"; o.Min = 0f; o.Max = 2f; o.Step = 0.25f; });
+            Controls.Toggle(w.Body, "Enabled", Bind.To(() => a, v => a = v), o => o.Id = "ena");
+            Controls.Toggle(w.Body, "Enabled", Bind.To(() => b, v => b = v), o => o.Id = "enb");
+            var longEn = Controls.Toggle(w.Body, string.Concat(System.Linq.Enumerable.Repeat("long label ", 19)).Substring(0, 200), Bind.Value(false));
+            var longKo = Controls.Toggle(w.Body, string.Concat(System.Linq.Enumerable.Repeat("\uC544\uC8FC \uAE34 \uD55C\uAD6D\uC5B4 \uB77C\uBCA8 ", 10)), Bind.Value(false));
+            yield return null; yield return null; yield return null;
+
+            var sd = st.Input.Q(className: "unity-base-slider__dragger");
+            var sl = (Slider)st.Input;
+            yield return Drag(Ctr(sd), new Vector2(sl.worldBound.x / K() + sl.worldBound.width / K() * 0.37f, Ctr(sd).y), 6, w.Body);
+            float q = stepped / 0.25f;
+            Check(stepped > 0f && Mathf.Abs(q - Mathf.Round(q)) < 1e-4f, "with Step = 0.25 the dragged value is a multiple of 0.25", stepped.ToString());
+
+            History.Clear();
+            ClickEl(w.Body.Q("ena-input")); yield return null;
+            ClickEl(w.Body.Q("enb-input")); yield return null;
+            History.Undo(); yield return null;
+            Check(a && !b, "two rows with the same label are separate undo steps", "a=" + a + " b=" + b);
+
+            foreach (var t in new[] { longEn, longKo })
+            {
+                Check(t.Root.layout.height <= 34f, "a very long label keeps the row height <= 34", t.Root.layout.height.ToString());
+                Check(t.Input.worldBound.xMax <= w.Body.worldBound.xMax + 0.5f, "...and the switch stays inside the window body", t.Input.worldBound.xMax + " vs " + w.Body.worldBound.xMax);
+            }
+            surf.Dispose();
         }
 
         IEnumerator SharedEscape()

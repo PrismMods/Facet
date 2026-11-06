@@ -46,6 +46,16 @@ namespace Facet
             Sync(true);
         }
 
+        /// Show a colour set from outside, without calling onChange. A colour already shown is left alone,
+        /// so a grey keeps the hue the user dragged it to.
+        internal void SetColour(Color c)
+        {
+            if (c == _colour) return;
+            _colour = c;
+            Color.RGBToHSV(c, out _h, out _s, out _v);
+            Sync(true);
+        }
+
         private void BuildHeader(string label)
         {
             var head = Ui.Row(Root);

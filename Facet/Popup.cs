@@ -51,6 +51,10 @@ namespace Facet
 
         /// A list of choices. The current one is marked; picking closes the menu, then reports.
         public static Popup Menu(VisualElement anchor, IList<string> items, int selected, Action<int> onPick)
+            => Menu(anchor, items, selected, onPick, null);
+
+        /// itemFont: a face for each item (a font list shows every name in its own font); null keeps the menu's.
+        public static Popup Menu(VisualElement anchor, IList<string> items, int selected, Action<int> onPick, Func<int, Font> itemFont)
         {
             Popup menu = null;
             menu = Open(anchor, content =>
@@ -66,6 +70,11 @@ namespace Facet
                     Ui.SetRadius(row, 4f);
                     var label = Ui.Text(items[i], row, Tokens.FontSizeSmall, i == selected ? Role.Accent : Role.Text);
                     label.pickingMode = PickingMode.Ignore;
+                    if (itemFont != null)
+                    {
+                        var f = Safe.Get(Facet.Host.For(anchor), "Popup.Menu ItemFont", () => itemFont(index), null);
+                        if (f != null) label.style.unityFontDefinition = FontDefinition.FromFont(f);
+                    }
                     Paint.Look(row, MenuRow);
                     Events.On<PointerUpEvent>(row, e =>
                     {

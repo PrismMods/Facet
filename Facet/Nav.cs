@@ -559,6 +559,7 @@ namespace Facet
 
             var was = Active;
             Active = this;
+            Controls.Seq = 0;   // so an unnamed control has the same history key after every rebuild
             bool ok = Safe.Run(Host.For(_host), "Nav.build '" + what + "'", () => build(_content));
             Active = was;
             if (!ok) Ui.Muted("This page failed to build — see the log.", _content, true);
@@ -575,6 +576,9 @@ namespace Facet
 
         /// The Nav currently building a page, so Widgets.SubPage can reach it without plumbing.
         public static Nav Active { get; private set; }
+
+        /// The title of the page being shown (a pushed subpage's, else the open leaf's), for history keys.
+        internal string PageTitle => _stack.Count > 0 ? _stack[_stack.Count - 1].Key : _path.Count > 0 ? _path[_path.Count - 1].Title : "";
 
         public void Push(string title, Action<VisualElement> build)
         {

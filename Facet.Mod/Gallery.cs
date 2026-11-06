@@ -12,6 +12,8 @@ namespace Facet.Mod
         public int Count = 3;
         public string Name = "Facet";
         public int Pick;
+        public int Mode;
+        public float Amount = 4f;
         public Color Tint = Color.cyan;
         public string Key = "F8";
     }
@@ -49,16 +51,18 @@ namespace Facet.Mod
             scroll.style.flexGrow = 1f; scroll.style.minHeight = 0f;
             _win.Body.Add(scroll);
             var p = scroll.contentContainer;
-            var m = Model;
-            Widgets.Toggle(p, "Toggle", Bind.To(() => Model.Flag, v => Model.Flag = v), o => { o.Id = "flag"; o.Default = false; });
-            Widgets.Slider(p, "Size", m.Size, 0.5f, 2f, v => m.Size = v);
-            Widgets.IntSlider(p, "Int slider", m.Count, 0, 10, v => m.Count = v);
-            Widgets.Choice(p, "Choice", new[] { "One", "Two", "Three" }, m.Pick, v => m.Pick = v);
-            Widgets.Text(p, "Text", Bind.To(() => Model.Name, v => Model.Name = v), o => o.Id = "name");
-            Widgets.Colour(p, "Colour", m.Tint, v => m.Tint = v);
-            Widgets.Key(p, "Key", m.Key, done => done(m.Key));
-            Widgets.Action(p, "Action", "Run", () => { });
-            Widgets.Info(p, "Info", "Facet " + "0.1");
+            Controls.Toggle(p, "Toggle", Bind.To(() => Model.Flag, v => Model.Flag = v), o => { o.Id = "flag"; o.Default = false; });
+            Controls.Slider(p, "Size", Bind.To(() => Model.Size, v => Model.Size = v), o => { o.Id = "size"; o.Min = 0.5f; o.Max = 2f; o.Default = 1f; });
+            Controls.IntSlider(p, "Int slider", Bind.To(() => Model.Count, v => Model.Count = v), o => { o.Id = "count"; o.Default = 3; });
+            Controls.Number(p, "Number", Bind.To(() => Model.Amount, v => Model.Amount = v), o => { o.Id = "amount"; o.Min = 0f; o.Max = 100f; o.Default = 4f; });
+            Controls.Choice(p, "Choice", Bind.To(() => Model.Mode, v => Model.Mode = v), o => { o.Id = "mode"; o.Items = new[] { "One", "Two", "Three" }; });
+            Controls.Dropdown(p, "Dropdown", Bind.To(() => Model.Pick, v => Model.Pick = v), o => { o.Id = "pick"; o.Items = new[] { "Alpha", "Beta", "Gamma" }; });
+            Controls.Text(p, "Text", Bind.To(() => Model.Name, v => Model.Name = v), o => o.Id = "name");
+            Controls.Colour(p, "Colour", Bind.To(() => Model.Tint, v => Model.Tint = v), o => o.Id = "tint");
+            Controls.Key(p, "Key", Bind.To(() => Model.Key, v => Model.Key = v), o => { o.Id = "key"; o.Capture = done => done(Model.Key); });
+            Controls.Action(p, "Action", "Run", () => { });
+            Controls.Danger(p, "Danger", "Wipe", () => { });
+            Controls.Info(p, "Info", () => "Facet " + "0.1");
             return _win;
         }
 

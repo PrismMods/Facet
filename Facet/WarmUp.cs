@@ -46,14 +46,14 @@ namespace Facet
             const string upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", lower = "abcdefghijklmnopqrstuvwxyz";
             const string rest = "0123456789 !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
             var s = Widgets.Section(page, upper);
-            Widgets.Toggle(s, lower, true, _ => { });
-            Widgets.Slider(s, rest, 0.5f, 0f, 2f, _ => { });
-            Widgets.IntSlider(s, upper, 1, 0, 2, _ => { });
-            Widgets.Choice(s, lower, new[] { "One", "Two" }, 1, _ => { });
-            Widgets.Text(s, rest, lower, _ => { });
-            Widgets.Info(s, upper, lower);
-            Widgets.Action(s, lower, "Run", () => { });
-            Widgets.Colour(s, rest, Theme.Dark[Role.Accent], _ => { });
+            Controls.Toggle(s, lower, Bind.Value(true));
+            Controls.Slider(s, rest, Bind.Value(0.5f), o => o.Max = 2f);
+            Controls.IntSlider(s, upper, Bind.Value(1), o => o.Max = 2);
+            Controls.Choice(s, lower, Bind.Value(1), o => o.Items = new[] { "One", "Two" });
+            Controls.Text(s, rest, Bind.Value(lower));
+            Controls.Info(s, upper, () => lower);
+            Controls.Action(s, lower, "Run", () => { });
+            Controls.Colour(s, rest, Bind.Value(Theme.Dark[Role.Accent]));
         }
     }
 }

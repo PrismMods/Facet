@@ -218,13 +218,13 @@ namespace Facet
                 Notify();
             });
 
-            Widgets.Slider(_editor, "Position", sel.Position, 0f, 1f, v =>
+            Controls.Slider(_editor, "Position", Bind.To(() => sel.Position, v =>
             {
                 sel.Position = v;
                 Bake();
                 RebuildMarkers();
                 Notify();
-            }, null, "0.00");
+            }), o => o.Format = "0.00");
 
             var row = Ui.Row(_editor);
             Ui.Btn("Add stop", () =>

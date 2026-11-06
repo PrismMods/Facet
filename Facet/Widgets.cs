@@ -23,22 +23,6 @@ namespace Facet
         private const float ArrowSlot = 22f;
         private const float ArrowSize = 20f;   // the chevron was a speck at body size
 
-        /* Wraps a setter so every change is undoable. The previous value is snapshotted INSIDE the
-           returned action, not captured from the enclosing variable, or the undo closure would read
-           whatever the value had become by the time it ran. */
-        private static Action<T> Track<T>(VisualElement at, string label, T initial, Action<T> apply)
-        {
-            var tr = Words.Translator(at);   // fixed at build: the recorder's host, or Facet's own table
-            T last = initial;
-            return v =>
-            {
-                T prev = last;
-                History.Record(label, label, () => apply(prev), () => apply(v), tr);
-                apply(v);
-                last = v;
-            };
-        }
-
         /// Label on the left, whatever the caller adds on the right.
         public static VisualElement Row(VisualElement parent, string label, string tooltip = null)
         {
@@ -57,6 +41,9 @@ namespace Facet
             var l = Ui.Text(label, row);
             l.style.flexGrow = 1f;
             l.style.flexShrink = 1f;
+            // A long label gives way (ellipsis, one line) before the control does: without minWidth 0
+            // the text's own width is the floor and it pushes the switch out of the window.
+            l.style.minWidth = 0f;
             l.pickingMode = PickingMode.Ignore;
 
             Paint.Look(row, Look.Row);
@@ -77,82 +64,6 @@ namespace Facet
             return right;
         }
 
-        /* A switch, not a checkbox: UI Toolkit's Toggle is a tick box whose styling lives in the
-           theme style sheet we do not have, so it would come out unstyled. Drawn from two elements
-           instead — a track and a knob — which also lets it animate. */
-        public static VisualElement Toggle(VisualElement parent, string label, bool value,
-                                           Action<bool> onChange, string tooltip = null)
-        {
-            var host = Row(parent, label, tooltip);
-            return BuildSwitch(host, label, value, onChange);
-        }
-
-        /* Bound to a live value (Control). Temporary: Task 10 replaces Widgets' value rows with
-           Controls.*, which this and the bound Text below are the first of. */
-        public static Control<bool> Toggle(VisualElement parent, string label, Bind<bool> bind,
-                                           Action<Options<bool>> configure = null)
-        {
-            var o = ControlOptions.Make(parent, label, configure);
-            var host = Row(parent, label);
-            Action<bool> show;
-            var track = Switch(host, out show);
-            var c = new Control<bool>(host.parent, track, label, bind, show, o);
-            Events.On<ClickEvent>(track, e => { c.Set(!c.Value); e.StopPropagation(); });
-            return c;
-        }
-
-        /// A track and its knob; `show` draws a state without raising anything.
-        private static VisualElement Switch(VisualElement host, out Action<bool> show)
-        {
-            var track = new VisualElement();
-            track.style.width = 36f;
-            track.style.height = 18f;
-            Ui.SetRadius(track, 9f);
-            track.pickingMode = PickingMode.Position;
-
-            var knob = new VisualElement();
-            knob.style.position = Position.Absolute;
-            knob.style.top = 2f;
-            knob.style.width = 14f;
-            knob.style.height = 14f;
-            Ui.SetRadius(knob, 7f);
-            Paint.Bg(knob, Role.Text);
-            knob.pickingMode = PickingMode.Ignore;
-            track.Add(knob);
-            host.Add(track);
-
-            // Before the first layout `left` resolves to NaN and Anim.Move starts at the target: a new switch does not slide in.
-            show = v =>
-            {
-                Paint.Bg(track, v ? Role.Accent : Role.RowAlt);
-                Anim.Move(knob, v ? 20f : 2f, Anim.Fast);
-            };
-            return track;
-        }
-
-        private static VisualElement BuildSwitch(VisualElement host, string label, bool value,
-                                                 Action<bool> onChange)
-        {
-            Action<bool> show;
-            var track = Switch(host, out show);
-            show(value);
-
-            bool state = value;
-            var set = Track(host, label, value, v =>
-            {
-                state = v;
-                show(v);
-                Safe.Run(Host.For(track), "Toggle handler", () => { if (onChange != null) onChange(v); });
-            });
-            Events.On<ClickEvent>(track, e =>
-            {
-                set(!state);
-                // Or the row underneath would also take the click and navigate.
-                e.StopPropagation();
-            });
-            return track;
-        }
-
         /* A toggle and the rows it governs. Showing controls that the mod is currently ignoring is
            the single most common way these settings screens confuse people — the accent picker
            under a disabled "use a custom colour" was one, and Hide UI has several more. The body is
@@ -161,251 +72,17 @@ namespace Facet
                                                 Action<bool> onChange, string tooltip = null)
         {
             var body = Ui.Box(parent);
-            Toggle(parent, label, value, v =>
+            Controls.Toggle(parent, label, Bind.Value(value, v =>
             {
                 body.style.display = v ? DisplayStyle.Flex : DisplayStyle.None;
                 if (onChange != null) onChange(v);
-            }, tooltip);
+            }), o => o.Tooltip = tooltip);
             // Built before the toggle so the toggle reads above it, then moved back under it.
             parent.Remove(body);
             parent.Add(body);
             body.style.display = value ? DisplayStyle.Flex : DisplayStyle.None;
             body.style.paddingLeft = Tokens.Pad;
             return body;
-        }
-
-        public static Slider Slider(VisualElement parent, string label, float value, float min, float max,
-                                    Action<float> onChange, string tooltip = null, string format = "0.##")
-        {
-            var host = Row(parent, label, tooltip);
-            var s = new Slider(min, max) { value = value };
-            s.style.width = 180f;
-            Skin.When<Slider>(s, Skin.Slider);
-
-            // Typed, not just dragged: a slider cannot hit an exact value and some of these want one.
-            var field = Number(host, value.ToString(format), typed =>
-            {
-                float v;
-                if (!float.TryParse(typed, out v)) return false;
-                s.value = Mathf.Clamp(v, min, max);
-                return true;
-            });
-            host.Insert(0, s);
-
-            var set = Track(host, label, value, v =>
-            {
-                field.SetValueWithoutNotify(v.ToString(format));
-                s.SetValueWithoutNotify(v);
-                Safe.Run(Host.For(s), "Slider handler", () => { if (onChange != null) onChange(v); });
-            });
-            Events.On<ChangeEvent<float>>(s, e => set(e.newValue));
-            return s;
-        }
-
-        /* The number beside a slider, editable. Commits on Enter or focus loss and puts the old
-           text back when what was typed is not a number — silently keeping a bad value is worse
-           than refusing it. */
-        private static TextField Number(VisualElement parent, string initial, Func<string, bool> commit)
-        {
-            var f = new TextField { value = initial };
-            f.style.width = 62f;
-            f.style.marginLeft = Tokens.Gap;
-            f.style.fontSize = Tokens.FontSizeSmall;
-            Skin.When<TextField>(f, Skin.Field);
-            Cursors.Set(f, Cursors.Kind.Text);
-            Action apply = () => { if (!commit(f.value)) f.SetValueWithoutNotify(initial); };
-            Events.On<BlurEvent>(f, _ => apply());
-            Events.On<KeyDownEvent>(f, e =>
-            {
-                if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) apply();
-            });
-            parent.Add(f);
-            return f;
-        }
-
-        public static SliderInt IntSlider(VisualElement parent, string label, int value, int min, int max,
-                                          Action<int> onChange, string tooltip = null)
-        {
-            var host = Row(parent, label, tooltip);
-            var s = new SliderInt(min, max) { value = value };
-            s.style.width = 180f;
-            Skin.When<SliderInt>(s, Skin.Slider);
-
-            var field = Number(host, value.ToString(), typed =>
-            {
-                int v;
-                if (!int.TryParse(typed, out v)) return false;
-                s.value = Mathf.Clamp(v, min, max);
-                return true;
-            });
-            host.Insert(0, s);
-
-            var set = Track(host, label, value, v =>
-            {
-                field.SetValueWithoutNotify(v.ToString());
-                s.SetValueWithoutNotify(v);
-                Safe.Run(Host.For(s), "IntSlider handler", () => { if (onChange != null) onChange(v); });
-            });
-            Events.On<ChangeEvent<int>>(s, e => set(e.newValue));
-            return s;
-        }
-
-        /* Segmented buttons rather than a popup list. Same reason as the toggle — DropdownField's
-           menu is themed by the style sheet we do not have — and for the handful of options a
-           setting usually has, seeing them all beats opening a list to find out. */
-        public static VisualElement Choice(VisualElement parent, string label, IList<string> options,
-                                           int index, Action<int> onChange, string tooltip = null)
-        {
-            var host = Row(parent, label, tooltip);
-            var buttons = new List<Button>();
-            int current = index;
-
-            var set = Track(host, label, index, v =>
-            {
-                current = v;
-                for (int j = 0; j < buttons.Count; j++) Paint.Select(buttons[j], j == current);
-                if (v >= 0 && v < buttons.Count) Anim.Pop(buttons[v]);
-                Safe.Run(Host.For(host), "Choice handler", () => { if (onChange != null) onChange(v); });
-            });
-            for (int i = 0; i < (options != null ? options.Count : 0); i++)
-            {
-                int idx = i;
-                buttons.Add(Ui.Btn(options[i], () => { if (idx != current) set(idx); }, host));
-            }
-            for (int j = 0; j < buttons.Count; j++) Paint.Select(buttons[j], j == current);
-            return host;
-        }
-
-        public static TextField Text(VisualElement parent, string label, string value,
-                                     Action<string> onChange, string tooltip = null)
-        {
-            var host = Row(parent, label, tooltip);
-            var f = new TextField { value = value ?? "" };
-            f.style.width = 200f;
-            Skin.When<TextField>(f, Skin.Field);
-            f.style.fontSize = Tokens.FontSizeSmall;
-            // On commit, not per keystroke: a setter that persists to disk should not run once per
-            // character typed.
-            var set = Track(host, label, value ?? "", v =>
-            {
-                f.SetValueWithoutNotify(v);
-                Safe.Run(Host.For(f), "Text handler", () => { if (onChange != null) onChange(v); });
-            });
-            Events.On<BlurEvent>(f, _ => set(f.value));
-            Events.On<KeyDownEvent>(f, e => { if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) set(f.value); });
-            host.Add(f);
-            return f;
-        }
-
-        /// Bound text, committed on Enter or when focus leaves. Temporary, like the bound Toggle.
-        public static Control<string> Text(VisualElement parent, string label, Bind<string> bind,
-                                           Action<Options<string>> configure = null)
-        {
-            var o = ControlOptions.Make(parent, label, configure);
-            var host = Row(parent, label);
-            var f = new TextField();
-            f.style.width = 200f;
-            Skin.When<TextField>(f, Skin.Field);
-            f.style.fontSize = Tokens.FontSizeSmall;
-            host.Add(f);
-            var c = new Control<string>(host.parent, f, label, bind, v => f.SetValueWithoutNotify(v ?? ""), o);
-            // FocusOut, not Blur: focus sits on the field's inner input, and Blur does not bubble.
-            Action commit = () => { if (f.value != (c.Value ?? "")) c.Set(f.value); };
-            Events.On<FocusOutEvent>(f, _ => commit());
-            Events.On<KeyDownEvent>(f, e => { if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) commit(); });
-            return c;
-        }
-
-        /// Read-only text beside a label that wraps when long, instead of a TextField that cuts it off.
-        public static Label Info(VisualElement parent, string label, string value, string tooltip = null)
-        {
-            var host = Row(parent, label, tooltip);
-            host.style.flexShrink = 1f;
-            host.style.maxWidth = Length.Percent(65f);
-            var v = Ui.Muted(value ?? "", host);
-            v.style.whiteSpace = WhiteSpace.Normal;
-            v.style.unityTextAlign = TextAnchor.MiddleRight;
-            v.style.flexShrink = 1f;
-            v.style.minWidth = 0f;
-            return v;
-        }
-
-        private static void Commit(TextField f, Action<string> onChange)
-        {
-            Safe.Run(Host.For(f), "Text handler", () => { if (onChange != null) onChange(f.value); });
-        }
-
-        public static Button Action(VisualElement parent, string label, string buttonText,
-                                    Action onClick, string tooltip = null)
-        {
-            var host = Row(parent, label, tooltip);
-            return Ui.Btn(buttonText, onClick, host);
-        }
-
-        /// Destructive action: reads as dangerous and asks once. The confirm is the point — every
-        /// mod had grown its own armed-button dance for this.
-        public static Button Danger(VisualElement parent, string label, string buttonText,
-                                    Action onConfirm, string tooltip = null)
-        {
-            var host = Row(parent, label, tooltip);
-            Button b = null;
-            bool armed = false;
-            b = Ui.Btn(buttonText, () =>
-            {
-                if (!armed)
-                {
-                    armed = true;
-                    Words.Label(b, "Sure?", true);
-                    Paint.Select(b, true);
-                    Anim.Pop(b);
-                    return;
-                }
-                armed = false;
-                Words.Label(b, buttonText);
-                Paint.Select(b, false);
-                Safe.Run(Host.For(b), "Danger handler", () => { if (onConfirm != null) onConfirm(); });
-            }, host);
-            Paint.Look(b, Look.DangerButton);
-            return b;
-        }
-
-        /* Colour. The picker itself is ColourPicker — Topaz's model, the best of the three the
-           mods had — and this is just the row that hosts it. */
-        public static VisualElement Colour(VisualElement parent, string label, Color value,
-                                           Action<Color> onChange, string tooltip = null,
-                                           bool hasAlpha = false)
-        {
-            var p = new ColourPicker(parent, label, value, hasAlpha, Track(parent, label, value, c =>
-            {
-                Safe.Run(Host.For(parent), "Colour handler", () => { if (onChange != null) onChange(c); });
-            }));
-            if (!string.IsNullOrEmpty(tooltip)) p.Root.tooltip = tooltip;
-            return p.Root;
-        }
-
-        /* Keybind capture. Click, then press — the next key wins, Escape cancels, and the row says
-           which it is waiting for. The capture has to be polled by the host rather than read from a
-           UI Toolkit event, because the keys worth binding include ones the panel would otherwise
-           treat as navigation (Tab, arrows, Escape). */
-        public static VisualElement Key(VisualElement parent, string label, string current,
-                                        Action<Action<string>> beginCapture, string tooltip = null)
-        {
-            var host = Row(parent, label, tooltip);
-            Button b = null;
-            b = Ui.Btn(string.IsNullOrEmpty(current) ? "unbound" : current, () =>
-            {
-                Words.Label(b, "press a key…", true);
-                Paint.Select(b, true);
-                bool ok = Safe.Run(Host.For(b), "Key capture", () => beginCapture(name =>
-                {
-                    if (string.IsNullOrEmpty(name)) Words.Label(b, "unbound", true); else b.text = name;
-                    Paint.Select(b, false);
-                    Anim.Pop(b);
-                }));
-                if (!ok) { b.text = current; Paint.Select(b, false); }
-            }, host, string.IsNullOrEmpty(current));
-            b.style.minWidth = 110f;
-            return b;
         }
 
         /* A section that folds away. Long settings pages are mostly headings you are not reading;
@@ -483,31 +160,6 @@ namespace Facet
             tag.SendToBack();
         }
 
-        /* A destructive button that is its own label. "All positions [Reset]" reads as a setting
-           called "All positions"; "[Reset all positions]" reads as the action it is. */
-        public static Button DangerButton(VisualElement parent, string text, Action onConfirm,
-                                          string tooltip = null)
-        {
-            var row = Ui.Row(parent);
-            row.style.minHeight = RowHeight;
-            row.style.marginBottom = 2f;
-            Words.Tip(row, tooltip);
-            SearchIndex.Note(Words.Show(text, Host.For(row), false));
-
-            Button b = null;
-            bool armed = false;
-            b = Ui.Btn(text, () =>
-            {
-                if (!armed) { armed = true; Words.Label(b, "Sure?", true); Paint.Select(b, true); Anim.Pop(b); return; }
-                armed = false;
-                Words.Label(b, text);
-                Paint.Select(b, false);
-                Safe.Run(Host.For(b), "Danger handler", () => { if (onConfirm != null) onConfirm(); });
-            }, row);
-            Paint.Look(b, Look.DangerButton);
-            return b;
-        }
-
         /* A row that opens a page of its own. This is what the mods' menus use for anything with
            more than one setting behind it — a stat's colours, a key's layout — and it belongs to
            the row rather than to the rail, which is why it pushes instead of nesting. */
@@ -541,11 +193,9 @@ namespace Facet
                                                   Action<bool> onChange, Action<VisualElement> build,
                                                   string tooltip = null)
         {
-            var host = Row(parent, label, tooltip);
-            var row = host.parent;
-
-            var track = BuildSwitch(host, label, value, onChange);
-            track.pickingMode = PickingMode.Position;
+            var c = Controls.Toggle(parent, label, Bind.Value(value, onChange), o => o.Tooltip = tooltip);
+            var row = c.Root;
+            c.Input.pickingMode = PickingMode.Position;
             Arrow(row);
 
             var nav = Nav.Active;   // see SubPage: Active is null by the time a click arrives
