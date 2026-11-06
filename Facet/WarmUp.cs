@@ -53,7 +53,7 @@ namespace Facet
             Widgets.Text(s, rest, lower, _ => { });
             Widgets.Info(s, upper, lower);
             Widgets.Action(s, lower, "Run", () => { });
-            Widgets.Colour(s, rest, Tokens.Accent, _ => { });
+            Widgets.Colour(s, rest, Theme.Dark[Role.Accent], _ => { });
         }
     }
 }

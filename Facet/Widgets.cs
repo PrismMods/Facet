@@ -58,7 +58,7 @@ namespace Facet
             l.style.flexShrink = 1f;
             l.pickingMode = PickingMode.Ignore;
 
-            Events.On<MouseEnterEvent>(row, _ => row.style.backgroundColor = Theme.For(row).Row);
+            Events.On<MouseEnterEvent>(row, _ => row.style.backgroundColor = Theme.For(row)[Role.Row]);
             Events.On<MouseLeaveEvent>(row, _ => row.style.backgroundColor = Color.clear);
 
             var right = Ui.Row(row);
@@ -68,7 +68,7 @@ namespace Facet
             /* Every row reserves the arrow's width, filled or not. Without it the switches on rows
                that have a page behind them sit one arrow to the left of the ones that do not, and a
                column of toggles reads as ragged. */
-            var arrow = Ui.Text("", row, ArrowSize, Theme.For(row).TextMuted);
+            var arrow = Ui.Text("", row, ArrowSize, Role.TextMuted);
             arrow.name = "arrow";
             arrow.style.width = ArrowSlot;
             arrow.style.unityTextAlign = TextAnchor.MiddleRight;
@@ -95,7 +95,7 @@ namespace Facet
             track.style.height = 18f;
             Ui.SetRadius(track, 9f);
             var th = Theme.For(host);
-            track.style.backgroundColor = value ? th.Accent : th.RowAlt;
+            track.style.backgroundColor = value ? th[Role.Accent] : th[Role.RowAlt];
             track.pickingMode = PickingMode.Position;
 
             var knob = new VisualElement();
@@ -113,7 +113,7 @@ namespace Facet
             var set = Track(label, value, v =>
             {
                 state = v;
-                track.style.backgroundColor = v ? Theme.For(track).Accent : Theme.For(track).RowAlt;
+                track.style.backgroundColor = v ? Theme.For(track)[Role.Accent] : Theme.For(track)[Role.RowAlt];
                 Anim.Move(knob, v ? 20f : 2f, Anim.Fast);
                 Safe.Run(Host.For(track), "Toggle handler", () => { if (onChange != null) onChange(v); });
             });
@@ -237,7 +237,7 @@ namespace Facet
             var set = Track(label, index, v =>
             {
                 current = v;
-                for (int j = 0; j < buttons.Count; j++) Ui.Highlight(buttons[j], j == current);
+                for (int j = 0; j < buttons.Count; j++) Paint.Select(buttons[j], j == current);
                 if (v >= 0 && v < buttons.Count) Anim.Pop(buttons[v]);
                 Safe.Run(Host.For(host), "Choice handler", () => { if (onChange != null) onChange(v); });
             });
@@ -246,7 +246,7 @@ namespace Facet
                 int idx = i;
                 buttons.Add(Ui.Btn(options[i], () => { if (idx != current) set(idx); }, host));
             }
-            for (int j = 0; j < buttons.Count; j++) Ui.Highlight(buttons[j], j == current);
+            for (int j = 0; j < buttons.Count; j++) Paint.Select(buttons[j], j == current);
             return host;
         }
 
@@ -311,16 +311,16 @@ namespace Facet
                 {
                     armed = true;
                     b.text = Words.Own("Sure?");
-                    b.style.backgroundColor = Theme.For(b).Danger;
+                    b.style.backgroundColor = Theme.For(b)[Role.Danger];
                     Anim.Pop(b);
                     return;
                 }
                 armed = false;
                 b.text = buttonText;
-                b.style.backgroundColor = Theme.For(b).RowAlt;
+                b.style.backgroundColor = Theme.For(b)[Role.RowAlt];
                 Safe.Run(Host.For(b), "Danger handler", () => { if (onConfirm != null) onConfirm(); });
             }, host);
-            b.style.color = Theme.For(b).Danger;
+            Paint.Fg(b, Role.Danger);
             return b;
         }
 
@@ -350,14 +350,14 @@ namespace Facet
             b = Ui.Btn(string.IsNullOrEmpty(current) ? Words.Own("unbound") : current, () =>
             {
                 b.text = Words.Own("press a key…");
-                Ui.Highlight(b, true);
+                Paint.Select(b, true);
                 bool ok = Safe.Run(Host.For(b), "Key capture", () => beginCapture(name =>
                 {
                     b.text = string.IsNullOrEmpty(name) ? Words.Own("unbound") : name;
-                    Ui.Highlight(b, false);
+                    Paint.Select(b, false);
                     Anim.Pop(b);
                 }));
-                if (!ok) { b.text = current; Ui.Highlight(b, false); }
+                if (!ok) { b.text = current; Paint.Select(b, false); }
             }, host);
             b.style.minWidth = 110f;
             return b;
@@ -381,7 +381,7 @@ namespace Facet
             arrow.style.fontSize = Tokens.FontSize + 3f;   // it was a speck at body size
             var l = Ui.Text(title, head, Tokens.FontSize);
             l.style.unityFontStyleAndWeight = FontStyle.Bold;
-            l.style.color = Theme.For(l).TextMuted;
+            Paint.Fg(l, Role.TextMuted);
             l.pickingMode = PickingMode.Ignore;
 
             var body = Ui.Box(parent);
@@ -412,7 +412,7 @@ namespace Facet
             row.style.paddingRight = 4f;
             row.style.marginBottom = 2f;
             Ui.SetRadius(row, Tokens.Radius);
-            row.style.backgroundColor = Theme.For(row).Row;
+            row.style.backgroundColor = Theme.For(row)[Role.Row];
 
             var text = Ui.Box(row);
             text.style.flexGrow = 1f;
@@ -433,7 +433,7 @@ namespace Facet
         /// Marks a list entry as the active one, the way a profile list shows which is loaded.
         public static void MarkActive(VisualElement actions, string label = null)
         {
-            var tag = Ui.Text(label ?? Words.Own("Active"), null, Tokens.FontSizeSmall, Theme.For(actions).Accent);
+            var tag = Ui.Text(label ?? Words.Own("Active"), null, Tokens.FontSizeSmall, Role.Accent);
             tag.style.marginRight = Tokens.Gap;
             actions.Insert(0, tag);
         }
@@ -455,13 +455,13 @@ namespace Facet
             bool armed = false;
             b = Ui.Btn(text, () =>
             {
-                if (!armed) { armed = true; b.text = Words.Own("Sure?"); b.style.backgroundColor = Theme.For(b).Danger; Anim.Pop(b); return; }
+                if (!armed) { armed = true; b.text = Words.Own("Sure?"); b.style.backgroundColor = Theme.For(b)[Role.Danger]; Anim.Pop(b); return; }
                 armed = false;
                 b.text = text;
-                b.style.backgroundColor = Theme.For(b).RowAlt;
+                b.style.backgroundColor = Theme.For(b)[Role.RowAlt];
                 Safe.Run(Host.For(b), "Danger handler", () => { if (onConfirm != null) onConfirm(); });
             }, row);
-            b.style.color = Theme.For(b).Danger;
+            Paint.Fg(b, Role.Danger);
             return b;
         }
 
@@ -526,7 +526,7 @@ namespace Facet
         {
             var l = Ui.Text(text, parent, Tokens.FontSize);
             l.style.unityFontStyleAndWeight = FontStyle.Bold;
-            l.style.color = Theme.For(l).TextMuted;
+            Paint.Fg(l, Role.TextMuted);
             l.style.marginTop = Tokens.Pad;
             l.style.marginBottom = Tokens.Gap;
             l.style.flexShrink = 0f;

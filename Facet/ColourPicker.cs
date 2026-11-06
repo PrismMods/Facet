@@ -78,7 +78,7 @@ namespace Facet
             _swatch.style.right = 0f; _swatch.style.bottom = 0f;
             Ui.SetRadius(_swatch, 4f);
             Ui.SetBorderWidth(_swatch, 1f);
-            Ui.SetBorderColor(_swatch, Theme.For(_swatch).PanelBorder);
+            Ui.SetBorderColor(_swatch, Theme.For(_swatch)[Role.PanelBorder]);
             swatchBg.Add(_swatch);
 
             Events.On<ClickEvent>(head, _ =>

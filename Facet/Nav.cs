@@ -110,7 +110,7 @@ namespace Facet
                 var where = Ui.Muted(string.IsNullOrEmpty(h.Group) ? h.Page : h.Page + " · " + h.Group, row);
                 where.pickingMode = PickingMode.Ignore;
 
-                Events.On<MouseEnterEvent>(row, _ => row.style.backgroundColor = T.Row);
+                Events.On<MouseEnterEvent>(row, _ => row.style.backgroundColor = T[Role.Row]);
                 Events.On<MouseLeaveEvent>(row, _ => row.style.backgroundColor = Color.clear);
                 Events.On<ClickEvent>(row, _ => GoTo(h));
             }
@@ -133,10 +133,10 @@ namespace Facet
                 if (!(e.userData is string) || (string)e.userData != label) continue;
                 /* Fade a highlight out rather than in: the row is already on screen by the time
                    this runs, so starting lit and settling is what draws the eye to it. */
-                e.style.backgroundColor = T.Accent;
+                e.style.backgroundColor = T[Role.Accent];
                 e.experimental.animation.Start(1f, 0f, 900, (el, t) =>
                 {
-                    var c = T.Accent;
+                    var c = T[Role.Accent];
                     c.a = t * 0.5f;
                     el.style.backgroundColor = c;
                 });
@@ -291,7 +291,7 @@ namespace Facet
             line.style.position = Position.Absolute;
             line.style.top = 0f; line.style.bottom = 0f;
             line.style.width = 1f;
-            line.style.backgroundColor = T.PanelBorder;
+            line.style.backgroundColor = T[Role.PanelBorder];
             line.pickingMode = PickingMode.Ignore;
 
             var knob = Ui.Box(handle);
@@ -299,7 +299,7 @@ namespace Facet
             knob.style.height = 34f;
             knob.style.alignItems = Align.Center;
             knob.style.justifyContent = Justify.Center;
-            knob.style.backgroundColor = T.RowAlt;
+            knob.style.backgroundColor = T[Role.RowAlt];
             Ui.SetRadius(knob, Tokens.Radius);
             knob.style.display = DisplayStyle.None;
             knob.pickingMode = PickingMode.Ignore;
@@ -311,13 +311,13 @@ namespace Facet
             _railKnob = knob;
             Events.On<MouseEnterEvent>(handle, _ =>
             {
-                line.style.backgroundColor = T.Accent;
-                knob.style.backgroundColor = T.RowHover;
+                line.style.backgroundColor = T[Role.Accent];
+                knob.style.backgroundColor = T[Role.RowHover];
             });
             Events.On<MouseLeaveEvent>(handle, _ =>
             {
-                line.style.backgroundColor = T.PanelBorder;
-                knob.style.backgroundColor = T.RowAlt;
+                line.style.backgroundColor = T[Role.PanelBorder];
+                knob.style.backgroundColor = T[Role.RowAlt];
             });
             MakeRailHandle(handle, railScroll);
 
@@ -331,7 +331,7 @@ namespace Facet
                line of height at the top of every page to say something the eye had just read.
                The element stays for search, which has nothing else to announce itself with. */
             _crumbs = Ui.Row(right);
-            _crumbs.style.backgroundColor = T.Panel;
+            _crumbs.style.backgroundColor = T[Role.Panel];
             _crumbs.style.flexShrink = 0f;
 
             var contentScroll = new ScrollView(ScrollViewMode.Vertical);
@@ -429,7 +429,7 @@ namespace Facet
                    nothing. Upper case, smaller than the items under it, and muted — the opposite
                    of the treatment a selected item gets. */
                 var heading = Ui.Text(item.Title.ToUpperInvariant(), _rail,
-                                      Tokens.FontSizeSmall - 2f, T.TextMuted);
+                                      Tokens.FontSizeSmall - 2f, Role.TextMuted);
                 heading.style.unityFontStyleAndWeight = FontStyle.Bold;
                 heading.style.letterSpacing = 1.5f;
                 heading.style.marginTop = depth == 0 ? Tokens.Pad + 4f : Tokens.Gap;
@@ -450,7 +450,7 @@ namespace Facet
             // The selected LEAF is the highlighted one. A branch on the path is merely open, and
             // colouring it as selected too makes it unclear which page is actually showing.
             bool selected = onPath && !item.IsBranch;
-            row.style.backgroundColor = selected ? T.RowHover : Color.clear;
+            row.style.backgroundColor = selected ? T[Role.RowHover] : Color.clear;
             Ui.SetRadius(row, 4f);
             if (!string.IsNullOrEmpty(item.Tooltip)) row.tooltip = item.Tooltip;
 
@@ -467,7 +467,7 @@ namespace Facet
             }
 
             var label = Ui.Text(item.Title, row, Tokens.FontSize,
-                                selected ? T.Text : T.TextMuted);
+                                selected ? Role.Text : Role.TextMuted);
             label.style.flexGrow = 1f;
             label.pickingMode = PickingMode.Ignore;
 
@@ -476,13 +476,13 @@ namespace Facet
             {
                 Events.On<MouseEnterEvent>(row, _ =>
                 {
-                    row.style.backgroundColor = T.Row;
-                    label.style.color = T.Text;
+                    row.style.backgroundColor = T[Role.Row];
+                    label.style.color = T[Role.Text];
                 });
                 Events.On<MouseLeaveEvent>(row, _ =>
                 {
                     row.style.backgroundColor = Color.clear;
-                    label.style.color = T.TextMuted;
+                    label.style.color = T[Role.TextMuted];
                 });
             }
 
@@ -531,7 +531,7 @@ namespace Facet
                 }
                 var crumb = Ui.Text(Title(step.Title), _crumbs,
                                     last ? Tokens.FontSizeTitle : Tokens.FontSizeSmall,
-                                    last ? T.Text : T.TextMuted);
+                                    last ? Role.Text : Role.TextMuted);
                 if (last) crumb.style.unityFontStyleAndWeight = FontStyle.Bold;
                 if (last) continue;
                 // An ancestor crumb expands its branch in the rail; there is no page of its own to
@@ -564,7 +564,7 @@ namespace Facet
                 var back = Ui.Row(_content);
                 back.style.minHeight = 30f;
                 back.pickingMode = PickingMode.Position;
-                var arrow = Ui.Text("\u2039  " + home, back, Tokens.FontSize, T.Accent);
+                var arrow = Ui.Text("\u2039  " + home, back, Tokens.FontSize, Role.Accent);
                 arrow.pickingMode = PickingMode.Ignore;
                 Events.On<ClickEvent>(back, _ => Pop());
 

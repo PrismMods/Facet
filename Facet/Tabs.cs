@@ -63,7 +63,7 @@ namespace Facet
 
         private void Paint()
         {
-            for (int i = 0; i < _buttons.Count; i++) Ui.Highlight(_buttons[i], i == Selected);
+            for (int i = 0; i < _buttons.Count; i++) Facet.Paint.Select(_buttons[i], i == Selected);
         }
     }
 }

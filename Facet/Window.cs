@@ -145,7 +145,7 @@ namespace Facet
 
             var bar = Ui.Row(Root);
             bar.style.height = TitleHeight;
-            bar.style.backgroundColor = Theme.For(Root).TitleBar;
+            Paint.Look(bar, Look.Chrome);
             bar.style.paddingLeft = Tokens.Pad;
             bar.style.paddingRight = Tokens.Gap;
             // No rail toggle: the rail has a drag handle of its own, which resizes as well as
@@ -189,7 +189,7 @@ namespace Facet
             _searchClear.style.marginRight = 4f;
             Ui.SetPadding(_searchClear, 0f);
             _searchClear.style.unityTextAlign = TextAnchor.MiddleCenter;
-            Ui.Flat(_searchClear);
+            Paint.Look(_searchClear, Look.FlatButton);
             _searchClear.style.display = DisplayStyle.None;
 
             var spacer = Ui.Box(bar);
@@ -200,10 +200,8 @@ namespace Facet
             /* Undo and redo in the header, where they apply to whatever the window is showing.
                Text rather than ↶ ↷: the panel draws in an OS font chosen at runtime and there is
                no guarantee it carries those glyphs, whereas a missing glyph is a blank button. */
-            var undo = Glyph("\u21B6", Words.Own("Undo"), () => History.Undo());
-            var redo = Glyph("\u21B7", Words.Own("Redo"), () => History.Redo());
-            TitleBarRight.Add(undo);
-            TitleBarRight.Add(redo);
+            var undo = Glyph(TitleBarRight, "\u21B6", Words.Own("Undo"), () => History.Undo());
+            var redo = Glyph(TitleBarRight, "\u21B7", Words.Own("Redo"), () => History.Redo());
             Action refreshHistory = () =>
             {
                 Enable(undo, History.CanUndo, History.NextUndo == null ? Words.Own("Undo") : Words.OwnF("Undo {0}", Words.T(History.NextUndo)));
@@ -217,9 +215,9 @@ namespace Facet
             if (onClose != null)
             {
                 var close = Ui.Btn("\u2715", onClose, TitleBarRight);
+                Paint.Look(close, CloseLook);
                 close.style.width = 30f;
                 close.style.height = 26f;
-                close.style.backgroundColor = Color.clear;
                 close.style.marginRight = 0f;
                 /* Centre the glyph by hand. A Button's text is laid out by the theme, so without
                    one it sits wherever the default padding leaves it — which is what made the ✕
@@ -227,8 +225,6 @@ namespace Facet
                 Ui.SetPadding(close, 0f);
                 close.style.unityTextAlign = TextAnchor.MiddleCenter;
                 close.style.fontSize = Tokens.FontSize;
-                Events.On<MouseEnterEvent>(close, _ => close.style.backgroundColor = Theme.For(close).Danger);
-                Events.On<MouseLeaveEvent>(close, _ => close.style.backgroundColor = Color.clear);
             }
 
             Body = Ui.Box(Root);
@@ -244,7 +240,7 @@ namespace Facet
             Ui.SetPadding(Body, Tokens.Pad);
 
             Footer = Ui.Row(Root);
-            Footer.style.backgroundColor = Theme.For(Root).TitleBar;
+            Paint.Look(Footer, Look.Chrome);
             // No scale buttons on the chrome: panel size is a setting, and a control that lives on
             // every window competes with the content for a job done once.
             Footer.style.paddingLeft = Tokens.Pad;
@@ -268,9 +264,9 @@ namespace Facet
 
         /* ↶ and ↷. These live in Arrows, which every OS UI font carries — unlike the pictographic
            blocks, where a miss is a blank button rather than a wrong-looking one. */
-        private static Button Glyph(string glyph, string tip, Action onClick)
+        private static Button Glyph(VisualElement parent, string glyph, string tip, Action onClick)
         {
-            var b = Ui.Btn(glyph, onClick);
+            var b = Ui.Btn(glyph, onClick, parent);
             b.style.width = 30f;
             b.style.height = 26f;
             b.style.fontSize = Tokens.FontSize + 2f;
@@ -280,15 +276,15 @@ namespace Facet
             return b;
         }
 
-        /* Disabled buttons fade rather than vanish, so the header does not reflow every time the
-           first change of a session is made. SetEnabled alone leaves them looking active — the
-           theme that would grey them out is the one a runtime mod does not have. */
+        // Fades rather than vanishes (Paint.Enable), so the header does not reflow on the first change.
         private static void Enable(Button b, bool on, string tip)
         {
-            b.SetEnabled(on);
-            b.style.opacity = on ? 1f : 0.35f;
+            Paint.Enable(b, on);
             b.tooltip = on ? tip : null;
         }
+
+        // A window control, not a toolbar button: bare until hovered, then Danger.
+        private static readonly Look CloseLook = new Look { Text = Role.Text, HoverBg = Role.Danger, PressedBg = Role.Danger };
 
         public float Scale
         {
@@ -380,7 +376,6 @@ namespace Facet
             grip.style.position = Position.Absolute;
             grip.style.right = 0f; grip.style.bottom = 0f;
             grip.style.width = GripSize; grip.style.height = GripSize;
-            grip.style.backgroundColor = Color.clear;
             grip.pickingMode = PickingMode.Position;
             Cursors.Set(grip, Cursors.Kind.ResizeCorner);
             Root.Add(grip);
@@ -399,9 +394,9 @@ namespace Facet
                     dot.style.bottom = 3f + (2 - row) * 4f;
                     dot.style.width = 2f;
                     dot.style.height = 2f;
-                    dot.style.backgroundColor = Theme.For(Root).TextMuted;
                     dot.pickingMode = PickingMode.Ignore;
                     grip.Add(dot);
+                    Paint.Bg(dot, Role.TextMuted);
                 }
 
             Events.On<PointerDownEvent>(grip, e =>

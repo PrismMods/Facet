@@ -28,8 +28,8 @@ namespace Facet {
         public int RefreshMs => _o.RefreshMs;
         public string[][] SansFonts => _o.SansFonts;
         public string[][] MonoFonts => _o.MonoFonts;
-        /// The consumer's scheme, or Theme.Default.
-        public Theme Theme => _o.Theme ?? Theme.Default;
+        /// The consumer's scheme, or Theme.Dark.
+        public Theme Theme => _o.Theme ?? Theme.Dark;
 
         Host(string name, HostOptions o) {
             Name = name; _o = o;

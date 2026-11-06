@@ -60,9 +60,9 @@ namespace Facet
                     row.style.height = Tokens.RowHeight;
                     row.style.paddingLeft = 8f; row.style.paddingRight = 8f;
                     Ui.SetRadius(row, 4f);
-                    var label = Ui.Text(items[i], row, Tokens.FontSizeSmall, i == selected ? Theme.For(row).Accent : Theme.For(row).Text);
+                    var label = Ui.Text(items[i], row, Tokens.FontSizeSmall, i == selected ? Role.Accent : Role.Text);
                     label.pickingMode = PickingMode.Ignore;
-                    Events.On<MouseEnterEvent>(row, _ => row.style.backgroundColor = Theme.For(row).RowHover);
+                    Events.On<MouseEnterEvent>(row, _ => row.style.backgroundColor = Theme.For(row)[Role.RowHover]);
                     Events.On<MouseLeaveEvent>(row, _ => row.style.backgroundColor = Color.clear);
                     Events.On<PointerUpEvent>(row, e =>
                     {

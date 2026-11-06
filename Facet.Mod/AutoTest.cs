@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Reflection;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Debug = UnityEngine.Debug;
@@ -87,6 +88,7 @@ namespace Facet.Mod
             yield return Run("SectionOpen", SectionOpen());
             yield return Run("SharedEscape", SharedEscape());
             yield return Run("SectionHost", SectionHost());
+            yield return Run("SectionTheme", SectionTheme());
             // Later tasks: yield return Run("Section...", Section...());
 
             Main.Log("AUTOTEST DONE pass=" + _pass + " fail=" + _fail);
@@ -145,6 +147,77 @@ namespace Facet.Mod
             yield return Drag(from, from + new Vector2(60, -40));
             string after; Gallery.Store.TryGetValue("window.Gallery", out after);
             Check(after != null && after.Split(',').Length == 5 && after != before, "dragging the title bar writes x,y,w,h,scale to the host", before + " -> " + after);
+        }
+
+        static bool Near(Color a, Color b)
+        {
+            return Mathf.Abs(a.r - b.r) < 2e-3f && Mathf.Abs(a.g - b.g) < 2e-3f && Mathf.Abs(a.b - b.b) < 2e-3f && Mathf.Abs(a.a - b.a) < 2e-3f;
+        }
+
+        static int Subscribers(Theme t)
+        {
+            var d = typeof(Theme).GetField("Changed", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(t) as Delegate;
+            return d == null ? 0 : d.GetInvocationList().Length;
+        }
+
+        // Recolouring a theme re-themes its open window in place: chrome, hover, disabled fade.
+        IEnumerator SectionTheme()
+        {
+            var w = Gallery.Open(); yield return null; yield return null;
+            var t = Gallery.Surface.Theme;
+            // Body paints no role (the window's background is Root's Panel), so it must stay as it was.
+            var body = w.Body.resolvedStyle.backgroundColor;
+            var panel = w.Root.resolvedStyle.backgroundColor;
+            var sw = Stopwatch.StartNew();
+            t.Recolour(new Color(.9f, .2f, .2f));
+            double ms = sw.Elapsed.TotalMilliseconds;   // encloses the surface's own [perf] retheme timing
+            yield return null;
+            var bar = w.Root.hierarchy[0];
+            Check(Near(bar.resolvedStyle.backgroundColor, t[Role.TitleBar]), "the title bar re-themes to the new TitleBar",
+                bar.resolvedStyle.backgroundColor + " vs " + t[Role.TitleBar]);
+            Check(Near(w.Root.resolvedStyle.backgroundColor, t[Role.Panel]) && !Near(panel, t[Role.Panel]), "the window background moves to the new Panel",
+                panel + " -> " + w.Root.resolvedStyle.backgroundColor);
+            Check(Near(w.Body.resolvedStyle.backgroundColor, body), "the body, which paints no role, is left alone");
+            Check(ms <= 16.0, "re-theming the open Gallery takes <= 16 ms", ms.ToString("0.0") + " ms");
+
+            var bs = w.TitleBarRight.Query<Button>().ToList();
+            var close = bs[bs.Count - 1];
+            using (var e = MouseEnterEvent.GetPooled()) { e.target = close; close.SendEvent(e); }
+            yield return null;
+            Check(Near(close.resolvedStyle.backgroundColor, t[Role.Danger]), "the hovered close button shows Danger",
+                close.resolvedStyle.backgroundColor + " vs " + t[Role.Danger]);
+            using (var e = MouseLeaveEvent.GetPooled()) { e.target = close; close.SendEvent(e); }
+            yield return null;
+            Check(close.resolvedStyle.backgroundColor.a == 0f, "...and is bare again after the pointer leaves");
+
+            var b = Ui.Btn("Probe", null, w.Body);
+            yield return null; yield return null;
+            // Read in the same frame: the real pointer is elsewhere, so the panel sends a leave next frame.
+            Pointer(EventType.MouseDown, Ctr(b));
+            var down = b.style.backgroundColor.value;
+            Pointer(EventType.MouseUp, Ctr(b)); yield return null;
+            Check(Near(down, t[Role.Row]), "a pressed button shows Look.Button's PressedBg", down + " vs " + t[Role.Row]);
+            Paint.Enable(b, false); yield return null;
+            Check(Mathf.Abs(b.resolvedStyle.opacity - .35f) < 1e-3f, "a button after Paint.Enable(b, false) has opacity .35", b.resolvedStyle.opacity.ToString());
+            Paint.Enable(b, true); yield return null;
+            Check(b.resolvedStyle.opacity == 1f && b.enabledSelf, "...and is whole again after Paint.Enable(b, true)");
+            b.RemoveFromHierarchy();
+
+            // A throwing subscriber does not stop the surfaces after it; replacing and disposing unsubscribe.
+            var tt = new Theme();
+            tt.Changed += () => { throw new InvalidOperationException("subscriber"); };
+            var h = Host.Create("ThemeSubs", o => o.Theme = tt);
+            var s = new Surface(h, "FacetThemeSubs", Layer.Window);
+            var card = Ui.Card(s.Root);
+            Check(Subscribers(tt) == 2, "a surface subscribes to its host's theme", Subscribers(tt).ToString());
+            tt.Recolour(new Color(.2f, .8f, .3f));
+            Check(Near(card.style.backgroundColor.value, tt[Role.Panel]), "a throwing Changed subscriber leaves the surface re-themed");
+            var other = Theme.FromAccent(new Color(.3f, .3f, 1f));
+            s.Theme = other;
+            Check(Subscribers(tt) == 1 && Subscribers(other) == 1 && Near(card.style.backgroundColor.value, other[Role.Panel]),
+                "replacing a surface's theme moves its subscription and redraws in the new one");
+            s.Dispose();
+            Check(Subscribers(other) == 0, "disposing a surface unsubscribes it");
         }
 
         IEnumerator SharedEscape()

@@ -12,8 +12,8 @@ namespace Facet
        framework in Topaz and Sapphire gets without hand-rolling it.
 
        What is NOT available is the authoring half. USS and UXML are imported by the editor, so a
-       mod cannot compile a stylesheet at runtime — every style here is set in C# and every theme
-       value is a token (see Tokens). That is also why themeStyleSheet gets an empty instance and
+       mod cannot compile a stylesheet at runtime — every style here is set in C#: colours by
+       role (Theme, Paint), sizes as Tokens. That is also why themeStyleSheet gets an empty instance and
        disableNoThemeWarning is set: a panel with no theme renders fine, it just has no built-in
        control styling, which we do not want anyway since we style our own elements. It does log one
        "no theme style sheet" warning per panel — disableNoThemeWarning exists but is not public.
@@ -45,11 +45,34 @@ namespace Facet
         public string Name { get; }
 
         private Theme _theme;
-        /// This surface's colour scheme. Set it before building into Root; null draws in Theme.Default.
+        /// This surface's colour scheme: the Theme.Use scope it was made in, else its host's. Never
+        /// null. Replacing it, or recolouring it, redraws everything already built (Paint.Apply).
         public Theme Theme
         {
             get { return _theme; }
-            set { _theme = value; if (Root != null) Theme.Set(Root, value); }
+            set
+            {
+                value = value ?? Host.Theme;
+                if (ReferenceEquals(value, _theme)) return;
+                _theme.Changed -= Retheme;
+                _theme = value;
+                if (Root == null) return;   // disposed, or never drew
+                _theme.Changed += Retheme;
+                Theme.Set(Root, value);
+                Retheme();
+            }
+        }
+
+        /* Inside Safe, so one surface's failure leaves the others wearing the scheme re-themed.
+           The [perf] line is throttled per surface: dragging an accent picker re-themes every frame. */
+        private void Retheme()
+        {
+            var root = Root;
+            if (root == null) return;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            Safe.Run(Host, "Surface.Retheme", () => Paint.Apply(root));
+            if (Throttle.Allow(Host.Name + "/retheme/" + Name, Time.realtimeSinceStartupAsDouble))
+                Host.Log("[perf] retheme " + Name + " " + sw.Elapsed.TotalMilliseconds.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " ms");
         }
 
         /// While visible, keep keys and the wheel away from the game (Input). On by default:
@@ -93,8 +116,9 @@ namespace Facet
             doc.panelSettings = _settings;
             Root = doc.rootVisualElement;
             if (Root != null) Host.Attach(Root);
-            // Built inside Theme.Use: keep that scheme, or the panel's later pages fall back to Default.
-            if (Root != null && Theme.Building != null) Theme = Theme.Building;
+            // Built inside Theme.Use: keep that scheme, or the panel's later pages fall back to the host's.
+            _theme = Theme.Building ?? Host.Theme;
+            if (Root != null) { _theme.Changed += Retheme; Theme.Set(Root, _theme); }
             /* Null here is the failure that looks like nothing happening: the panel exists, the
                hotkey "works", and not one element is ever drawn. Worth its own line. */
             L("Surface '" + name + "': root " + (Root == null ? "NULL — nothing will render" : "ok")
@@ -497,6 +521,7 @@ namespace Facet
 
         public void Dispose()
         {
+            _theme.Changed -= Retheme;
             Ui.Stack.Remove(this);
             if (_visible) { _visible = false; if (Layer != Layer.Hud) Ui.OpenWindows--; RaiseHidden(); }
             if (_go != null) UnityEngine.Object.Destroy(_go);

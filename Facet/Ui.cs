@@ -73,84 +73,43 @@ namespace Facet
         public static VisualElement Card(VisualElement parent = null)
         {
             var e = Box(parent);
-            var t = Theme.For(e);
-            e.style.backgroundColor = t.Panel;
-            SetBorderColor(e, t.PanelBorder);
+            Paint.Look(e, Look.Card);
             SetBorderWidth(e, 1f);
             SetRadius(e, Tokens.Radius);
             SetPadding(e, Tokens.Pad);
             return e;
         }
 
-        public static Label Text(string text, VisualElement parent = null, float? size = null, Color? color = null)
+        public static Label Text(string text, VisualElement parent = null, float? size = null, Role role = Role.Text)
         {
             var l = new Label(Words.T(text ?? ""));
             l.style.fontSize = size ?? Tokens.FontSize;
-            l.style.color = color ?? Theme.For(parent).Text;
             l.style.whiteSpace = WhiteSpace.NoWrap;
             l.style.textOverflow = TextOverflow.Ellipsis;
             l.style.overflow = Overflow.Hidden;
             parent?.Add(l);
+            Paint.Fg(l, role);
             return l;
         }
 
         public static Label Muted(string text, VisualElement parent = null)
-            => Text(text, parent, Tokens.FontSizeSmall, Theme.For(parent).TextMuted);
+            => Text(text, parent, Tokens.FontSizeSmall, Role.TextMuted);
 
-        /* A button's resting and hover colours live in a holder on the element, not in the hover
-           callbacks. Setting backgroundColor from outside used to work until the pointer left the
-           button, at which point MouseLeave put the resting colour back — which is why a selected
-           tab looked selected only until the mouse moved. Highlight() changes the resting colour
-           instead, so the callbacks agree with it. */
-        private sealed class BtnColors { public Color Rest, Hover, Text; }
-
+        /// Look.Button: hover, pressed and selected (Paint.Select) are Paint's, not the caller's.
         public static Button Btn(string text, Action onClick, VisualElement parent = null)
         {
             var b = new Button { text = Words.T(text ?? "") };
             if (onClick != null) b.clicked += () => Safe.Run(Host.For(b), "Button '" + b.text + "'", onClick);
-            var t = Theme.For(parent);
-            var c = new BtnColors { Rest = t.RowAlt, Hover = t.RowHover, Text = t.Text };
-            b.userData = c;
             b.style.fontSize = Tokens.FontSizeSmall;
-            b.style.color = c.Text;
-            b.style.backgroundColor = c.Rest;
             SetBorderWidth(b, 0f);
             SetRadius(b, 4f);
             SetPadding(b, 5f);
             b.style.marginLeft = 0f; b.style.marginRight = Tokens.Gap;
             b.style.marginTop = 0f; b.style.marginBottom = 0f;
-            Events.On<MouseEnterEvent>(b, _ => b.style.backgroundColor = c.Hover);
-            Events.On<MouseLeaveEvent>(b, _ => b.style.backgroundColor = c.Rest);
             parent?.Add(b);
+            Paint.Look(b, Look.Button);
             return b;
         }
-
-        /// Strip a button's background entirely, hover included — for chrome affordances that
-        /// should read as part of the frame rather than as buttons sitting on it.
-        public static void Flat(Button b)
-        {
-            var c = b?.userData as BtnColors;
-            if (c == null) return;
-            c.Rest = Color.clear;
-            c.Hover = Color.clear;
-            b.style.backgroundColor = Color.clear;
-        }
-
-        /// Mark a button as the selected one. Survives the pointer leaving it.
-        public static void Highlight(Button b, bool on)
-        {
-            var c = b?.userData as BtnColors;
-            if (c == null) return;
-            var t = Theme.For(b);
-            c.Rest = on ? t.Accent : t.RowAlt;
-            c.Hover = on ? Lighten(t.Accent, 0.12f) : t.RowHover;
-            c.Text = on ? new Color(0.06f, 0.06f, 0.08f, 1f) : t.Text;
-            b.style.backgroundColor = c.Rest;
-            b.style.color = c.Text;
-        }
-
-        public static Color Lighten(Color c, float amount)
-            => new Color(Mathf.Min(1f, c.r + amount), Mathf.Min(1f, c.g + amount), Mathf.Min(1f, c.b + amount), c.a);
 
         /* A virtualized list. This is the reason for moving to UI Toolkit at all: ListView recycles
            rows, so a 50k-line log costs the same as a 50-line one. The uGUI framework had to be
