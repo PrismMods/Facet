@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -36,8 +37,9 @@ namespace Facet
                 s = new Surface(host, "FacetWarmUp", Layer.Window);
                 if (s.Root == null) { done(); return; }
                 s.BlocksGameInput = false;
-                var w = new Window(s.Root, "FacetWarmUp", "Facet warm-up", new Rect(120f, 80f, 760f, 560f));
-                new Nav(w.Body, new[] { new NavItem("Warm-up", Rows) });
+                var w = new Window(s.Root, "FacetWarmUp", "Facet warm-up", new Rect(120f, 80f, 960f, 600f));
+                // Two null-titled groups, so the rule between groups is drawn here too.
+                new Nav(w.Body, new[] { NavItem.Heading(null, new NavItem("Warm-up", Rows)), NavItem.Heading(null, new NavItem("Warm-up 2", _ => { })) });
                 s.Root.style.translate = new Translate(-10000f, 0f);
                 s.Visible = true;
                 host.Log("[perf] warm-up window built in " + sw.ElapsedMilliseconds + " ms");
@@ -46,11 +48,26 @@ namespace Facet
             catch (Exception e) { host.Log("WarmUp: failed: " + e.Message); done(); }
         }
 
-        // One of each control kind, with every printable ASCII character between them.
+        /* One of each control kind, with every printable ASCII character between them, and one of each
+           0.2 part as a suite page lays them out: a header, then a card (with Advanced) beside a
+           preview. Measured in game (2026-11-07): without the parts, a suite page opened straight after
+           the warm-up took 19-42 ms against 11-18 ms for a second one; with them, the same as a second. */
         private static void Rows(VisualElement page)
         {
             const string upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", lower = "abcdefghijklmnopqrstuvwxyz";
             const string rest = "0123456789 !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
+            Controls.PageHeader(page, upper, Bind.Value(true), o => o.Description = lower);
+            var left = Controls.Columns(page, out var right);
+            var card = Controls.Card(left, upper, o =>
+            {
+                o.Note = () => lower;
+                o.Actions = new List<KeyValuePair<string, Action>> { new KeyValuePair<string, Action>(rest, () => { }) };
+            });
+            Controls.Toggle(card, lower, Bind.Value(true), o => o.Help = rest);
+            Controls.Toggle(Controls.Advanced(card), upper, Bind.Value(false));
+            Controls.Preview(right, lower, o => { o.Show = _ => { }; o.Tick = _ => { }; o.Hide = () => { }; o.Note = upper; o.Link = rest; });
+            Controls.Tile(Controls.Tiles(page), upper, Bind.Value(true));
+            Tabs.Pages(page, new List<NavItem> { new NavItem(upper, p => Controls.Info(p, lower, () => rest)), new NavItem(lower) });
             var s = Controls.Section(page, upper);
             Controls.Toggle(s, lower, Bind.Value(true));
             Controls.Slider(s, rest, Bind.Value(0.5f), o => o.Max = 2f);

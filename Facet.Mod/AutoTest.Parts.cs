@@ -29,6 +29,72 @@ namespace Facet.Mod
             return l != null && l.Count == 1 ? l[0].value * (l[0].unit == TimeUnit.Second ? 1000f : 1f) : -1f;
         }
 
+        /* Task 14, the budgets for a suite page. Run right after SectionWarmUp/SectionOpen (Ruling Q8),
+           so a part the warm-up missed shows as a cold first open; on its own host, so the re-theme
+           leaks into no later section. The first must also be within 15 ms of the second open (the warm figure). */
+        IEnumerator SectionPartsPerf()
+        {
+            GalleryParts.Model = new PartsModel();
+            var h = Host.Create("PartsPerf", o => o.Log = m => Main.Log("[partsperf] " + m));
+            var made = new Surface[1]; var ms = new long[1];
+            try
+            {
+                yield return TimedOpen(h, "FacetPartsPerf", "first", made, ms);
+                long first = ms[0];
+                Check(first <= 50, "the Parts window opened on its Feature page after the warm-up takes <= 50 ms", first + " ms");
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                made[0].Theme.Recolour(new Color(.9f, .2f, .2f));
+                double rt = sw.Elapsed.TotalMilliseconds;
+                Main.Log("[perf] retheme " + rt.ToString("0.0") + " ms (parts Feature page)");
+                Check(rt <= 16.0, "re-theming the open Feature page takes <= 16 ms", rt.ToString("0.0") + " ms");
+                made[0].Dispose();
+                yield return TimedOpen(h, "FacetPartsPerf2", "second", made, ms);
+                Check(first <= ms[0] + 15, "the first Parts open is within 15 ms of the second (the warm-up covers the parts)", "first " + first + " ms, second " + ms[0] + " ms");
+                Main.Log("[perf] parts first " + first + " ms, second " + ms[0] + " ms");
+                made[0].Dispose();
+
+                var s = made[0] = new Surface(h, "FacetTilesPerf", Layer.Window);
+                var w = new Window(s.Root, "tilesperf", "Tiles", new Rect(100, 60, 960, 600));
+                var grid = Controls.Tiles(w.Body);
+                var on = new bool[100];
+                for (int i = 0; i < 100; i++) { int k = i; Controls.Tile(grid, "Tile " + k, Bind.To(() => on[k], v => on[k] = v)); }
+                yield return null; yield return null;
+                var r = RefresherOf(s);
+                Check(Bound(r) == 100, "the page's 100 tiles register with the refresher", Bound(r).ToString());
+                double sum = 0;
+                for (int i = 0; i < 20; i++)
+                {
+                    var tick = System.Diagnostics.Stopwatch.StartNew();
+                    s.Refresh();
+                    sum += tick.Elapsed.TotalMilliseconds;
+                    yield return null;
+                }
+                Main.Log("[perf] refresh 100 tiles " + (sum / 20).ToString("0.000") + " ms (mean of 20 passes)");
+                Check(sum / 20 <= 0.2, "a refresh pass over 100 tiles takes <= 0.2 ms (mean of 20)", (sum / 20).ToString("0.000") + " ms");
+            }
+            finally { if (made[0] != null) made[0].Dispose(); GalleryParts.Model = new PartsModel(); }
+        }
+
+        // A fresh Parts-sized window opened on the Feature page, timed as SectionWarmUp times the Gallery.
+        IEnumerator TimedOpen(Host h, string name, string which, Surface[] made, long[] ms)
+        {
+            yield return Quiet();
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var s = made[0] = new Surface(h, name, Layer.Window);
+            s.Visible = false;
+            var w = new Window(s.Root, name, "Facet Parts", new Rect(100, 60, 960, 600));
+            new Nav(w.Body, new[] { new NavItem("Feature", GalleryParts.Feature) });
+            long ctor = sw.ElapsedMilliseconds;
+            s.Visible = true;
+            long show = sw.ElapsedMilliseconds - ctor;
+            yield return new WaitForEndOfFrame();
+            long draw = sw.ElapsedMilliseconds - ctor - show;
+            yield return null;
+            ms[0] = ctor + show + draw;
+            Main.Log("[perf] parts " + which + " open " + ms[0] + " ms (ctor " + ctor + " ms, show " + show + " ms, layout+draw " + draw
+                     + " ms; frame " + (Time.unscaledDeltaTime * 1000f).ToString("0") + " ms)");
+        }
+
         // Review Focus 3, first half: a theme's sizes and looks are its own, and Dark's cannot be written.
         IEnumerator SectionThemeShape()
         {

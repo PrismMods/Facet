@@ -9,7 +9,7 @@ game where a landmine was verified; nothing under `Facet/` may (`test.sh` greps 
 Unity 6000.3 verified in game (2026-09-24): `ScriptableObject.CreateInstance<PanelSettings>()` + an
 empty `ThemeStyleSheet` + `UIDocument` gives a live `rootVisualElement`. The real constraint: **USS
 and UXML cannot be authored at runtime** (the importer is editor-only), so styling is inline C# and
-theme values are code tokens.
+theme values live in code (`Theme`).
 
 - **Never show/hide a panel with `SetActive`.** `UIDocument` rebuilds its visual tree in `OnEnable`,
   so the second show hands back a different `rootVisualElement` and everything built into the old
@@ -73,7 +73,12 @@ theme values are code tokens.
 - **The first window drawn in a session costs ~85 ms more than any after it**: the first run of the
   window, widget and UI Toolkit code, not glyphs (with every glyph pre-rasterised it was still 91 ms;
   a second window took 17). So the first surface schedules `WarmUp.Run`: one throwaway window drawn
-  off screen for 100 ms, half a second after load. Measured 2026-11-06.
+  off screen for 100 ms, half a second after load. Measured 2026-11-06. It builds one of each control
+  and of each 0.2 part (header, columns, card with Advanced, preview, tile, tab pages): without the
+  parts, a suite page opened straight after it took 19-42 ms against 11-18 ms warm (2026-11-07). It runs
+  once per minor and session, from whichever mod's surface comes first. Unity's own UI Toolkit code is
+  warmed by the first Facet of ANY minor (0.2's warm-up took 34 ms after 0.1's 185 on the rig), so with
+  0.1 mods loaded the 0.2 figures understate a 0.2-only player's first open.
 - **Cursors are drawn, and the swap is GLOBAL.** USS `cursor` keywords are editor-only and a runtime
   mod has no cursor assets, so `Cursors` draws them in code and swaps through
   `UnityEngine.Cursor.SetCursor` on pointer enter. There is no per-element cursor at runtime, so
@@ -86,6 +91,11 @@ theme values are code tokens.
 `WheelEvent` delivery differs BETWEEN panels, so the question is per frame, not ever. A single "the
 host sends wheel events" flag, set by the first panel to see one, switched polling off for a list
 that never got them. `Ui.TickWheel` stands down only on frames where one actually arrived.
+**The wheel is counted once per frame across mods and versions** (0.2): the first `Input.TickWheel`
+with a delta stamps the frame (`Facet.WheelStamp`, an `int[1]` frame number: a float loses frames past
+2^24) and the topmost visible window of any version scrolls through its Coord slot 9. A zero delta (a
+mod whose read was gated) leaves the frame unspent; a 0.1 window on top has no slot 9 and takes the
+frame by doing nothing.
 `Skin.WatchWheel` registers with `TrickleDown` because a `ScrollView` that handles the wheel stops
 it bubbling. Three causes hid behind "scrolling is broken", all found by logging numbers:
 
@@ -109,15 +119,28 @@ it bubbling. Three causes hid behind "scrolling is broken", all found by logging
   it out of the real settings file: a mid-write crash must not corrupt settings.
 - **Keybind capture is polled by the HOST, not read from a UI event.** Tab, the arrows and Escape are
   all worth binding and all get eaten as navigation inside a panel.
-- **Colours are per window (`Theme`); sizes stay global (`Tokens`).** An element records the ROLE
-  it draws with (`Paint.Bg/Fg/Border/Look`), never a `Color`, so `Theme.Recolour` re-themes open
-  windows: each surface wearing the theme re-applies (`Paint.Apply`) inside `Safe`. `Theme.For`
+- **A window's `Theme` carries its colours, sizes and looks; `Facet.Tokens` is gone (0.2).** An
+  element records the ROLE it draws with (`Paint.Bg/Fg/Border/Look`), never a `Color`, so
+  `Theme.Recolour` (or role writes then `Notify`) re-themes open windows: each surface wearing the theme
+  re-applies (`Paint.Apply`) inside `Safe`. `Sizes` and `Looks` are read when a part builds
+  (`Theme.For(e).Sizes/.Looks`, once per build), so a change shows on the next build. `Theme.For`
   is the nearest themed ancestor (a Surface, a popup card that took its anchor's), else the
-  `Theme.Use` scope, else the host's theme. `Theme.Dark` is frozen (shared by every mod): a host
-  without a theme gets its own copy, and only `Host.Fallback` wears Dark itself. An element painted before it joins
-  the tree is repainted on `AttachToPanelEvent`.
+  `Theme.Use` scope, else the host's theme. `Theme.Dark` is ONE frozen instance shared by every mod:
+  its roles refuse writes, and its `Sizes`/`Looks` getters return a fresh copy per read, so a write to
+  `Theme.Dark.Sizes` goes nowhere. A copy is 23 Looks: never read them on a per-frame, drag, refresher,
+  tick or bind path. A host without a theme gets its own copy, and only `Host.Fallback` wears Dark
+  itself. An element painted before it joins the tree is repainted on `AttachToPanelEvent`.
+- **`ColumnsOptions.StackBelow`** (default 560) stacks `Controls.Columns` below that width, with 40 px hysteresis
+  (back to columns at StackBelow + 40).
+- **`Sizes.ControlPad`, `FieldPad` and `ItemHeight`** are the control, field and list-row paddings/heights; read at build like the rest of `Sizes`.
+- **The first re-theme of a session is cold** (about 7-10 ms, within the 16 ms budget, not warmed); later ones take about 0.5 ms.
+- **`Looks.Card` is the window shell and popups, `Looks.Group` a `Controls.Card` body, `Looks.Stage` a
+  preview's stage**, so a skin can put cards on a fill of their own. Dark keeps 0.1's look (within 1px):
+  its `Looks.Rule` is invisible because 0.1 drew no rules, so Dark shows no card header rule and no nav
+  group rule; a skin gives Rule a colour.
 - **`Look` presets are copies.** `Look.Button` and the rest return a fresh `Look` on every read, so a
-  mod restyling the one it was handed restyles nothing else.
+  mod restyling the one it was handed restyles nothing else. A part never paints a preset: it takes
+  the theme's `Looks`, or a skin could not restyle it.
 - **`Paint.Forget(e)` is the opt-out.** Paint re-applies recorded roles on attach, hover, focus and
   re-theme, so a literal colour set on a Facet-built element is reverted; after `Paint.Forget` it sticks.
 - **There is no `:hover` at runtime; `Paint` tracks hover, pressed and focus.** A `Button`'s
@@ -134,6 +157,23 @@ it bubbling. Three causes hid behind "scrolling is broken", all found by logging
   live: `Surface.Relabel` re-translates every keyed text in place after a language switch.
   A duplicate key in the table's initializer throws from the static constructor and takes every
   string with it: check with `grep -o '{ "[^"]*",' Facet/Core/Words.cs | sort | uniq -d`.
+
+## Parts (0.2)
+
+- **`Anim.Speed` is shared by every Facet from 0.2 on** (`Facet.AnimSpeed`; 0.1 keeps its own field), so
+  one suite setting moves every window. The next fold, tab switch and hover use the new speed; 0 leaves
+  the end state in the same call.
+- **Tab pages build fresh.** `Tabs.Pages` builds only the selected page, anew on every select like a Nav
+  page, and REMOVES the page it replaces (not `display:none`), so what it ran (a preview) stops. While a
+  search index builds, every visible tab page is built for it, and a hit carries its tab (`Hit.Tab`).
+- **A preview costs nothing while hidden.** `Show` runs when its stage is on a panel and its surface is
+  visible, `Tick` while that holds (every frame at `EveryMs` 0, allocation-free), `Hide` once when either
+  stops, the surface is disposed included. All under `Safe`; three `Tick` throws in a row pause it until
+  the next `Show`. Known gap: a `display:none` ancestor inside a shown page (a `VisibleWhen`-hidden card,
+  a folded Section) still counts as shown.
+- **Search reaches pages Facet did not build.** `Nav.AddSearchSource` returns `SearchIndex.Entry`s
+  (`Label`, `Where`, `Open`, `Tip`), asked each time the index builds; choosing one runs `Open`.
+  `NavItem.OnHit` runs once a hit lands on that page or tab.
 
 ## Layers, popups, Escape
 
@@ -156,7 +196,9 @@ it bubbling. Three causes hid behind "scrolling is broken", all found by logging
 ## Dev loop and packaging
 
 - `./test.sh`: offline tests plus the grep rules (no loader or game names in `Facet/`, no `RegisterCallback`
-  outside `Events.cs`, no Unity-derived public types, colour only through `Paint`).
+  outside `Events.cs`, no Unity-derived public types, colour only through `Paint` except the pickers'
+  swatches and a tile's data colour, no size literal in a part (`SetRadius(e, 4f)`, `fontSize = 13`),
+  and no `Look` preset painted by a part).
 - `./build.sh`: tests, then installs the UMM build to `UMMMods/Facet`. `tools/ingame.sh` runs the autotest
   through it and wants `AUTOTEST DONE ... fail=0`. `tools/ingame.sh --ml` does the same through the
   MelonLoader entry (log and trigger in `UserData/Facet/`): unzip `dist/Facet-ML.zip` into the game first.
@@ -170,7 +212,9 @@ it bubbling. Three causes hid behind "scrolling is broken", all found by logging
   member bumps the minor (R21: append-only within a minor is unsafe because the first-loaded copy of a
   minor wins).
 - Cross-version shared state (`Shared`, `Coord`'s entries): a key's value type never changes, array slots
-  are only appended, and a reader checks `Length` before reading a slot.
+  are only appended, and a reader checks `Length` before reading a slot. 0.2 added `Facet.AnimSpeed`
+  (`float[1]`), `Facet.WheelStamp` (`int[1]`) and Coord slot 9 (the wheel); a bad shared value falls back
+  to a private one and is logged once, never kills motion or input.
 
 ## Rulings that shaped the code
 
@@ -183,5 +227,9 @@ it bubbling. Three causes hid behind "scrolling is broken", all found by logging
 - R21: a patch release adds no public API; any new public member bumps the minor.
 - **Two CJK languages in one process share Han glyph forms.** `Fonts.ForLanguage` appends one OS CJK
   face per script to a face set's single fallback table, and Chinese, Japanese and Korean share Han
-  code points, so the first-loaded file's forms win (zh then ja draws kanji in Chinese shapes). One
-  language per process is exact. Per-script face sets would fix it; not built.
+  code points, so the first-loaded file's forms win (zh then ja draws kanji in Chinese shapes; ko first
+  draws zh/ja Han in Korean ones). One language per process is exact. Per-script face sets would fix
+  it; not built.
+- **PingFang is not where the font table looks on macOS 14+.** It lives under
+  `/System/Library/AssetsV2/<hash>/`, not `/System/Library/Fonts/PingFang.ttc`, so zh falls through to
+  Hiragino Sans GB there (verified on macOS 15).

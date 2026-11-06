@@ -91,7 +91,8 @@ namespace Facet.Mod
         }
 
         // Task 9: a page header with the feature's switch, then two columns with a sticky right pane.
-        static void Feature(VisualElement p)
+        // Task 14 times its first open: two cards and a tile grid make it a whole suite page.
+        internal static void Feature(VisualElement p)
         {
             Controls.PageHeader(p, "Judgement counter", Bind.To(() => Model.Feature, v => Model.Feature = v), o => { o.Id = "head"; o.Description = "Counts each judgement"; });
             Controls.PageHeader(p, "Other feature", null, o => { o.Id = "head2"; o.DescriptionText = () => Model.Desc; });
@@ -99,6 +100,10 @@ namespace Facet.Mod
             left.name = "feat-left"; right.name = "feat-right";
             var card = Controls.Card(left, "Rows");
             for (int i = 0; i < 30; i++) Controls.Toggle(card, "Row " + i, Bind.To(() => false, v => { }));
+            var display = Controls.Card(left, "Display");
+            Controls.Slider(display, "Opacity", Bind.To(() => Model.Depth, v => Model.Depth = v));
+            var grid = Controls.Tiles(left, o => o.Columns = 3);
+            foreach (var n in new[] { "Trail", "Pulse", "Echo" }) Controls.Tile(grid, n, Bind.To(() => false, v => { }));
             var tick = Ui.Text("", null, null, Role.Text, true);
             Controls.Preview(right, "Preview", o =>
             {

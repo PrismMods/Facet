@@ -89,6 +89,7 @@ namespace Facet.Mod
             Main.Log("AUTOTEST start screen " + Screen.width + "x" + Screen.height);
             yield return Run("SectionWarmUp", SectionWarmUp());   // first: it needs the session's first surface
             yield return Run("SectionOpen", SectionOpen());
+            yield return Run("SectionPartsPerf", SectionPartsPerf());   // Ruling Q8: before any section warms the parts
             yield return Run("SharedEscape", SharedEscape());
             yield return Run("SectionHost", SectionHost());
             yield return Run("SectionTheme", SectionTheme());
@@ -129,7 +130,7 @@ namespace Facet.Mod
             // Hover and focus fades are real transitions now, so a section that reads a resolved colour
             // right after an event would catch it mid-fade: all but the motion-aware ones run at speed 0.
             float prior = Anim.Speed;
-            Anim.Speed = name == "SectionWarmUp" || name == "SectionOpen" || name == "SectionSpeed" || name == "SectionClose" ? 1f : 0f;
+            Anim.Speed = name == "SectionWarmUp" || name == "SectionOpen" || name == "SectionPartsPerf" || name == "SectionSpeed" || name == "SectionClose" ? 1f : 0f;
             try
             {
                 while (true)
@@ -1356,11 +1357,15 @@ namespace Facet.Mod
            were the same 10 ms), so it says more about the display than about the window. */
         IEnumerator SectionWarmUp()
         {
+            // Another mod on this Facet may have drawn the session's first surface already, as one on
+            // 0.1 did in Task 1's cold runs (done 33 ms after ours): then it scheduled the warm-up.
+            bool earlier = (bool)typeof(Surface).GetField("WarmUpStarted", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
             var hud = new Surface(Gallery.Host, "FacetFirstHud", Layer.Hud);
             var ms = new double[1];
             yield return Until(() => WarmUp.Done, ms, 5000);
-            Check(ms[0] >= 450, "the first surface's warm-up is done, half a second or more after it", Ms(ms));
-            for (int i = 0; i < 4; i++) yield return null;   // settle, as LayoutProbe idles before it opens
+            if (earlier) Check(ms[0] >= 0, "the warm-up an earlier surface scheduled is done", Ms(ms));
+            else Check(ms[0] >= 450, "the first surface's warm-up is done, half a second or more after it", Ms(ms));
+            yield return Quiet();
 
             var sw = Stopwatch.StartNew();
             var s = new Surface(Gallery.Host, "FacetFirstOpen", Layer.Window);
@@ -1377,6 +1382,23 @@ namespace Facet.Mod
                      + " ms; frame " + (Time.unscaledDeltaTime * 1000f).ToString("0") + " ms)");
             Check(open <= 50, "a Gallery-sized window opened after the warm-up takes <= 50 ms", open + " ms");
             s.Dispose(); hud.Dispose();
+        }
+
+        /* Waits (at most 3 s) for 5 frames in a row of <= 34 ms, as a player opens a window on a game
+           that has finished loading. On a cold start the game and the other mods are still loading,
+           and a timed open that shares a frame with their work measures theirs too (layout+draw runs
+           to the end of the frame). */
+        IEnumerator Quiet()
+        {
+            var sw = Stopwatch.StartNew();
+            int calm = 0, frames = 0;
+            while (calm < 5 && sw.ElapsedMilliseconds < 3000)
+            {
+                yield return null;
+                frames++;
+                calm = Time.unscaledDeltaTime <= 0.034f ? calm + 1 : 0;
+            }
+            Main.Log("[perf] settled in " + frames + " frames, " + sw.ElapsedMilliseconds + " ms" + (calm < 5 ? " (never quiet; timing anyway)" : ""));
         }
 
         static int HistorySubscribers()
