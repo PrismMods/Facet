@@ -28,6 +28,56 @@ namespace Facet.Mod
             return l != null && l.Count == 1 ? l[0].value * (l[0].unit == TimeUnit.Second ? 1000f : 1f) : -1f;
         }
 
+        // Review Focus 3, first half: a theme's sizes and looks are its own, and Dark's cannot be written.
+        IEnumerator SectionThemeShape()
+        {
+            Theme.Dark.Sizes.Radius = 99f;
+            Theme.Dark.Looks.Button.Bg = Role.Danger;
+            Check(Theme.Dark.Sizes.Radius == 3f && Theme.Dark.Looks.Button.Bg == Role.RowAlt, "a write to Theme.Dark's Sizes or Looks goes nowhere",
+                Theme.Dark.Sizes.Radius + " " + Theme.Dark.Looks.Button.Bg);
+            var a = new Theme(); var b = new Theme();
+            a.Sizes.Radius = 6f; a.Looks.Button.Bg = Role.Danger;
+            Check(a.Sizes.Radius == 6f && b.Sizes.Radius == 3f && b.Looks.Button.Bg == Role.RowAlt, "one new Theme's Radius 6 leaves a second at 3",
+                a.Sizes.Radius + " / " + b.Sizes.Radius);
+            a.Recolour(Color.green);
+            Check(a.Sizes.Radius == 6f && a.Looks.Button.Bg == Role.Danger && Theme.FromAccent(Color.green).Sizes.Radius == 3f,
+                "Recolour keeps a theme's sizes and looks; FromAccent starts from Dark's");
+            Check(Theme.Dark[Role.Line] == Theme.Dark[Role.PanelBorder] && Theme.Dark[Role.Off] == Theme.Dark[Role.RowAlt] && Theme.Dark[Role.Rail].a == 0f,
+                "Dark's Line is PanelBorder, Off is RowAlt and Rail is clear");
+
+            var t = new Theme();
+            var h = Host.Create("ThemeShape", o => { o.Log = m => Main.Log("[shape] " + m); o.Theme = t; });
+            var s = new Surface(h, "FacetThemeShape", Layer.Window);
+            try
+            {
+                var e = Ui.Box(s.Root);
+                e.style.width = 20f; e.style.height = 20f;
+                Paint.Bg(e, Role.Accent);
+                yield return null;
+                t[Role.Accent] = Color.red;
+                Check(!Near(e.style.backgroundColor.value, Color.red), "setting a role alone repaints nothing");
+                t.Notify();
+                yield return null;
+                Check(Near(e.resolvedStyle.backgroundColor, Color.red), "after t.Notify(), an element painted Accent is red a frame later", e.resolvedStyle.backgroundColor.ToString());
+
+                // Border precedence: focus, then selected, then own, then look.
+                var x = Ui.Box(s.Root);
+                Paint.Look(x, new Look { Border = Role.PanelBorder, SelectedBorder = Role.Accent, FocusBorder = Role.Focus });
+                Paint.Border(x, Role.Danger);
+                Check(Near(x.style.borderLeftColor.value, t[Role.Danger]), "an own border role beats the look's");
+                Paint.Select(x, true);
+                Check(Near(x.style.borderLeftColor.value, t[Role.Accent]), "selected, the look's SelectedBorder beats the own role", x.style.borderLeftColor.value.ToString());
+                x.focusable = true; x.Focus();
+                Check(Near(x.style.borderLeftColor.value, t[Role.Focus]), "focused, FocusBorder beats SelectedBorder", x.style.borderLeftColor.value.ToString());
+                x.Blur();
+            }
+            finally { s.Dispose(); }
+
+            bool threw = false;
+            try { Theme.Dark.Notify(); } catch (InvalidOperationException) { threw = true; }
+            Check(threw, "Theme.Dark.Notify() throws InvalidOperationException");
+        }
+
         // Review Focus 1: two mods tick the wheel in one frame, the first with a gated zero read.
         // Chinese, Japanese and Korean labels draw through an OS fallback face (glyph presence, not label width).
         IEnumerator SectionCjk()

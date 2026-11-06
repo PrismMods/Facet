@@ -2,7 +2,8 @@ using System;
 
 namespace Facet {
     /// What a theme colour is for. Append only: a mod built against an earlier Facet indexes by number.
-    public enum Role { Panel, PanelBorder, TitleBar, Row, RowAlt, RowHover, Text, TextMuted, Accent, Danger, AccentText, Focus }
+    /// Rail is the sidebar's background, Line the hairline rules and separators, Off a switch's off track.
+    public enum Role { Panel, PanelBorder, TitleBar, Row, RowAlt, RowHover, Text, TextMuted, Accent, Danger, AccentText, Focus, Rail, Line, Off }
 
     /* A whole scheme from one colour, over plain floats so the offline test can pin it. Quartz's
        derivation (its UIColors.ApplyAccent): surfaces are near-black greys leaning toward the accent,
@@ -28,6 +29,9 @@ namespace Facet {
             c[(int)Role.Text] = Lean(.92f, a, .04f * tint);
             c[(int)Role.TextMuted] = Lean(.745f, a, .17f * tint);
             c[(int)Role.AccentText] = new[] { .06f, .06f, .08f, 1f };
+            c[(int)Role.Rail] = new[] { 0f, 0f, 0f, 0f };
+            c[(int)Role.Line] = c[(int)Role.PanelBorder];
+            c[(int)Role.Off] = control;
             // A red accent cannot also mean "destructive", so near red the warning turns orange.
             float h, s;
             Hs(a, out h, out s);

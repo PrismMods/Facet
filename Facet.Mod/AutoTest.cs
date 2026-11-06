@@ -106,6 +106,7 @@ namespace Facet.Mod
             yield return Run("SectionForm", SectionForm());
             yield return Run("SectionSpeed", SectionSpeed());
             yield return Run("SectionWheel", SectionWheel());
+            yield return Run("SectionThemeShape", SectionThemeShape());
             yield return Run("SectionClose", SectionClose());
             // Later tasks: yield return Run("Section...", Section...());
 
@@ -334,6 +335,7 @@ namespace Facet.Mod
         IEnumerator SectionNoStale()
         {
             // No wait for the warm-up window: its Nav has its own index, so it cannot wipe this one.
+            Check(Enum.GetValues(typeof(Role)).Length == 15, "IsRole checks all 15 roles (Rail, Line and Off appended)");
             var t = new Theme();
             var h = Host.Create("NoStale", o => { o.Log = m => Main.Log("[nostale] " + m); o.Theme = t; });
             var s = new Surface(h, "FacetNoStale", Layer.Window);

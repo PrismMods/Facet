@@ -4,15 +4,16 @@ using UnityEngine.UIElements;
 
 namespace Facet
 {
-    /* A mod's colour scheme, as a colour per Role. Sizes stay global in Tokens; colours are per
-       window, so a Quartz window can be red while another mod's beside it is blue.
+    /* A mod's look: a colour per Role, plus the Sizes and Looks its parts build with. Per window, so a
+       Quartz window can be red while another mod's beside it is blue.
 
        An element finds its scheme with For(): the nearest ancestor that was given one (a Surface,
        or a popup card that took its anchor's), else the scheme of the build in progress (Use), else
        its host's (Host.Fallback's is Dark).
 
        Elements remember the ROLE they draw with (Paint), not the colour, so Recolour re-themes what
-       is already on screen: each surface wearing the scheme re-applies on Changed. */
+       is already on screen: each surface wearing the scheme re-applies on Changed. Sizes and Looks
+       apply when a part builds: swapping a Look object or changing a size shows after a rebuild. */
     public sealed class Theme
     {
         /// Facet's own dark scheme. Frozen: every mod on this Facet shares it, so a host without a
@@ -30,9 +31,14 @@ namespace Facet
             new Color(0.886f, 0.404f, 0.427f, 1f),     // Danger
             new Color(0.06f, 0.06f, 0.08f, 1f),        // AccentText
             new Color(0.604f, 0.706f, 1f, 1f),         // Focus
+            new Color(0f, 0f, 0f, 0f),                 // Rail
+            new Color(1f, 1f, 1f, 0.10f),              // Line (= PanelBorder)
+            new Color(1f, 1f, 1f, 0.05f),              // Off (= RowAlt)
         });
 
         private readonly Color[] _c;
+        private readonly Sizes _sizes;
+        private readonly Looks _looks;
 
         // Sized by the Role count, not the list above: a Role appended without a Dark colour is clear here
         // rather than an IndexOutOfRange in Derive.
@@ -40,19 +46,33 @@ namespace Facet
         {
             _c = new Color[Palette.Count];
             Array.Copy(c, _c, Math.Min(c.Length, _c.Length));
+            _sizes = new Sizes();
+            _looks = new Looks();
         }
 
-        /// A copy of Dark, to adjust.
-        public Theme() { _c = (Color[])Dark._c.Clone(); }
+        /// A copy of Dark, to adjust: its colours, sizes and looks.
+        public Theme()
+        {
+            _c = (Color[])Dark._c.Clone();
+            _sizes = Dark._sizes.Copy();
+            _looks = Dark._looks.Copy();
+        }
 
-        /// Setting a role does not raise Changed; Paint.Apply(root) redraws by hand.
+        /// The sizes this theme's parts build with; one instance per theme. Dark's is a fresh copy on
+        /// every read (every mod shares Dark), so a write to Theme.Dark.Sizes goes nowhere.
+        public Sizes Sizes => ReferenceEquals(this, Dark) ? _sizes.Copy() : _sizes;
+
+        /// The Look of each part element; one instance per theme. Dark's is a fresh copy on every read.
+        public Looks Looks => ReferenceEquals(this, Dark) ? _looks.Copy() : _looks;
+
+        /// Setting a role does not raise Changed: call Notify once you are done.
         public Color this[Role r]
         {
             get { return _c[(int)r]; }
             set { Writable(); _c[(int)r] = value; }
         }
 
-        /// Raised once by Recolour. Each surface wearing this scheme re-applies its roles.
+        /// Raised by Notify (and so by Recolour). Each surface wearing this scheme re-applies its roles.
         public event Action Changed;
 
         /// A whole scheme from one colour.
@@ -64,10 +84,19 @@ namespace Facet
         }
 
         /// Re-derive every role from `accent` (Palette), in place, and redraw whatever wears it.
+        /// Sizes and Looks are kept.
         public void Recolour(Color accent, float tint = 1f)
         {
             Writable();
             Derive(accent, tint);
+            Notify();
+        }
+
+        /// Redraw whatever wears this scheme: raises Changed, each subscriber in its own Safe. Call it
+        /// after setting roles with the indexer.
+        public void Notify()
+        {
+            Writable();
             var h = Changed;
             if (h == null) return;
             // One subscriber's throw must not keep the rest from re-theming.

@@ -69,47 +69,57 @@ namespace Facet
             return e;
         }
 
-        /// A bordered, rounded container — the standard panel body.
+        /// A bordered, rounded container — the standard panel body (the theme's Looks.Card).
         public static VisualElement Card(VisualElement parent = null)
         {
             var e = Box(parent);
-            Paint.Look(e, Look.Card);
-            SetBorderWidth(e, 1f);
-            SetRadius(e, Tokens.Radius);
-            SetPadding(e, Tokens.Pad);
+            var t = Theme.For(e); var s = t.Sizes;
+            Paint.Look(e, t.Looks.Card);
+            SetBorderWidth(e, s.Line);
+            SetRadius(e, s.Radius);
+            SetPadding(e, s.Pad);
             return e;
         }
 
+        /// size: null is the theme's Body.
         public static Label Text(string text, VisualElement parent = null, float? size = null, Role role = Role.Text, bool own = false)
         {
-            var l = new Label();
-            l.style.fontSize = size ?? Tokens.FontSize;
-            l.style.whiteSpace = WhiteSpace.NoWrap;
-            l.style.textOverflow = TextOverflow.Ellipsis;
-            l.style.overflow = Overflow.Hidden;
-            parent?.Add(l);
+            var l = NewLabel(parent, size ?? Theme.For(parent).Sizes.Body);
             Words.Label(l, text, own);   // after Add: the parent says which host's table answers
             Paint.Fg(l, role);
             return l;
         }
 
-        public static Label Muted(string text, VisualElement parent = null, bool own = false)
-            => Text(text, parent, Tokens.FontSizeSmall, Role.TextMuted, own);
+        // One line, cut with an ellipsis; added before anything translates it.
+        private static Label NewLabel(VisualElement parent, float size)
+        {
+            var l = new Label();
+            l.style.fontSize = size;
+            l.style.whiteSpace = WhiteSpace.NoWrap;
+            l.style.textOverflow = TextOverflow.Ellipsis;
+            l.style.overflow = Overflow.Hidden;
+            parent?.Add(l);
+            return l;
+        }
 
-        /// Look.Button: hover, pressed and selected (Paint.Select) are Paint's, not the caller's.
+        public static Label Muted(string text, VisualElement parent = null, bool own = false)
+            => Text(text, parent, Theme.For(parent).Sizes.Small, Role.TextMuted, own);
+
+        /// The theme's Looks.Button: hover, pressed and selected (Paint.Select) are Paint's, not the caller's.
         public static Button Btn(string text, Action onClick, VisualElement parent = null, bool own = false)
         {
             var b = new Button();
             if (onClick != null) b.clicked += () => Safe.Run(Host.For(b), "Button '" + b.text + "'", onClick);
-            b.style.fontSize = Tokens.FontSizeSmall;
-            SetBorderWidth(b, 1f);   // the focus ring (Look.FocusBorder) paints this; unfocused it stays unset/clear
-            SetRadius(b, 4f);
-            SetPadding(b, 5f);
-            b.style.marginLeft = 0f; b.style.marginRight = Tokens.Gap;
-            b.style.marginTop = 0f; b.style.marginBottom = 0f;
             parent?.Add(b);
+            var t = Theme.For(b); var s = t.Sizes;
+            b.style.fontSize = s.Small;
+            SetBorderWidth(b, s.Line);   // the focus ring (Look.FocusBorder) paints this; unfocused it stays unset/clear
+            SetRadius(b, s.Radius);
+            SetPadding(b, s.ControlPad);
+            b.style.marginLeft = 0f; b.style.marginRight = s.Gap;
+            b.style.marginTop = 0f; b.style.marginBottom = 0f;
             Words.Label(b, text, own);
-            Paint.Look(b, Look.Button);
+            Paint.Look(b, t.Looks.Button);
             return b;
         }
 
@@ -118,16 +128,19 @@ namespace Facet
            told how many rows to build. */
         public static ListView List(Func<IList> source, Action<VisualElement, int> bind, VisualElement parent = null)
         {
+            // Read once here: makeItem and bindItem run as rows recycle, and Dark's Sizes is a fresh copy per read.
+            var sz = Theme.For(parent).Sizes;
+            float small = sz.Small;
             var lv = new ListView
             {
-                fixedItemHeight = Tokens.RowHeight,
+                fixedItemHeight = sz.ListRowHeight,
                 selectionType = SelectionType.None,
                 showBorder = false,
                 virtualizationMethod = CollectionVirtualizationMethod.FixedHeight,
             };
             lv.makeItem = () =>
             {
-                var l = Text("", null, Tokens.FontSizeSmall);
+                var l = Text("", null, small);
                 l.style.paddingLeft = 6f;
                 l.style.unityTextAlign = TextAnchor.MiddleLeft;
                 return l;
