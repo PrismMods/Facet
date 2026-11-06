@@ -95,6 +95,24 @@ static class FacetTest {
         bytes = GC.GetAllocatedBytesForCurrentThread() - bytes;
         Check(bytes == 0, "100000 rounds of Coord queries allocate nothing", bytes + " bytes");
 
+        // The wheel is counted once per frame across mods and versions; a gated zero read keeps the frame.
+        Func<string, bool, float, Action<float, float, float>, object[]> mk10 = (key, open, top, wheel) =>
+        { var e = mk(key, open, top); Array.Resize(ref e, 10); e[9] = wheel; return e; };
+        var we = new List<object[]>(); var wst = new[] { -1 }; int wa = 0, wb = 0;
+        we.Add(mk10("WA", true, 30001f, (x, y, d) => wa++)); we.Add(mk10("WB", true, 30005f, (x, y, d) => wb++));
+        Check(!Coord.Wheel(we, wst, 5, 0, 0, 0f, lg) && wst[0] == -1, "a zero delta does not use up the frame");
+        Check(Coord.Wheel(we, wst, 5, 0, 0, -1f, lg) && wb == 1 && wa == 0, "the topmost entry takes the wheel");
+        Check(!Coord.Wheel(we, wst, 5, 0, 0, -1f, lg) && wb == 1, "a second call in the same frame does nothing");
+        Check(Coord.Wheel(we, wst, 6, 0, 0, -1f, lg) && wb == 2, "the next frame scrolls again");
+        we.Add(mk("W01", true, 30009f));   // nine slots: a Facet 0.1 entry on top
+        Check(!Coord.Wheel(we, wst, 7, 0, 0, -1f, lg) && wb == 2, "under an older version's window this version scrolls nothing");
+        var wq = new List<object[]> { mk10("Q1", true, 1f, (x, y, d) => { }), mk10("Q2", true, 2f, (x, y, d) => { }) };
+        var wqs = new[] { -1 }; Coord.Wheel(wq, wqs, 0, 0, 0, -1f, lg);
+        long wbytes = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 1; i <= 100000; i++) Coord.Wheel(wq, wqs, i, 0, 0, -1f, lg);
+        wbytes = GC.GetAllocatedBytesForCurrentThread() - wbytes;
+        Check(wbytes == 0, "100000 rounds of Coord.Wheel allocate nothing", wbytes + " bytes");
+
         Throttle.Reset();
         var slog = new List<string>();
         Action<string> sl = m => slog.Add(m);
@@ -229,6 +247,15 @@ static class FacetTest {
         Check(!Search.Matches("Show FPS", "sohw"), "...but never in a per-item match");
         var both = Search.Rank(new[] { "Sohw thing", "Show FPS" }, "sohw", x => new[] { x });
         Check(both.Count == 1 && both[0] == "Sohw thing", "...and not when an exact hit exists");
+
+        Motion.Speed = 0.5f;
+        var shared = (Dictionary<string, object>)AppDomain.CurrentDomain.GetData("Facet.Shared");
+        Check(((float[])shared["Facet.AnimSpeed"])[0] == 0.5f, "the animation speed lives in the cross-version store");
+        Check(Motion.Scale(120) == 60, "120 ms at speed 0.5 is 60 ms");
+        Motion.Speed = float.NaN; Check(Motion.Scale(120) == 0, "a NaN speed is instant");
+        Motion.Speed = -1f;       Check(Motion.Scale(120) == 0, "a negative speed is instant");
+        Motion.Speed = float.PositiveInfinity; Check(Motion.Scale(0) == 0 && Motion.Scale(120) == 60000, "an infinite speed is capped, and 0 ms stays 0");
+        Motion.Speed = 1f;
 
         Console.WriteLine(_fail == 0 ? "ALL PASS" : _fail + " FAILED");
     }

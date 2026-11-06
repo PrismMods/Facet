@@ -13,7 +13,7 @@ namespace Facet.Mod
 {
     // Scripted in-game test: synthetic UI Toolkit events against the real panel. Each task appends
     // one Section...() iterator to Start and logs through Check.
-    sealed class AutoTest : MonoBehaviour
+    sealed partial class AutoTest : MonoBehaviour
     {
         int _pass, _fail;
 
@@ -103,6 +103,8 @@ namespace Facet.Mod
             yield return Run("SectionInput", SectionInput());
             yield return Run("SectionNavIndex", SectionNavIndex());
             yield return Run("SectionForm", SectionForm());
+            yield return Run("SectionSpeed", SectionSpeed());
+            yield return Run("SectionWheel", SectionWheel());
             yield return Run("SectionClose", SectionClose());
             // Later tasks: yield return Run("Section...", Section...());
 
@@ -114,17 +116,25 @@ namespace Facet.Mod
         // Drives a section by hand so a throw is logged to gallery.log and the run carries on.
         IEnumerator Run(string name, IEnumerator section)
         {
-            while (true)
+            // Hover and focus fades are real transitions now, so a section that reads a resolved colour
+            // right after an event would catch it mid-fade: all but the motion-aware ones run at speed 0.
+            float prior = Anim.Speed;
+            Anim.Speed = name == "SectionWarmUp" || name == "SectionOpen" || name == "SectionSpeed" || name == "SectionClose" ? 1f : 0f;
+            try
             {
-                try { if (!section.MoveNext()) yield break; }
-                catch (Exception ex)
+                while (true)
                 {
-                    var st = (ex.StackTrace ?? "").Split('\n')[0].Trim();
-                    Check(false, name + " threw", ex.Message + " @ " + st);
-                    yield break;
+                    try { if (!section.MoveNext()) yield break; }
+                    catch (Exception ex)
+                    {
+                        var st = (ex.StackTrace ?? "").Split('\n')[0].Trim();
+                        Check(false, name + " threw", ex.Message + " @ " + st);
+                        yield break;
+                    }
+                    yield return section.Current;
                 }
-                yield return section.Current;
             }
+            finally { Anim.Speed = prior; }
         }
 
 

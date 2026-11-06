@@ -7,7 +7,8 @@ namespace Facet
        [0] Func<float> top visible order or -1, [1] Func<bool> take Escape, [2] Func<bool> open,
        [3] Func<bool> text focused, [4] Func<bool> blocks input, [5] Func<float,float,bool> pointer,
        [6] string key (assembly full name), [7] Func<int,float[]> orders of its surfaces in a layer,
-       [8] Action<int,Func<float,float>> remap its surfaces in a layer.
+       [8] Action<int,Func<float,float>> remap its surfaces in a layer,
+       [9] Action<float,float,float> wheel(x, y, delta) for this version's topmost visible surface.
 
        Cross-version contract: every loaded Facet version reads every other version's entry, so
        slots are only ever APPENDED, a reader checks e.Length before reading a slot (an older,
@@ -87,6 +88,26 @@ namespace Facet
             var take = best == null ? null : Slot<Func<bool>>(best, 1);
             if (take == null) return false;
             try { return take(); } catch (Exception ex) { Threw(best, ex, log); return false; }
+        }
+
+        /* The wheel, counted once per frame across mods and versions. A zero delta (a mod whose read
+           was gated) leaves the frame unspent; otherwise the first call in a frame stamps it and the
+           entry with the highest top takes the wheel. A top entry without slot 9 (Facet 0.1) takes it
+           by doing nothing: its own callers drive it. */
+        public static bool Wheel(List<object[]> entries, int[] stamp, int frame, float x, float y, float delta, Action<string> log)
+        {
+            if (Math.Abs(delta) < 1e-6f || stamp[0] == frame) return false;
+            stamp[0] = frame;
+            object[] best = null; float top = -1f;
+            lock (entries)
+                for (int n = 0; n < entries.Count; n++)
+                {
+                    var o = Top(entries[n], log);
+                    if (o > top) { top = o; best = entries[n]; }
+                }
+            var wheel = best == null ? null : Slot<Action<float, float, float>>(best, 9);
+            if (wheel == null) return false;
+            try { wheel(x, y, delta); return true; } catch (Exception ex) { Threw(best, ex, log); return false; }
         }
 
         /* Renumber one layer's band across every version, keeping relative stacking order. Returns

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine.UIElements;
 
 namespace Facet
@@ -47,7 +48,8 @@ namespace Facet
         {
             public Role? Bg, Fg, Border, Tint;
             public Look Look;
-            public bool Hover, Pressed, Focus, Selected, Disabled, Hooked, Waiting;
+            public bool Hover, Pressed, Focus, Selected, Disabled, Hooked, Waiting, Flashing;
+            public int Fade = -1;   // the transition duration (ms) set on the element; -1 = none yet
         }
 
         private static readonly Look None = new Look();
@@ -100,9 +102,11 @@ namespace Facet
         {
             if (e == null) return;
             var s = Data.Get<State>(e);
-            System.Action rest = () => { e.style.backgroundColor = StyleKeyword.Null; Draw(e, s, Theme.For(e)); };
-            ms = (int)(ms * Anim.Speed);
+            // A transition would smear the per-frame flash: no fade while it runs.
+            System.Action rest = () => { s.Flashing = false; e.style.backgroundColor = StyleKeyword.Null; Draw(e, s, Theme.For(e)); if (s.Hooked) Fade(e, s, true); };
+            ms = Motion.Scale(ms);
             if (ms <= 0) { rest(); return; }   // instant motion: straight to the resting paint
+            if (s.Hooked) { s.Flashing = true; e.style.transitionDuration = new StyleList<TimeValue>(new List<TimeValue> { new TimeValue(0f, TimeUnit.Millisecond) }); s.Fade = 0; }
             var a = e.experimental.animation.Start(1f, 0f, ms, (el, t) =>
             {
                 var c = Theme.For(el)[r];
@@ -186,6 +190,15 @@ namespace Facet
             var k = s.Look;
             if (s.Hooked || k == null || (k.HoverBg == null && k.HoverText == null && k.PressedBg == null && k.FocusBorder == null)) return;
             s.Hooked = true;
+            var problem = Motion.TakeProblem();
+            if (problem != null) Host.Fallback.Log(problem);
+            problem = Input.TakeWheelProblem();
+            if (problem != null) Host.Fallback.Log(problem);
+            e.style.transitionProperty = new StyleList<StylePropertyName>(new List<StylePropertyName> {
+                new StylePropertyName("background-color"), new StylePropertyName("color"),
+                new StylePropertyName("border-left-color"), new StylePropertyName("border-right-color"),
+                new StylePropertyName("border-top-color"), new StylePropertyName("border-bottom-color") });
+            Fade(e, s, false);
             Events.On(e, OnEnter);
             Events.On(e, OnLeave);
             // TrickleDown: a Button's clickable stops the pointer-down before a bubbling callback hears it.
@@ -195,6 +208,17 @@ namespace Facet
             Events.On(e, OnFocusOut);
         }
 
+        // Hover and press feedback fades over Anim.Hover; set at hook time and again on a hover once
+        // the speed has changed (the list is only built then, so a steady speed allocates nothing).
+        private static void Fade(VisualElement e, State s, bool force)
+        {
+            if (s.Flashing) return;   // the flash owns the duration until it ends
+            int ms = Motion.Scale(Anim.Hover);
+            if (ms == s.Fade && !force) return;
+            s.Fade = ms;
+            e.style.transitionDuration = new StyleList<TimeValue>(new List<TimeValue> { new TimeValue(ms, TimeUnit.Millisecond) });
+        }
+
         private enum Flag { Hover, Pressed, Focus }
 
         private static void Mark(IEventHandler h, Flag f, bool on)
@@ -202,6 +226,7 @@ namespace Facet
             var e = h as VisualElement;
             var s = Data.Find<State>(e);
             if (s == null) return;
+            if (on) Fade(e, s, false);   // before Draw, so the change starts on the current speed
             if (f == Flag.Hover) { s.Hover = on; if (!on) s.Pressed = false; }
             else if (f == Flag.Pressed) s.Pressed = on;
             else s.Focus = on;

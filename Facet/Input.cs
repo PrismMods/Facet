@@ -31,6 +31,7 @@ namespace Facet
                 (Func<bool>)LocalText, (Func<bool>)LocalBlocks, (Func<float, float, bool>)LocalPointer,
                 typeof(Input).Assembly.FullName,
                 (Func<int, float[]>)LocalOrders, (Action<int, Func<float, float>>)LocalRemap,
+                (Action<float, float, float>)LocalWheel,
             });
         }
 
@@ -169,18 +170,42 @@ namespace Facet
             return false;
         }
 
-        /// Drive the wheel for the topmost open window of this version. The host calls this each
-        /// frame with Input.mousePosition and Input.mouseScrollDelta.y -- see Skin.Wheel for why.
-        public static void TickWheel(Vector2 screen, float delta)
+        private static readonly int[] _wheelStamp = Open();
+
+        private static string _wheelProblem;
+
+        // A bad shared value must never break input: fall back to a private stamp and report once
+        // (TakeWheelProblem). Never touches Host here: a throw would escape the static initialiser.
+        private static int[] Open()
         {
-            if (Mathf.Approximately(delta, 0f)) return;
-            /* Deliberately NOT standing down when a WheelEvent arrives: that says only that one
-               reached the panel, not that any ScrollView acted on it. Skin.Wheel skips a target that
-               already moved this frame, which is the honest version of the same check. */
+            try
+            {
+                var a = Shared.Get<object>("Facet.WheelStamp", () => new[] { -1 }) as int[];
+                if (a != null && a.Length >= 1) return a;
+                _wheelProblem = "Facet.WheelStamp in the shared store is not an int[] of length >= 1; using a private stamp";
+            }
+            catch (Exception e) { _wheelProblem = "Facet.WheelStamp could not be read (" + e.Message + "); using a private stamp"; }
+            return new[] { -1 };
+        }
+
+        /// The message to log through the fallback host, once; null when the store was fine.
+        internal static string TakeWheelProblem() { var p = _wheelProblem; _wheelProblem = null; return p; }
+
+        /// Drive the wheel for the topmost open window of any loaded version, once per frame. The host
+        /// calls this each frame with Input.mousePosition and Input.mouseScrollDelta.y -- see Skin.Wheel
+        /// for why. A zero delta does not use up the frame.
+        public static void TickWheel(Vector2 screen, float delta) =>
+            Coord.Wheel(Entries, _wheelStamp, Time.frameCount, screen.x, screen.y, delta, Host.Fallback.LogFn);
+
+        /* Deliberately NOT standing down when a WheelEvent arrives: that says only that one
+           reached the panel, not that any ScrollView acted on it. Skin.Wheel skips a target that
+           already moved this frame, which is the honest version of the same check. */
+        private static void LocalWheel(float x, float y, float delta)
+        {
             for (int i = Ui.Stack.Count - 1; i >= 0; i--)
             {
                 if (!Ui.Stack[i].Visible) continue;
-                Skin.Wheel(Ui.Stack[i].Root, screen, delta);
+                Skin.Wheel(Ui.Stack[i].Root, new Vector2(x, y), delta);
                 return;
             }
         }

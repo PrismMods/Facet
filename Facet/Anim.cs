@@ -18,8 +18,12 @@ namespace Facet
     {
         public const int Instant = 0, Fast = 120, Normal = 180, Slow = 300;
 
-        /// Multiplies every duration. 0 applies the end state in the same call (reduced motion, tests).
-        public static float Speed = 1f;
+        /// Hover and press feedback: half of Fast.
+        public const int Hover = 60;
+
+        /// Multiplies every duration, shared by every loaded Facet version. 0 applies the end state
+        /// in the same call (reduced motion, tests).
+        public static float Speed { get { return Motion.Speed; } set { Motion.Speed = value; } }
 
         /// Fade to an opacity. Starts from wherever it is, so interrupting mid-fade does not jump.
         public static void Fade(VisualElement e, float to, int ms = Normal, Action done = null)
@@ -95,7 +99,7 @@ namespace Facet
         private static void Run(VisualElement e, float from, float to, int ms,
                                 Action<VisualElement, float> apply, Action done = null)
         {
-            ms = (int)(ms * Speed);
+            ms = Motion.Scale(ms);
             if (ms <= 0 || e.panel == null)
             {
                 apply(e, to);
