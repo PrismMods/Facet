@@ -574,7 +574,7 @@ namespace Facet
         private readonly List<KeyValuePair<string, Action<VisualElement>>> _stack =
             new List<KeyValuePair<string, Action<VisualElement>>>();
 
-        /// The Nav currently building a page, so Widgets.SubPage can reach it without plumbing.
+        /// The Nav currently building a page, so Controls.SubPage can reach it without plumbing.
         public static Nav Active { get; private set; }
 
         /// The title of the page being shown (a pushed subpage's, else the open leaf's), for history keys.

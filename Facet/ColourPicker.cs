@@ -64,7 +64,7 @@ namespace Facet
         private void BuildHeader(string label)
         {
             var head = Ui.Row(Root);
-            head.style.minHeight = Widgets.RowHeight;
+            head.style.minHeight = Controls.RowHeight;
             head.pickingMode = PickingMode.Position;
 
             var chevron = Ui.Muted("▸", head);

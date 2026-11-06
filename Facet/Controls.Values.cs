@@ -62,7 +62,7 @@ namespace Facet
         public static Control<bool> Toggle(VisualElement parent, string label, Bind<bool> bind, Action<Options<bool>> configure = null)
         {
             var o = ControlOptions.Make(parent, label, configure);
-            var right = Widgets.Row(parent, label);
+            var right = Controls.Row(parent, label);
             Action<bool> show;
             var track = Switch(right, out show);
             var c = new Control<bool>(right.parent, track, label, Tracked(parent, label, o, bind), show, o);
@@ -84,7 +84,7 @@ namespace Facet
         public static Control<int> IntSlider(VisualElement parent, string label, Bind<int> bind, Action<IntSliderOptions> configure = null)
         {
             var o = ControlOptions.Make(parent, label, configure);
-            var right = Widgets.Row(parent, label);
+            var right = Controls.Row(parent, label);
             var s = new SliderInt(o.Min, o.Max);
             s.style.width = 180f;
             Skin.When<SliderInt>(s, Skin.Slider);
@@ -122,7 +122,7 @@ namespace Facet
         public static Control<int> Choice(VisualElement parent, string label, Bind<int> bind, Action<ChoiceOptions> configure = null)
         {
             var o = ControlOptions.Make(parent, label, configure);
-            var right = Widgets.Row(parent, label);
+            var right = Controls.Row(parent, label);
             var buttons = new List<Button>();
             Control<int> c = null;
             var items = o.Items;
@@ -140,7 +140,7 @@ namespace Facet
         public static Control<int> Dropdown(VisualElement parent, string label, Bind<int> bind, Action<DropdownOptions> configure = null)
         {
             var o = ControlOptions.Make(parent, label, configure);
-            var right = Widgets.Row(parent, label);
+            var right = Controls.Row(parent, label);
             var items = o.Items ?? new string[0];
             Control<int> c = null;
             Button b = null;
@@ -155,7 +155,7 @@ namespace Facet
         public static Control<string> Text(VisualElement parent, string label, Bind<string> bind, Action<TextOptions> configure = null)
         {
             var o = ControlOptions.Make(parent, label, configure);
-            var right = Widgets.Row(parent, label);
+            var right = Controls.Row(parent, label);
             var f = new TextField();
             f.style.width = o.Width;
             Skin.When<TextField>(f, Skin.Field);
@@ -184,7 +184,7 @@ namespace Facet
             c = new Control<Color>(root, inner, label, Tracked(parent, label, o, bind), picker.SetColour, o);
             // The dot sits in the flow before the picker: level it with the header, not the whole picker.
             var dot = root.Q("changed");
-            if (dot != null) dot.style.marginTop = (Widgets.RowHeight - 6f) / 2f;
+            if (dot != null) dot.style.marginTop = (Controls.RowHeight - 6f) / 2f;
             return c;
         }
 
@@ -195,7 +195,7 @@ namespace Facet
         public static Control<string> Key(VisualElement parent, string label, Bind<string> bind, Action<KeyOptions> configure = null)
         {
             var o = ControlOptions.Make(parent, label, configure);
-            var right = Widgets.Row(parent, label);
+            var right = Controls.Row(parent, label);
             Control<string> c = null;
             Button b = null;
             b = Ui.Btn("", () =>
@@ -227,7 +227,7 @@ namespace Facet
         public static Control<string> Info(VisualElement parent, string label, Func<string> value, Action<ControlOptions> configure = null)
         {
             var o = ControlOptions.Make(parent, label, configure);
-            var right = Widgets.Row(parent, label);
+            var right = Controls.Row(parent, label);
             right.style.flexShrink = 1f;
             right.style.maxWidth = Length.Percent(65f);
             var v = Ui.Muted("", right);
@@ -241,7 +241,7 @@ namespace Facet
         public static Button Action(VisualElement parent, string label, string button, Action onClick, Action<ControlOptions> configure = null)
         {
             var o = ControlOptions.Make(parent, label, configure);
-            var right = Widgets.Row(parent, label);
+            var right = Controls.Row(parent, label);
             var b = Ui.Btn(button, onClick, right);
             Hook(right.parent, b, label, o);
             return b;
@@ -252,7 +252,7 @@ namespace Facet
         public static Button Danger(VisualElement parent, string label, string button, Action onConfirm, Action<ControlOptions> configure = null)
         {
             var o = ControlOptions.Make(parent, label, configure);
-            var right = Widgets.Row(parent, label);
+            var right = Controls.Row(parent, label);
             var b = Armed(button, onConfirm, right);
             Hook(right.parent, b, label, o);
             return b;
@@ -264,7 +264,7 @@ namespace Facet
         {
             var o = ControlOptions.Make(parent, text, configure);
             var row = Ui.Row(parent);
-            row.style.minHeight = Widgets.RowHeight;
+            row.style.minHeight = Controls.RowHeight;
             row.style.marginBottom = 2f;
             SearchIndex.Note(Words.Show(text, Host.For(row), false));
             var b = Armed(text, onConfirm, row);
@@ -341,7 +341,7 @@ namespace Facet
            differ from a plain one in nothing but two functions. */
         private static Control<float> FloatRow(VisualElement parent, string label, Bind<float> bind, SliderOptions o, bool withTrack)
         {
-            var right = Widgets.Row(parent, label);
+            var right = Controls.Row(parent, label);
             var field = NumberField(right, o.Id);
             Slider s = null;
             if (withTrack)

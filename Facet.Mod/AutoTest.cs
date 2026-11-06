@@ -98,6 +98,7 @@ namespace Facet.Mod
             yield return Run("SectionRebuild", SectionRebuild());
             yield return Run("SectionRefreshIsolation", SectionRefreshIsolation());
             yield return Run("SectionValues", SectionValues());
+            yield return Run("SectionStructure", SectionStructure());
             // Later tasks: yield return Run("Section...", Section...());
 
             Main.Log("AUTOTEST DONE pass=" + _pass + " fail=" + _fail);
@@ -292,10 +293,10 @@ namespace Facet.Mod
                     Controls.DangerButton(p, "Reset all", () => { });
                     Controls.Colour(p, "Colour", Bind.Value(Color.cyan), o => o.Alpha = true);
                     new GradientEditor(p, "Gradient", stops, () => { });
-                    var item = Widgets.Item(p, "Item", "a note"); Widgets.MarkActive(item);
+                    var item = Controls.Item(p, "Item", "a note"); Controls.MarkActive(item);
                     new Tabs(p, i => { }).Rebuild(new[] { "A", "B" });
-                    Widgets.ToggleSubPage(p, "Sub toggle", false, v => { }, q => Controls.Info(q, "Inner", () => "x"));
-                    var sec = Widgets.Section(p, "Section"); Controls.Info(sec, "Info", () => "v");
+                    Controls.ToggleSubPage(p, "Sub toggle", Bind.Value(false), q => Controls.Info(q, "Inner", () => "x"));
+                    var sec = Controls.Section(p, "Section"); Controls.Info(sec, "Info", () => "v");
                     anchor = Ui.Btn("Anchor", null, p);
                 }),
                 NavItem.Heading("Group", new NavItem("Other", p => Controls.Action(p, "Other action", "Go", () => { }))),
@@ -600,7 +601,7 @@ namespace Facet.Mod
             var h = Host.Create("Isolate", o => o.Log = m => { logs.Add(m); Main.Log("[isolate] " + m); });
             var s = new Surface(h, "FacetIsolate", Layer.Window);
             var w = new Window(s.Root, "isolate", "Isolate", new Rect(120, 120, 500, 300));
-            var right = Widgets.Row(w.Body, "Unequal");
+            var right = Controls.Row(w.Body, "Unequal");
             // Control's constructor is internal; a test reaches it as Task 10's Controls will.
             typeof(Control<Unequal>).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance)[0]
                 .Invoke(new object[] { right.parent, right, "Unequal", Bind.To(() => new Unequal(), v => { }), null, null });
@@ -614,6 +615,58 @@ namespace Facet.Mod
             var errs = logs.FindAll(m => m.StartsWith("[Isolate] Refresh 'Unequal'"));
             Check(errs.Count == 1, "...and the throw is logged once, under the throwing control's name", string.Join(" | ", logs.FindAll(m => m.StartsWith("[Isolate] "))));
             s.Dispose();
+        }
+
+        // Structure rows: a persisted fold, a group that follows the value, and pages behind rows.
+        IEnumerator SectionStructure()
+        {
+            var store = new Dictionary<string, string>();
+            var h = Host.Create("Structure", o => { o.Log = m => Main.Log("[structure] " + m); o.Read = k => store.TryGetValue(k, out var v) ? v : null; o.Write = (k, v) => store[k] = v; });
+            var surf = new Surface(h, "FacetStructure", Layer.Window);
+            var w = new Window(surf.Root, "structure", "Structure", new Rect(60, 60, 560, 520));
+            bool group = false, sub = false;
+            Nav nav = null;
+            nav = new Nav(w.Body, new[] { new NavItem("Home", p =>
+            {
+                var sec = Controls.Section(p, "Fold me"); Controls.Info(sec, "Inside", () => "v");
+                var body = Controls.ToggleGroup(p, "Group", Bind.To(() => group, v => group = v), o => o.Id = "grp");
+                Controls.Info(body, "Under group", () => "v");
+                Controls.SubPage(p, "More", q => Controls.Info(q, "Deeper", () => "x"));
+                Controls.ToggleSubPage(p, "Sub toggle", Bind.To(() => sub, v => sub = v), q => Controls.Info(q, "Deeper2", () => "x"), o => o.Id = "tsp");
+            }) });
+            yield return null; yield return null;
+
+            Func<string, Label> lab = t => w.Body.Query<Label>().ToList().Find(l => l.text == t);
+            var head = lab("Fold me")?.parent;
+            Check(head != null, "the section has a head row");
+            if (head == null) { surf.Dispose(); yield break; }
+            VisualElement SecBody() { var hd = lab("Fold me").parent; return hd.parent[hd.parent.IndexOf(hd) + 1]; }
+            Check(SecBody().resolvedStyle.display != DisplayStyle.None || SecBody().style.display != DisplayStyle.None, "the section starts open");
+            ClickEl(head); yield return null; yield return null;
+            string fold; store.TryGetValue("fold.Home/Fold me", out fold);
+            Check(fold == "0", "folding a section writes fold.Home/Fold me=0 to the host", fold);
+            nav.Refresh(); yield return null; yield return null;
+            Check(SecBody().style.display == DisplayStyle.None, "a rebuilt page shows the section folded");
+
+            var gb = w.Body.Q("grp").parent[w.Body.Q("grp").parent.IndexOf(w.Body.Q("grp")) + 1];
+            Check(gb.style.display == DisplayStyle.None, "the group's body starts hidden while the value is off");
+            group = true;
+            var ms = new double[1];
+            yield return Until(() => gb.style.display == DisplayStyle.Flex, ms);
+            Check(ms[0] >= 0 && ms[0] <= 150, "a behind-the-UI change shows the group's body within 150 ms", Ms(ms));
+            group = false;
+            yield return Until(() => gb.style.display == DisplayStyle.None, ms);
+            Check(ms[0] >= 0 && ms[0] <= 150, "...and hides it again within 150 ms", Ms(ms));
+
+            ClickEl(lab("More").parent); yield return null; yield return null;
+            Check(lab("\u2039  Home") != null && lab("Deeper") != null, "clicking a SubPage row pushes a page whose back row names Home");
+            ClickEl(lab("\u2039  Home").parent); yield return null; yield return null;
+
+            ClickEl(w.Body.Q("tsp-input")); yield return null; yield return null;
+            Check(sub && lab("\u2039  Home") == null && lab("Sub toggle") != null, "clicking the switch in a ToggleSubPage toggles without navigating");
+            ClickEl(lab("Sub toggle").parent); yield return null; yield return null;
+            Check(lab("Deeper2") != null, "clicking the rest of the row opens its page");
+            surf.Dispose();
         }
 
         static Label LiveLabel(string text)

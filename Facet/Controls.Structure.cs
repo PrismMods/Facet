@@ -1,23 +1,12 @@
 using System;
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 
 namespace Facet
 {
-    /* Settings rows.
-
-       This is the replacement for the widget half of UIBuilder, which both mods carry in copies
-       that differ by 615 lines out of 4503 — the same toggle, slider and dropdown written twice and
-       then drifted. Every widget here is a labelled ROW: label on the left, control on the right,
-       one consistent height. That shape is the reason the two mods' settings screens looked alike
-       in the first place, so it is the thing worth keeping.
-
-       Each takes a current value and a setter rather than binding to a field, because the mods
-       store settings in their own serialised classes and none of that belongs here. A widget reads
-       once at build and writes on change; a host that mutates a value behind the UI's back calls
-       Refresh on the page, exactly as the uGUI version did. */
-    public static class Widgets
+    /* The structure rows: the row every control sits in, headings, folding sections, a group that
+       follows a switch, and rows with a page behind them. */
+    public static partial class Controls
     {
         public const float RowHeight = 32f;
         private const float ArrowSlot = 22f;
@@ -65,35 +54,28 @@ namespace Facet
         }
 
         /* A toggle and the rows it governs. Showing controls that the mod is currently ignoring is
-           the single most common way these settings screens confuse people — the accent picker
-           under a disabled "use a custom colour" was one, and Hide UI has several more. The body is
-           only built once; the toggle shows and hides it. */
-        public static VisualElement ToggleGroup(VisualElement parent, string label, bool value,
-                                                Action<bool> onChange, string tooltip = null)
+           the single most common way these settings screens confuse people. The body is built once
+           and follows the bound value on every refresh, not only on clicks. */
+        public static VisualElement ToggleGroup(VisualElement parent, string label, Bind<bool> bind, Action<Options<bool>> configure = null)
         {
+            var c = Toggle(parent, label, bind, configure);
             var body = Ui.Box(parent);
-            Controls.Toggle(parent, label, Bind.Value(value, v =>
-            {
-                body.style.display = v ? DisplayStyle.Flex : DisplayStyle.None;
-                if (onChange != null) onChange(v);
-            }), o => o.Tooltip = tooltip);
-            // Built before the toggle so the toggle reads above it, then moved back under it.
-            parent.Remove(body);
-            parent.Add(body);
-            body.style.display = value ? DisplayStyle.Flex : DisplayStyle.None;
             body.style.paddingLeft = Tokens.Pad;
+            Action<bool> follow = v => body.style.display = v ? DisplayStyle.Flex : DisplayStyle.None;
+            c.OnShown = follow;
+            follow(c.Value);
             return body;
         }
 
-        /* A section that folds away. Long settings pages are mostly headings you are not reading;
-           this is the one piece of UIBuilder's ExpandSection/Collapsible pair worth keeping, and
-           the state is remembered per title so a page does not refold on every rebuild. */
-        private static readonly Dictionary<string, bool> _folded = new Dictionary<string, bool>();
-
+        /* A section that folds away. The state is kept through the host under
+           "fold.<page>/<title>" as "0"/"1", so a page does not refold on every rebuild or restart. */
         public static VisualElement Section(VisualElement parent, string title, bool defaultOpen = true)
         {
             SearchIndex.CurrentGroup = title;
-            bool open = _folded.ContainsKey(title) ? _folded[title] : defaultOpen;
+            var nav = Nav.Active;
+            string key = "fold." + (nav != null ? nav.PageTitle : "") + "/" + title;
+            string saved = Host.For(parent).Read(key);
+            bool open = saved == "1" ? true : saved == "0" ? false : defaultOpen;
 
             var head = Ui.Row(parent);
             head.style.marginTop = Tokens.Pad;
@@ -113,7 +95,7 @@ namespace Facet
             Events.On<ClickEvent>(head, _ =>
             {
                 open = !open;
-                _folded[title] = open;
+                Host.For(head).Write(key, open ? "1" : "0");
                 arrow.text = open ? "▾" : "▸";
                 if (open) Anim.SlideIn(body, -6f, Anim.Fast);
                 else body.style.display = DisplayStyle.None;
@@ -160,14 +142,15 @@ namespace Facet
             tag.SendToBack();
         }
 
-        /* A row that opens a page of its own. This is what the mods' menus use for anything with
-           more than one setting behind it — a stat's colours, a key's layout — and it belongs to
-           the row rather than to the rail, which is why it pushes instead of nesting. */
+        /* A row that opens a page of its own. It belongs to the row rather than to the rail, which is
+           why it pushes instead of nesting. Id and Tooltip of the options apply. */
         public static VisualElement SubPage(VisualElement parent, string label,
-                                            Action<VisualElement> build, string tooltip = null)
+                                            Action<VisualElement> build, Action<ControlOptions> configure = null)
         {
-            var host = Row(parent, label, tooltip);
+            var o = ControlOptions.Make(parent, label, configure);
+            var host = Row(parent, label, o.Tooltip);
             var row = host.parent;
+            if (o.Id != null) row.name = o.Id;
             Arrow(row);
 
             /* Captured HERE, not read inside the handler: Nav.Active is only set while a page is
@@ -183,17 +166,12 @@ namespace Facet
             return host;
         }
 
-        /* A switch AND a page behind it, on one row.
-
-           The alternative — a toggle row followed by an "X options" row — says the thing's name
-           twice and doubles the length of every list it appears in. The arrow marks the row as
-           having more behind it; the switch still switches, because a click that lands on it must
-           not navigate away. */
-        public static VisualElement ToggleSubPage(VisualElement parent, string label, bool value,
-                                                  Action<bool> onChange, Action<VisualElement> build,
-                                                  string tooltip = null)
+        /* A switch AND a page behind it, on one row. The arrow marks the row as having more behind
+           it; the switch still switches, because a click that lands on it must not navigate away. */
+        public static Control<bool> ToggleSubPage(VisualElement parent, string label, Bind<bool> bind,
+                                                  Action<VisualElement> build, Action<Options<bool>> configure = null)
         {
-            var c = Controls.Toggle(parent, label, Bind.Value(value, onChange), o => o.Tooltip = tooltip);
+            var c = Toggle(parent, label, bind, configure);
             var row = c.Root;
             c.Input.pickingMode = PickingMode.Position;
             Arrow(row);
@@ -205,7 +183,7 @@ namespace Facet
                 // The switch stops its own clicks; anything else on the row opens the page.
                 if (nav != null && build != null) nav.Push(label, build);
             });
-            return row;
+            return c;
         }
 
         /// Fill the arrow slot Row() reserved.

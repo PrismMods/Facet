@@ -47,7 +47,7 @@ namespace Facet
 
             Root = Ui.Box(parent);
             Root.name = "facet-picker";   // SectionNoStale: swatches under here may hold literal colours
-            if (!string.IsNullOrEmpty(label)) Widgets.Header(Root, label);
+            if (!string.IsNullOrEmpty(label)) Controls.Header(Root, label);
 
             _strip = new VisualElement();
             _strip.style.height = StripHeight;

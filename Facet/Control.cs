@@ -33,6 +33,9 @@ namespace Facet
         /// The end of a change: a click, Enter, the end of a drag.
         public event Action<T> Committed;
 
+        /// Called whenever the row shows a value (build, set, refresh): lets a group follow its switch.
+        internal Action<T> OnShown;
+
         private const int FailLimit = 3;
 
         private readonly Bind<T> _bind;
@@ -147,6 +150,7 @@ namespace Facet
         {
             Value = v;
             if (_show != null) _show(v);
+            if (OnShown != null) OnShown(v);
             if (_dot != null)
                 _dot.style.display = EqualityComparer<T>.Default.Equals(v, _d.Default) ? DisplayStyle.None : DisplayStyle.Flex;
         }

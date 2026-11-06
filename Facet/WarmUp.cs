@@ -45,7 +45,7 @@ namespace Facet
         {
             const string upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", lower = "abcdefghijklmnopqrstuvwxyz";
             const string rest = "0123456789 !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
-            var s = Widgets.Section(page, upper);
+            var s = Controls.Section(page, upper);
             Controls.Toggle(s, lower, Bind.Value(true));
             Controls.Slider(s, rest, Bind.Value(0.5f), o => o.Max = 2f);
             Controls.IntSlider(s, upper, Bind.Value(1), o => o.Max = 2);

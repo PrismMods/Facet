@@ -53,7 +53,7 @@ namespace Facet
         /// sets its own.
         public static Func<double> Clock = () => _clock.Elapsed.TotalSeconds;
 
-        /// True while an undo or redo is being applied. Widgets check it and stay quiet.
+        /// True while an undo or redo is being applied. Controls check it and stay quiet.
         public static bool Applying { get; private set; }
 
         /// Raised whenever the stacks change, so a toolbar can enable or disable its buttons.
