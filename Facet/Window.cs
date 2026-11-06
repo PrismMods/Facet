@@ -213,7 +213,11 @@ namespace Facet
                 Enable(undo, History.CanUndo, History.NextUndo == null ? Words.Own("Undo", lang) : Words.OwnF("Undo {0}", lang, History.NextUndoText));
                 Enable(redo, History.CanRedo, History.NextRedo == null ? Words.Own("Redo", lang) : Words.OwnF("Redo {0}", lang, History.NextRedoText));
             };
-            History.Changed += refreshHistory;
+            /* Subscribed only while Root is in a panel: History is static, so a disposed window left
+               subscribed stays reachable forever and keeps redrawing its detached buttons. */
+            Events.On<AttachToPanelEvent>(Root, _ => { History.Changed -= refreshHistory; History.Changed += refreshHistory; refreshHistory(); });
+            Events.On<DetachFromPanelEvent>(Root, _ => History.Changed -= refreshHistory);
+            if (Root.panel != null) History.Changed += refreshHistory;   // already attached: no event comes
             refreshHistory();
             Words.OnRelabel(undo, refreshHistory);   // the tooltips are built from parts, so a language switch redoes them
 

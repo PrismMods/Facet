@@ -1273,6 +1273,12 @@ namespace Facet.Mod
             s.Dispose(); hud.Dispose();
         }
 
+        static int HistorySubscribers()
+        {
+            var d = typeof(History).GetField("Changed", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null) as Delegate;
+            return d == null ? 0 : d.GetInvocationList().Length;
+        }
+
         static Button CloseButton(Window w)
         {
             var bs = w.TitleBarRight.Query<Button>().ToList();
@@ -1327,6 +1333,7 @@ namespace Facet.Mod
             s1.Dispose();
 
             // Review Focus 2: a close handler that disposes the surface it runs in.
+            int subs = HistorySubscribers();
             var s = new Surface(h, "FacetCloseDispose", Layer.Window);
             var w = new Window(s.Root, "closedispose", "Close dispose", new Rect(100, 60, 400, 300));
             int reads = 0, raised = 0;
@@ -1347,6 +1354,13 @@ namespace Facet.Mod
             Check(!threw && raised == 1 && errs.Count == 0 && s.Root == null, "a CloseRequested subscriber that disposes its surface raises nothing",
                 "threw=" + threw + " raised=" + raised + " " + string.Join(" | ", errs));
             Check(Bound(r) == 0 && reads == 0, "...and the dead surface's refresher stops", "bound " + Bound(r) + ", " + reads + " reads");
+            Check(HistorySubscribers() == subs, "...and the disposed window leaves History.Changed", subs + " before, " + HistorySubscribers() + " after");
+            var undo = Gallery.Surface.Root.Query<Button>().ToList().Find(b => b.text == "\u21B6");
+            History.Clear();
+            bool was = undo != null && undo.enabledSelf;
+            History.Record("Probe", "close-probe", () => { }, () => { });
+            Check(undo != null && !was && undo.enabledSelf, "a live window's undo button still follows History", "before " + was + ", after " + undo?.enabledSelf);
+            History.Clear();
         }
 
         IEnumerator SectionOpen()
