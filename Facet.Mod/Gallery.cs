@@ -73,6 +73,7 @@ namespace Facet.Mod
             Controls.Action(p, "Action", "Run", () => { });
             Controls.Danger(p, "Danger", "Wipe", () => { });
             Controls.Info(p, "Info", () => typeof(Controls).Assembly.GetName().Name);
+            Controls.Action(p, "Parts", "Open", () => GalleryParts.Open());
             return w;
         }
 

@@ -338,5 +338,176 @@ namespace Facet.Mod
             finally { Anim.Speed = 1f; }
             b.RemoveFromHierarchy();
         }
+
+        // Task 8: a card of rows split by rules, a help line, the Advanced fold, and forms built into cards.
+        IEnumerator SectionCards()
+        {
+            GalleryParts.Model = new PartsModel();
+            var win = GalleryParts.Open(); yield return null; yield return null; yield return null;
+            try
+            {
+                Check(ReferenceEquals(GalleryParts.Open(), win), "GalleryParts.Open is idempotent");
+                var m = GalleryParts.Model;
+                var th = Gallery.Host.Theme; var sz = th.Sizes;
+                Func<string, Label> lab = t => win.Body.Query<Label>().ToList().Find(l => l.text == t);
+                var card = win.Body.Q("card-look");
+                Check(card != null && Near(card.style.backgroundColor.value, th[Role.Panel]) && Near(card.style.borderTopColor.value, th[Role.PanelBorder]),
+                    "the Look card is painted Looks.Group (Card's look under Dark)", card?.style.backgroundColor.value.ToString());
+                Check(card != null && Px(card.style.borderTopLeftRadius) == sz.Radius && card.style.borderLeftWidth.value == sz.Line,
+                    "...with Sizes.Radius corners and a Sizes.Line border", card == null ? "none" : Px(card.style.borderTopLeftRadius) + " / " + card.style.borderLeftWidth.value);
+                Check(lab("LOOK") != null, "the card header reads LOOK");
+
+                var all = card?.Query<Button>().ToList().Find(x => x.text == "All");
+                var none = card?.Query<Button>().ToList().Find(x => x.text == "None");
+                Check(all != null && none != null && lab("·") != null, "the header holds All · None");
+                Check(all != null && Near(all.style.color.value, th[Role.Accent]), "...painted Looks.Link (Accent text)", all?.style.color.value.ToString());
+                Check(lab("0 / 3") != null, "the note reads 0 / 3");
+                if (all != null) Submit(all);
+                Check(m.AllRuns == 1 && m.On == 3, "clicking All runs its action once", m.AllRuns.ToString());
+                var ms = new double[1];
+                yield return Until(() => lab("3 / 3") != null, ms);
+                Check(ms[0] >= 0 && ms[0] <= 150, "the note shows 3 / 3 within 150 ms", Ms(ms));
+
+                var r1 = win.Body.Q("look-glow"); var r2 = win.Body.Q("look-size"); var r3 = win.Body.Q("look-style");
+                Check(r1 != null && r1.resolvedStyle.borderTopWidth == 0f, "row 1 has no top border", r1?.resolvedStyle.borderTopWidth.ToString());
+                Check(r2 != null && r3 != null && r2.style.borderTopWidth.value == sz.Line && r3.style.borderTopWidth.value == sz.Line
+                      && Near(r2.style.borderTopColor.value, th[Role.Line]), "rows 2 and 3 have a Sizes.Line top border in Role.Line");
+                Check(r1 != null && Px(r1.style.paddingLeft) == sz.Pad && Px(r1.style.paddingRight) == sz.Pad, "a card row pads Sizes.Pad on both sides");
+                var help = r1?.Q<Label>("help");
+                Check(help != null && help.text == "Adds a soft halo" && help.style.fontSize.value.value == sz.Small && Near(help.style.color.value, th[Role.TextMuted]),
+                    "the help label is Sizes.Small in TextMuted", help == null ? "none" : help.text + " " + help.style.fontSize.value.value);
+                var gl = lab("Glow");
+                Check(help != null && gl != null && help.worldBound.yMin >= gl.worldBound.yMax - 0.5f && help.worldBound.yMax <= r1.worldBound.yMax + 0.5f,
+                    "the help line sits under the label and the row grows to hold it", help == null || gl == null ? "" : gl.worldBound + " " + help.worldBound + " in " + r1.worldBound);
+
+                Func<Label> head = () => win.Body.Query<Label>().ToList().Find(l => l.text.Contains("Advanced ("));
+                var fh = head();
+                var extra = win.Body.Q("look-extra");
+                Check(fh != null && fh.text == "▸ Advanced (2)", "the fold head reads ▸ Advanced (2)", fh?.text);
+                Check(extra != null && extra.parent.resolvedStyle.display == DisplayStyle.None, "the fold body is hidden");
+                if (fh != null) ClickEl(fh);
+                yield return null;
+                string fold; Gallery.Store.TryGetValue("fold.Cards/Look/Advanced", out fold);
+                Check(extra != null && extra.parent.resolvedStyle.display == DisplayStyle.Flex && fh?.text == "▾ Advanced (2)" && fold == "1",
+                    "a click shows the body, the head reads ▾ and the host holds fold.Cards/Look/Advanced=1", fh?.text + " " + fold);
+                m.HideDepth = true;
+                yield return Until(() => fh?.text == "▾ Advanced (1)", ms);
+                Check(ms[0] >= 0 && ms[0] <= 150, "hiding Depth through VisibleWhen reads (1) within 150 ms", Ms(ms) + " " + fh?.text);
+                m.HideDepth = false;
+                yield return Until(() => fh?.text == "▾ Advanced (2)", ms);
+                try
+                {
+                    Gallery.Lang = "ko"; GalleryParts.Surface.Relabel();
+                    Check(fh?.text == "▾ 고급 (2)", "in Korean the head reads Facet's own 고급", fh?.text);
+                }
+                finally { Gallery.Lang = "en"; GalleryParts.Surface.Relabel(); }
+                if (fh != null) ClickEl(fh);   // fold again for the search reveal
+                yield return null;
+
+                var nav = GalleryParts.Nav;
+                nav.Filter("depth"); yield return null; yield return null;
+                var hit = lab("Depth");
+                Check(hit != null, "Filter(depth) lists the advanced Depth row");
+                if (hit != null) ClickEl(hit);
+                Func<bool> revealed = () =>
+                {
+                    var r = win.Body.Q("look-depth"); if (r == null) return false;
+                    var sv = r.GetFirstAncestorOfType<ScrollView>(); if (sv == null) return false;
+                    var vp = sv.contentViewport.worldBound;
+                    return r.worldBound.yMin >= vp.yMin - 1f && r.worldBound.yMax <= vp.yMax + 1f && r.worldBound.height > 0f;
+                };
+                yield return Until(revealed, ms, 2000);
+                Check(ms[0] >= 0 && head()?.text == "▾ Advanced (2)", "clicking the hit unfolds the fold and puts Depth inside the viewport", head()?.text);
+                nav.Filter("halo"); yield return null;
+                Check(lab("Glow") != null, "a word only in a row's help finds the row");
+                nav.Filter(""); yield return null; yield return null;
+
+                // Review I2: two cards share the label Size; the second card's hit lands on the second card's row.
+                nav.Filter("size"); yield return null; yield return null;
+                var where2 = lab("Cards · Other");
+                Check(where2 != null, "Filter(size) lists the second card's Size hit");
+                if (where2 != null) ClickEl(where2.parent);
+                Func<bool> revealed2 = () =>
+                {
+                    var r = win.Body.Q("other-size"); if (r == null) return false;
+                    var sv = r.GetFirstAncestorOfType<ScrollView>(); if (sv == null) return false;
+                    var vp = sv.contentViewport.worldBound;
+                    return r.worldBound.yMin >= vp.yMin - 1f && r.worldBound.yMax <= vp.yMax + 1f && r.worldBound.height > 0f;
+                };
+                yield return Until(revealed2, ms, 2000);
+                Check(ms[0] >= 0, "choosing the second card's hit scrolls to the second card's Size row");
+                nav.Filter(""); yield return null; yield return null;
+
+                m.HideCard = true;
+                yield return Until(() => win.Body.Q("card-look")?.style.display == DisplayStyle.None, ms);
+                Check(ms[0] >= 0 && ms[0] <= 150, "a card whose VisibleWhen turns false hides within 150 ms", Ms(ms));
+                m.HideCard = false;
+            }
+            finally { Gallery.Lang = "en"; GalleryParts.Close(); GalleryParts.Model = new PartsModel(); }
+
+            // Ruling Q16: a card body wears Looks.Group, its own fill, not the window shell's Looks.Card.
+            var gt = new Theme();
+            gt.Looks.Group = new Look { Bg = Role.RowAlt, Border = Role.Line };
+            var gs = new Surface(Host.Create("CardGroup", o => { o.Log = l => Main.Log("[cardgroup] " + l); o.Theme = gt; }), "FacetCardGroup", Layer.Window);
+            try
+            {
+                var gw = new Window(gs.Root, "cardgroup", "Group", new Rect(60, 60, 300, 200));
+                var gb = Controls.Card(gw.Body, "Own fill", o => o.Id = "own-fill");
+                yield return null;
+                var gc = gw.Body.Q("own-fill");
+                Check(gc != null && Near(gc.style.backgroundColor.value, gt[Role.RowAlt]) && !Near(gw.Root.style.backgroundColor.value, gt[Role.RowAlt]),
+                    "a theme's Looks.Group fills the card and not the window", gc?.style.backgroundColor.value.ToString());
+            }
+            finally { gs.Dispose(); }
+
+            // Form.Build with Cards: groups A, A, B; A has an Advanced field and a Help field.
+            var fs = new Surface(Gallery.Host, "FacetFormCards", Layer.Window);
+            try
+            {
+                var fw = new Window(fs.Root, "formcards", "Form cards", new Rect(60, 60, 500, 500));
+                var fp = Ui.Box(fw.Body);
+                var owner = Host.Create("CardOwner", o => o.Log = l => Main.Log("[cardowner] " + l));
+                var fields = new[] {
+                    new Field { Group = "A", Label = "fadv", Kind = FieldKind.Bool, Advanced = true, Get = () => true, Set = v => { } },
+                    new Field { Group = "A", Label = "fhelp", Kind = FieldKind.Bool, Help = "Says hello", Get = () => false, Set = v => { } },
+                    new Field { Group = "B", Label = "fb", Kind = FieldKind.Bool, Get = () => false, Set = v => { } },
+                    new Field { Group = "B", Label = "fown", Kind = FieldKind.Bool, Owner = "CardOwner", Get = () => false, Set = v => { } },
+                };
+                bool threw = false;
+                try { Form.Build(fp, fields, o => o.Cards = true); } catch (Exception e) { threw = true; Main.Log("form cards threw " + e); }
+                yield return null; yield return null; yield return null;
+                var labels = fp.Query<Label>().ToList();
+                Check(!threw && fp.childCount == 2 && labels.Exists(l => l.text == "A") && labels.Exists(l => l.text == "B"),
+                    "Form.Build with Cards over groups A, A, B builds two cards", "children=" + fp.childCount);
+                var adv = fp.Q("fadv"); var hp = fp.Q("fhelp");
+                var ah = adv == null ? null : adv.parent.parent[adv.parent.parent.IndexOf(adv.parent) - 1].Q<Label>();
+                Check(adv != null && fp[0].Contains(adv) && ah != null && ah.text == "▸ Advanced (1)" && adv.parent.resolvedStyle.display == DisplayStyle.None,
+                    "the Advanced field is inside A's folded Advanced fold", ah?.text);
+                Check(hp != null && adv != null && hp.parent == adv.parent.parent && hp.parent.IndexOf(hp) < hp.parent.IndexOf(adv.parent),
+                    "...which comes after A's other fields");
+                Check(hp?.Q<Label>("help")?.text == "Says hello", "the Help field shows its help line", hp?.Q<Label>("help")?.text);
+
+                // Review I1: the card rules reach rows wrapped for a foreign owner, in a ToggleGroup and under a nested Section.
+                var fsz = Gallery.Host.Theme.Sizes;
+                var fown = fp.Q("fown");
+                Check(fown != null && fown.style.borderTopWidth.value == fsz.Line && Px(fown.style.paddingRight) == fsz.Pad,
+                    "a foreign-owner Form field in a card has a Sizes.Line top border and card padding", fown?.style.borderTopWidth.value.ToString());
+                var tc = Controls.Card(fw.Body, "Nest");
+                Controls.Toggle(tc, "first", Bind.To(() => true, v => { }));
+                var tg = Controls.ToggleGroup(tc, "grp", Bind.To(() => true, v => { }));
+                Controls.Toggle(tg, "inner", Bind.To(() => false, v => { }), o => o.Id = "tg-inner");
+                var ns = Controls.Section(tc, "Sub");
+                Controls.Toggle(ns, "deep", Bind.To(() => false, v => { }), o => o.Id = "ns-deep");
+                yield return null; yield return null;
+                var inner = tc.Q("tg-inner");
+                Check(inner != null && Px(inner.style.paddingRight) == fsz.Pad && tg.style.paddingLeft.value.value == fsz.Pad,
+                    "a ToggleGroup row inside a card pads Sizes.Pad on the right and the group keeps its indent", inner == null ? "none" : Px(inner.style.paddingRight).ToString());
+                var sl = tc.Query<Label>().ToList().Find(l => l.text == "Sub");
+                var sh = sl?.parent;
+                Check(sh != null && Px(sh.style.paddingLeft) == fsz.Pad && sl.worldBound.xMin >= tc.worldBound.xMin + fsz.Pad - 0.5f,
+                    "a nested Section head inside a card is padded, not flush", sh == null ? "none" : Px(sh.style.paddingLeft).ToString());
+            }
+            finally { fs.Dispose(); }
+        }
     }
 }

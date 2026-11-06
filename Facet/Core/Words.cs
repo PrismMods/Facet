@@ -63,6 +63,7 @@ namespace Facet
             { "Add stop", "스톱 추가" },
             { "Remove stop", "스톱 제거" },
             { "unavailable, see the log", "사용할 수 없음 — 로그를 확인하세요" },
+            { "Advanced", "고급" },
         };
     }
 }

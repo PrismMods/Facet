@@ -25,6 +25,10 @@ namespace Facet
         /// A right-click on the row lists these names; picking one runs its action.
         public List<KeyValuePair<string, Action>> ContextMenu { get; set; }
 
+        /// An English key: a muted line under the row's label, translated like it. Search finds the
+        /// row by it, as by Tooltip.
+        public string Help { get; set; }
+
         /// A button row: nothing to read, so the refresher polls it only for EnabledWhen/VisibleWhen.
         internal bool NoRead;
 

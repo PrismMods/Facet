@@ -74,6 +74,7 @@ namespace Facet
                 if (Input != null) Input.name = _o.Id + "-input";
             }
             if (_o.Tooltip != null) { Words.Tip(Root, _o.Tooltip); Controls.NotedTip(Root, _o.Tooltip); }
+            Controls.Helped(Root, _o);
             if (_o.TooltipText != null)
                 Events.On<MouseEnterEvent>(Root, _ =>
                 {

@@ -25,6 +25,8 @@ namespace Facet
 
         private VisualElement _swatch, _square, _squareKnob, _hueKnob, _alphaKnob, _alphaFade, _body;
         private Label _hexLabel;
+        /// The picker's name in its header (where a row's help line goes).
+        internal Label Title { get; private set; }
         private TextField _hexField;
         private Slider _r, _g, _b, _a;
         private readonly Action<Color> _onEdit;
@@ -75,6 +77,7 @@ namespace Facet
             var title = Ui.Text(label, head, _sz.Body);
             title.style.flexGrow = 1f;
             title.pickingMode = PickingMode.Ignore;
+            Title = title;
 
             _hexLabel = Ui.Muted("", head);
             _hexLabel.style.marginRight = _sz.Gap;

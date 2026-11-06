@@ -207,16 +207,19 @@ namespace Facet
             var o = ControlOptions.Make(parent, label, configure);
             var root = Ui.Row(parent);
             Controls.Noted(root, label);
+            var sz = Theme.For(root).Sizes;
+            Carded(root, sz);
             root.style.alignItems = Align.FlexStart;
             var inner = Ui.Box(root);
             inner.style.flexGrow = 1f;
             inner.style.minWidth = 0f;
             Control<Color> c = null;
             var picker = new ColourPicker(inner, label, Color.white, o.Alpha, col => { if (c != null) c.Set(col); }, col => { if (c != null) c.Edit(col); }, () => { if (c != null) c.Commit(); });
+            Data.Get<Noting>(root).Label = picker.Title;   // a help line goes under the picker's name
             c = new Control<Color>(root, inner, label, Tracked(parent, label, o, bind), picker.SetColour, o);
             // The dot sits in the flow before the picker: level it with the header, not the whole picker.
             var dot = root.Q("changed");
-            if (dot != null) dot.style.marginTop = (Theme.For(root).Sizes.RowHeight - 6f) / 2f;
+            if (dot != null) dot.style.marginTop = (sz.RowHeight - 6f) / 2f;
             return c;
         }
 
@@ -322,8 +325,10 @@ namespace Facet
         {
             var o = ControlOptions.Make(parent, text, configure);
             var row = Ui.Row(parent);
-            row.style.minHeight = Theme.For(row).Sizes.RowHeight;
+            var sz = Theme.For(row).Sizes;
+            row.style.minHeight = sz.RowHeight;
             row.style.marginBottom = 2f;
+            Carded(row, sz);
             Controls.Noted(row, text);
             var b = Armed(text, onConfirm, row);
             Hook(row, b, text, o);
@@ -354,9 +359,9 @@ namespace Facet
             return b;
         }
 
-        // A button row has no value, but takes the same options: a Control over a constant gives it the
-        // Id naming, tooltips, EnabledWhen, VisibleWhen and ContextMenu the others have.
-        private static void Hook(VisualElement row, Button b, string label, ControlOptions o)
+        // A button row (or a card) has no value, but takes the same options: a Control over a constant gives
+        // it the Id naming, tooltips, EnabledWhen, VisibleWhen and ContextMenu the others have.
+        private static void Hook(VisualElement row, VisualElement b, string label, ControlOptions o)
         {
             o.NoRead = true;
             new Control<string>(row, b, label, Bind.To<string>(() => null, null), null, o);

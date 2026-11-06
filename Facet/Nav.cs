@@ -148,8 +148,7 @@ namespace Facet
                 var n = Data.Find<Controls.Noting>(e);
                 if (n == null || n.Key != hit.Key) continue;
                 if (row == null) row = e;
-                var f = EnclosingFold(e);
-                if (f != null && f.Title == hit.Section) { row = e; break; }
+                if (EnclosingTitle(e) == hit.Section) { row = e; break; }
             }
             if (row == null) return;
             for (var e = row.hierarchy.parent; e != null && e != _content; e = e.hierarchy.parent)
@@ -174,12 +173,15 @@ namespace Facet
             }).Every(16).Until(() => done);
         }
 
-        private static Controls.Fold EnclosingFold(VisualElement e)
+        // Title of the nearest Fold or card body above e: a card is a search section but has no Fold.
+        private static string EnclosingTitle(VisualElement e)
         {
             for (e = e.hierarchy.parent; e != null; e = e.hierarchy.parent)
             {
                 var f = Data.Find<Controls.Fold>(e);
-                if (f != null) return f;
+                if (f != null) return f.Title;
+                var c = Data.Find<Controls.CardRows>(e);
+                if (c != null) return c.Title;
             }
             return null;
         }

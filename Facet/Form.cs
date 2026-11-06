@@ -23,30 +23,68 @@ namespace Facet
         public string ActionLabel;
         public object Default;
         public Action<Action<string>> Capture;
+        /// ControlOptions.Help: a muted line under the label.
+        public string Help;
+        /// Built into its group's Advanced fold, after the group's other fields (Form.Build with Cards).
+        public bool Advanced;
+    }
+
+    public sealed class FormOptions
+    {
+        /// Consecutive Groups become Cards (a field with no Group, a card with no header), not Sections.
+        public bool Cards { get; set; }
     }
 
     public static class Form
     {
         /// Builds a bound control per field into `parent`, consecutive Groups as Sections. A field
         /// that cannot be built, or whose getter cannot be converted, is an unavailable row: never an exception.
-        public static void Build(VisualElement parent, IEnumerable<Field> fields)
+        public static void Build(VisualElement parent, IEnumerable<Field> fields) { Build(parent, fields, null); }
+
+        /// Build, with options: Cards makes each run of one Group a Card, its Advanced fields in the card's Advanced fold.
+        public static void Build(VisualElement parent, IEnumerable<Field> fields, Action<FormOptions> configure)
         {
-            VisualElement into = parent;
+            var o = new FormOptions();
+            if (configure != null) Safe.Run(Host.For(parent), "Form configure", () => configure(o));
+            var run = new List<Field>();
             string group = null;
             foreach (var f in fields)
             {
                 if (f == null) continue;
-                try
+                string g = f.Group ?? "";
+                if (g != group && run.Count > 0) { Group(parent, group, run, o.Cards); run.Clear(); }
+                group = g;
+                run.Add(f);
+            }
+            if (run.Count > 0) Group(parent, group, run, o.Cards);
+        }
+
+        // One run of fields sharing a Group: its Section or Card, the fields, then (cards) the Advanced fold.
+        static void Group(VisualElement parent, string g, List<Field> run, bool cards)
+        {
+            VisualElement into = parent;
+            try { into = cards ? Controls.Card(parent, g == "" ? null : g) : g == "" ? parent : Controls.Section(parent, g); }
+            catch (Exception e) { Host.For(parent).Log("Form group '" + g + "': " + e.Message); }
+            foreach (var f in run) if (!cards || !f.Advanced) One(into, f);
+            VisualElement adv = null;
+            if (cards) foreach (var f in run) if (f.Advanced)
+            {
+                if (adv == null)
                 {
-                    string g = f.Group ?? "";
-                    if (g != group || (g == "" && into != parent)) { group = g; into = g == "" ? parent : Controls.Section(parent, g); }
-                    BuildOne(into, f);
+                    try { adv = Controls.Advanced(into); }
+                    catch (Exception e) { Host.For(parent).Log("Form advanced '" + g + "': " + e.Message); adv = into; }
                 }
-                catch (Exception e)
-                {
-                    Host.For(parent).Log("Form '" + f.Label + "': " + e.Message);
-                    try { Ui.Muted((f.Label ?? "?") + " — unavailable", into); } catch { }
-                }
+                One(adv, f);
+            }
+        }
+
+        static void One(VisualElement into, Field f)
+        {
+            try { BuildOne(into, f); }
+            catch (Exception e)
+            {
+                Host.For(into).Log("Form '" + f.Label + "': " + e.Message);
+                try { Ui.Muted((f.Label ?? "?") + " — unavailable", into); } catch { }
             }
         }
 
@@ -66,7 +104,7 @@ namespace Facet
         static void Make(VisualElement p, Field f)
         {
             var bad = new bool[1];   // set by a failing getter; read after the build
-            Action<ControlOptions> common = o => { o.Id = f.Label; o.Tooltip = f.Tooltip; };
+            Action<ControlOptions> common = o => { o.Id = f.Label; o.Tooltip = f.Tooltip; o.Help = f.Help; };
             string label = f.Label;
             switch (f.Kind)
             {
@@ -176,7 +214,7 @@ namespace Facet
             });
             var ctl = Controls.Colour(p, f.Label, bind, o =>
             {
-                o.Id = f.Label; o.Tooltip = f.Tooltip; o.Alpha = alpha;
+                o.Id = f.Label; o.Tooltip = f.Tooltip; o.Help = f.Help; o.Alpha = alpha;
                 Color d; bool tx, al;
                 if (f.Default != null && ToColour(f.Default, out d, out tx, out al)) o.Default = d;
             });

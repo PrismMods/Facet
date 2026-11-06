@@ -14,8 +14,8 @@ namespace Facet
         private const float ArrowSize = 20f;   // the chevron was a speck at body size
 
         /// What Noted records on a row, through Data (element userData is the consumer's): the English
-        /// key a search hit reveals it by, and the index entry its tooltip joins.
-        internal sealed class Noting { public string Key; public SearchIndex.Hit Hit; }
+        /// key a search hit reveals it by, the index entry its tooltip joins, and the label a help line goes under.
+        internal sealed class Noting { public string Key; public SearchIndex.Hit Hit; public Label Label; }
 
         /* Makes `row` findable: the index notes the label as shown (translated, so a search in the
            player's language finds it) and its English key, which is also how a result finds the row
@@ -28,12 +28,62 @@ namespace Facet
             NotedTip(row, tooltip);
         }
 
-        /// The row's tooltip joins its index entry, English and as shown.
-        internal static void NotedTip(VisualElement row, string tooltip)
+        /// The row's tooltip and help line join its index entry, English and as shown.
+        internal static void NotedTip(VisualElement row, string tooltip, string help = null)
         {
             var n = Data.Find<Noting>(row);
-            if (n != null && n.Hit != null && !string.IsNullOrEmpty(tooltip))
-                SearchIndex.NoteTip(n.Hit, tooltip, Words.Show(tooltip, Host.For(row), false));
+            if (n == null || n.Hit == null) return;
+            var h = Host.For(row);
+            string key = null, shown = null;
+            foreach (var s in new[] { tooltip, help })
+            {
+                if (string.IsNullOrEmpty(s)) continue;
+                var w = Words.Show(s, h, false);
+                key = key == null ? s : key + " " + s;
+                shown = shown == null ? w : shown + " " + w;
+            }
+            if (key != null) SearchIndex.NoteTip(n.Hit, key, shown);
+        }
+
+        /* The row's help (ControlOptions.Help): a muted Small line under its label, translated like it.
+           The label moves into a column with the help under it, so the row grows to hold both. A row
+           with no label of its own (a DangerButton) has nothing to put it under. */
+        internal static void Helped(VisualElement row, ControlOptions o)
+        {
+            if (string.IsNullOrEmpty(o.Help)) return;
+            NotedTip(row, o.Tooltip, o.Help);
+            var n = Data.Find<Noting>(row);
+            var l = n == null ? null : n.Label;
+            if (l == null || l.parent == null) return;
+            var col = Ui.Box();
+            l.parent.Insert(l.parent.IndexOf(l), col);
+            col.style.flexGrow = 1f;
+            col.style.flexShrink = 1f;
+            col.style.minWidth = 0f;
+            col.pickingMode = PickingMode.Ignore;
+            col.Add(l);
+            var help = Ui.Muted(o.Help, col);
+            help.name = "help";
+            help.style.whiteSpace = WhiteSpace.Normal;
+            help.pickingMode = PickingMode.Ignore;
+        }
+
+        /// Marks a card's body (and an Advanced fold's): its rows take the card rules. Title is the card's.
+        internal sealed class CardRows { public int Rows; public string Title; }
+
+        /* In a card, a row pads Sizes.Pad on both sides and every row after the first draws a
+           Sizes.Line rule above it in Role.Line. An Advanced body starts at one: its head comes first. */
+        internal static void Carded(VisualElement row, Sizes sz)
+        {
+            CardRows c = null;   // the NEAREST card body above: a wrapper, a ToggleGroup body or a nested Section still counts
+            for (var e = row.parent; e != null && c == null; e = e.parent) c = Data.Find<CardRows>(e);
+            if (c == null) return;
+            row.style.paddingLeft = sz.Pad;
+            row.style.paddingRight = sz.Pad;
+            row.style.marginBottom = 0f;
+            if (c.Rows++ == 0) return;
+            row.style.borderTopWidth = sz.Line;
+            Paint.Border(row, Role.Line);
         }
 
         /// Label on the left, whatever the caller adds on the right.
@@ -47,6 +97,7 @@ namespace Facet
             row.style.justifyContent = Justify.SpaceBetween;
             row.style.paddingLeft = 4f;
             row.style.paddingRight = 4f;
+            Carded(row, sz);
             Words.Tip(row, tooltip);
 
             var l = Ui.Text(label, row, sz.Body);
@@ -56,6 +107,7 @@ namespace Facet
             // the text's own width is the floor and it pushes the switch out of the window.
             l.style.minWidth = 0f;
             l.pickingMode = PickingMode.Ignore;
+            Data.Get<Noting>(row).Label = l;
 
             Paint.Look(row, t.Looks.Row);
 
@@ -99,19 +151,12 @@ namespace Facet
         public static VisualElement Section(VisualElement parent, string title, bool defaultOpen = true)
         {
             SearchIndex.EnterSection(title);
-            var nav = Nav.Active;
-            string key = "fold." + (nav != null ? nav.PageTitle : "") + "/" + title;
-            var host = Host.For(parent);
-            string saved = host.Read(key);
-            // A host with no Read/Write still keeps folds for the session.
-            string mem = host.Name + "|" + key;
-            bool open = saved == "1" ? true : saved == "0" ? false : _folds.TryGetValue(mem, out var m) ? m : defaultOpen;
-
             var head = Ui.Row(parent);
             var sz = Theme.For(head).Sizes;
             head.style.marginTop = sz.Pad;
             head.pickingMode = PickingMode.Position;
-            var arrow = Ui.Text(open ? "▾" : "▸", head, sz.Body + 3f, Role.TextMuted);   // it was a speck at body size
+            Carded(head, sz);
+            var arrow = Ui.Text("", head, sz.Body + 3f, Role.TextMuted);   // it was a speck at body size
             arrow.style.width = 18f;
             var l = Ui.Text(title, head, sz.Body);
             l.style.unityFontStyleAndWeight = FontStyle.Bold;
@@ -119,8 +164,24 @@ namespace Facet
             l.pickingMode = PickingMode.Ignore;
 
             var body = Ui.Box(parent);
-            body.style.display = open ? DisplayStyle.Flex : DisplayStyle.None;
             body.style.marginBottom = sz.Gap;
+            Folds(head, body, title, title, defaultOpen, open => arrow.text = open ? "▾" : "▸");
+            return body;
+        }
+
+        /* `head` folds `body`. The state is kept through the host under "fold.<page>/<path>" as
+           "0"/"1"; a host with no Read/Write still keeps it for the session. The Fold record is how a
+           search hit unfolds it (its Title is the search section the hit names); drawn shows the state. */
+        private static void Folds(VisualElement head, VisualElement body, string path, string title, bool defaultOpen, Action<bool> drawn)
+        {
+            var nav = Nav.Active;
+            string key = "fold." + (nav != null ? nav.PageTitle : "") + "/" + path;
+            var host = Host.For(head);
+            string saved = host.Read(key);
+            string mem = host.Name + "|" + key;
+            bool open = saved == "1" ? true : saved == "0" ? false : _folds.TryGetValue(mem, out var m) ? m : defaultOpen;
+            body.style.display = open ? DisplayStyle.Flex : DisplayStyle.None;
+            drawn(open);
 
             // One path for a click and for a search hit revealing the row: state, host and look stay in step.
             Action<bool, bool> fold = (to, animate) =>
@@ -128,16 +189,16 @@ namespace Facet
                 open = to;
                 _folds[mem] = open;
                 Host.For(head).Write(key, open ? "1" : "0");
-                arrow.text = open ? "▾" : "▸";
+                drawn(open);
                 if (!open) body.style.display = DisplayStyle.None;
                 else if (animate) Anim.SlideIn(body, -6f, Anim.Fast);
                 else body.style.display = DisplayStyle.Flex;
             };
-            Data.Get<Fold>(body).Title = title;
-            Data.Get<Fold>(body).Set = fold;
-            Data.Get<Fold>(body).IsOpen = () => open;
+            var f = Data.Get<Fold>(body);
+            f.Title = title;
+            f.Set = fold;
+            f.IsOpen = () => open;
             Events.On<ClickEvent>(head, _ => fold(!open, true));
-            return body;
         }
 
         /* A list entry: a name, an optional note under it, and buttons on the right.
@@ -190,6 +251,7 @@ namespace Facet
             var host = Row(parent, label, o.Tooltip);
             var row = host.parent;
             if (o.Id != null) row.name = o.Id;
+            Helped(row, o);
             Arrow(row);
 
             /* Captured HERE, not read inside the handler: Nav.Active is only set while a page is
