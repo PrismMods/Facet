@@ -131,6 +131,11 @@ namespace Facet.Mod
             Check(wa.Body.Query<Label>().ToList().Exists(l => l.text.Contains("failed to build")), "A's content shows the failed-to-build text");
             Check(!wb.Body.Query<Label>().ToList().Exists(l => l.text.Contains("failed to build")), "B's content builds");
             Check(ReferenceEquals(Host.For(wa.Body), a) && ReferenceEquals(Host.For(wb.Body), b), "Host.For finds each element's own host");
+            var nb = new Nav(wb.Body, new[] { new NavItem("Fine2", p => { }) });
+            nb.OnInsetChanged = _ => throw new InvalidOperationException("inset");
+            bool threw = false;
+            try { nb.ToggleRail(); } catch { threw = true; }
+            Check(!threw && lb.FindAll(m => m.StartsWith("[B] ") && m.Contains("OnInsetChanged")).Count == 1, "a throwing OnInsetChanged is guarded and logged once to its host", string.Join(" | ", lb));
             sa.Dispose(); sb.Dispose();
 
             var w = Gallery.Open(); yield return null; yield return null;

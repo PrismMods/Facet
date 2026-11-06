@@ -199,6 +199,7 @@ namespace Facet
         public void ToggleRail()
         {
             _railOpen = !_railOpen;
+            ReportInset();
             if (_railScroll == null) return;
             if (_railOpen)
             {
@@ -219,11 +220,16 @@ namespace Facet
         /// Where the content pane starts. The header lines its search box up with this, so the two
         /// stay aligned as the rail is resized or collapsed.
         public Action<float> OnInsetChanged;
+        private float _lastInset = float.NaN;
 
         private void ReportInset()
         {
             var f = OnInsetChanged;
-            if (f != null) f((_railOpen ? _railWidth : 0f) + 7f);
+            float inset = (_railOpen ? _railWidth : 0f) + 7f;
+            // Only on a change, so a drag's many moves at one width allocate no closure.
+            if (f == null || inset == _lastInset) return;
+            _lastInset = inset;
+            Safe.Run(Host.For(_host), "Nav.OnInsetChanged", () => f(inset));
         }
 
         private void PaintHandle()
