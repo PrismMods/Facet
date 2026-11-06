@@ -18,6 +18,28 @@ namespace Facet
         public float StackBelow { get; set; } = 560f;
     }
 
+    public sealed class PreviewOptions : ControlOptions
+    {
+        /// Stage width / height.
+        public float Aspect { get; set; } = 16f / 9f;
+
+        /// Tick period in ms; 0 = every frame.
+        public int EveryMs { get; set; }
+
+        /// Show runs when the stage becomes visible (page and surface both showing), Tick while it
+        /// is, Hide when it stops. All run under Safe; three Tick throws in a row stop ticking until the next Show.
+        public Action<VisualElement> Show { get; set; }
+        public Action<VisualElement> Tick { get; set; }
+        public Action Hide { get; set; }
+
+        /// An English key: a muted line under the stage.
+        public string Note { get; set; }
+
+        /// An English key shown as a link under the note; a click runs OnLink.
+        public string Link { get; set; }
+        public Action OnLink { get; set; }
+    }
+
     public static partial class Controls
     {
         /* Settings on the left, a preview on the right. Returns the left column; `right` is the other.
@@ -89,6 +111,95 @@ namespace Facet
             if (root.panel != null) attach(null);
             right = r;
             return l;
+        }
+
+        /* A pane the consumer draws in: a caps label, a stage that keeps its aspect, a note and a link.
+           Returns the stage. It costs nothing while hidden: Show/Tick/Hide follow "stage on a panel
+           and its surface visible", re-evaluated on attach, detach, and the surface's Shown/Hidden.
+           ponytail: an ancestor hidden by display:none inside a visible page still counts as shown;
+           upgrade path is checking resolvedStyle.display up the tree in the tick. */
+        public static VisualElement Preview(VisualElement parent, string label, Action<PreviewOptions> configure = null)
+        {
+            var o = ControlOptions.Make(parent, label, configure);
+            var host = Host.For(parent);
+            var t = Theme.For(parent); var sz = t.Sizes;
+            var root = Ui.Box(parent);
+            root.style.marginBottom = sz.Gap;
+            Ui.Caps(label, root).style.marginBottom = sz.Gap / 2f;
+            var stage = Ui.Box(root);
+            stage.name = o.Id;
+            Paint.Look(stage, t.Looks.Stage);
+            Ui.SetBorderWidth(stage, sz.Line);
+            Ui.SetRadius(stage, sz.Radius);
+            stage.style.overflow = Overflow.Hidden;
+            stage.style.alignSelf = Align.Stretch;
+            float aspect = o.Aspect > 0f ? o.Aspect : 16f / 9f;
+            Events.On<GeometryChangedEvent>(stage, _ =>
+            {
+                float h = stage.layout.width / aspect;
+                if (stage.layout.width > 0f && Mathf.Abs(h - stage.layout.height) > 0.5f) stage.style.height = h;
+            });
+            if (o.Note != null) { var n = Ui.Muted(o.Note, root); n.style.marginTop = sz.Gap / 2f; }
+            if (o.Link != null)
+            {
+                var link = Ui.Btn(o.Link, () => { if (o.OnLink != null) o.OnLink(); }, root);
+                link.name = o.Id == null ? null : o.Id + "-link";
+                link.style.alignSelf = Align.FlexStart;
+                link.style.paddingLeft = 0f;
+                link.style.paddingRight = 0f;
+                Paint.Look(link, t.Looks.Link);
+            }
+
+            bool shown = false;
+            int fails = 0;
+            Surface owner = null;
+            IVisualElementScheduledItem item = null;
+            string site = "Preview '" + label + "' ";
+            // Built once: the tick runs every frame at EveryMs 0 and must not allocate.
+            string tickSite = site + "Tick", showSite = site + "Show", hideSite = site + "Hide";
+            Action callTick = () => { if (o.Tick != null) o.Tick(stage); };
+            Action callShow = () => { if (o.Show != null) o.Show(stage); };
+            Action callHide = () => { if (o.Hide != null) o.Hide(); };
+            Action tick = () =>
+            {
+                if (!shown) return;
+                if (Safe.Run(host, tickSite, callTick)) fails = 0;
+                else if (++fails >= 3 && item != null) item.Pause();   // until the next Show
+                stage.MarkDirtyRepaint();
+            };
+            Action eval = () =>
+            {
+                bool want = stage.panel != null && (owner == null || owner.Visible);
+                if (want == shown) return;
+                shown = want;
+                if (want)
+                {
+                    fails = 0;
+                    Safe.Run(host, showSite, callShow);
+                    if (o.Tick == null) return;
+                    if (item == null) item = stage.schedule.Execute(tick).Every(Math.Max(1, o.EveryMs));
+                    else item.Resume();
+                }
+                else
+                {
+                    if (item != null) item.Pause();
+                    Safe.Run(host, hideSite, callHide);
+                }
+            };
+            Action changed = () => eval();
+            Events.On<AttachToPanelEvent>(stage, _ =>
+            {
+                owner = Popup.OwnerOf(stage);
+                if (owner != null) { owner.Shown += changed; owner.Hidden += changed; }
+                eval();
+            });
+            Events.On<DetachFromPanelEvent>(stage, _ =>
+            {
+                if (owner != null) { owner.Shown -= changed; owner.Hidden -= changed; owner = null; }
+                if (shown) { shown = false; if (item != null) item.Pause(); Safe.Run(host, hideSite, callHide); }
+            });
+            if (stage.panel != null) { owner = Popup.OwnerOf(stage); if (owner != null) { owner.Shown += changed; owner.Hidden += changed; } eval(); }
+            return stage;
         }
     }
 }

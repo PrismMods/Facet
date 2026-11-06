@@ -21,6 +21,8 @@ namespace Facet.Mod
         /// The Feature page's header switch and its second header's description.
         public bool Feature;
         public string Desc = "one";
+        /// The Feature page's preview: how often each callback ran.
+        public int Shows, Hides, Ticks, Links;
     }
 
     // The parts window: one Nav page per part this plan adds, on the Gallery's host.
@@ -33,6 +35,7 @@ namespace Facet.Mod
         static Window _win;
         /// The Feature page, for the autotest to go to.
         public static NavItem FeatureItem { get; private set; }
+        public static NavItem CardsItem { get; private set; }
 
         public static Window Open()
         {
@@ -40,7 +43,7 @@ namespace Facet.Mod
             Surface = new Surface(Gallery.Host, "FacetGalleryParts", Layer.Window);
             _win = new Window(Surface.Root, "parts", "Facet Parts", new Rect(100, 60, 960, 600));
             _win.CloseRequested += _ => Close();
-            Nav = new Nav(_win.Body, new[] { new NavItem("Cards", Cards), FeatureItem = new NavItem("Feature", Feature) });
+            Nav = new Nav(_win.Body, new[] { CardsItem = new NavItem("Cards", Cards), FeatureItem = new NavItem("Feature", Feature) });
             return _win;
         }
 
@@ -78,6 +81,17 @@ namespace Facet.Mod
             left.name = "feat-left"; right.name = "feat-right";
             var card = Controls.Card(left, "Rows");
             for (int i = 0; i < 30; i++) Controls.Toggle(card, "Row " + i, Bind.To(() => false, v => { }));
+            var tick = Ui.Text("", null, null, Role.Text, true);
+            Controls.Preview(right, "Preview", o =>
+            {
+                o.Id = "feat-preview";
+                o.Note = "Live view";
+                o.Link = "Edit layout →";
+                o.OnLink = () => Model.Links++;
+                o.Show = st => { Model.Shows++; st.Add(tick); };
+                o.Tick = st => { Model.Ticks++; tick.text = Model.Ticks.ToString(); };
+                o.Hide = () => Model.Hides++;
+            });
             var box = Ui.Box(right);
             box.name = "feat-box";
             box.style.height = 200f;

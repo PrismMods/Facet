@@ -193,7 +193,7 @@ namespace Facet
         }
 
         // Every surface shares one panel, so ownership is ancestry, not which panel the anchor is in.
-        private static Surface OwnerOf(VisualElement anchor)
+        internal static Surface OwnerOf(VisualElement anchor)
         {
             for (var e = anchor; e != null; e = e.parent)
                 foreach (var s in Ui.Stack)

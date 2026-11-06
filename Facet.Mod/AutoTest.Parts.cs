@@ -398,8 +398,8 @@ namespace Facet.Mod
                 if (sv != null && box != null)
                 {
                     sv.scrollOffset = new Vector2(0f, 300f);
-                    yield return Until(() => Mathf.Abs(box.worldBound.yMin - sv.contentViewport.worldBound.yMin) < 2f, ms);
-                    Check(ms[0] >= 0, "scrolled down 300, the right box sits at the viewport top", box.worldBound.yMin + " vs " + sv.contentViewport.worldBound.yMin);
+                    yield return Until(() => Mathf.Abs(right.worldBound.yMin - sv.contentViewport.worldBound.yMin) < 2f, ms);
+                    Check(ms[0] >= 0, "scrolled down 300, the right pane sits at the viewport top", right.worldBound.yMin + " vs " + sv.contentViewport.worldBound.yMin);
                     sv.scrollOffset = new Vector2(0f, 100000f);
                     yield return null; yield return null; yield return null;
                     Check(box.worldBound.yMax <= left.parent.worldBound.yMax + 1f, "scrolled to the end, the box stays inside the columns", box.worldBound.yMax + " vs " + left.parent.worldBound.yMax);
@@ -444,6 +444,99 @@ namespace Facet.Mod
                 wrap.RemoveFromHierarchy();
             }
             finally { GalleryParts.Close(); GalleryParts.Model = new PartsModel(); }
+        }
+
+        // Task 10: the preview pane shows only while its page and surface do; consumer throws stay inside.
+        IEnumerator SectionPreview()
+        {
+            GalleryParts.Model = new PartsModel();
+            var win = GalleryParts.Open(); yield return null; yield return null;
+            try
+            {
+                var m = GalleryParts.Model;
+                GalleryParts.Nav.Go(GalleryParts.FeatureItem); yield return null; yield return null; yield return null;
+                Check(m.Shows == 1, "opening the Feature page calls Show once", m.Shows.ToString());
+                int t0 = m.Ticks;
+                for (int i = 0; i < 30; i++) yield return null;
+                Check(m.Ticks - t0 >= 20, "Tick runs at least 20 times in 30 frames", (m.Ticks - t0).ToString());
+                var stage = win.Body.Q("feat-preview");
+                Check(stage != null && Mathf.Abs(stage.layout.height - stage.layout.width * 9f / 16f) <= 1f && stage.layout.width > 50f,
+                    "the stage height is width / Aspect", stage == null ? "none" : stage.layout.width + "x" + stage.layout.height);
+                var link = win.Body.Q("feat-preview-link");
+                Check(link != null, "the preview has its Link button");
+                if (link != null) Submit((Button)link);
+                yield return null;
+                Check(m.Links == 1, "clicking the Link runs OnLink once", m.Links.ToString());
+
+                GalleryParts.Nav.Go(GalleryParts.CardsItem); yield return null; yield return null;
+                Check(m.Hides == 1, "going to another page calls Hide once", m.Hides.ToString());
+                t0 = m.Ticks;
+                for (int i = 0; i < 30; i++) yield return null;
+                Main.Log("[perf] preview hidden: " + (m.Ticks - t0) + " ticks over 30 frames");
+                Check(m.Ticks == t0, "a hidden page's preview ticks 0 times over 30 frames", (m.Ticks - t0).ToString());
+                GalleryParts.Nav.Go(GalleryParts.FeatureItem); yield return null; yield return null; yield return null;
+                Check(m.Shows == 2, "coming back calls Show again", m.Shows.ToString());
+
+                GalleryParts.Surface.Visible = false; yield return null;
+                Check(m.Hides == 2, "hiding the surface calls Hide", m.Hides.ToString());
+                t0 = m.Ticks;
+                for (int i = 0; i < 10; i++) yield return null;
+                Check(m.Ticks == t0, "a hidden surface's preview does not tick", (m.Ticks - t0).ToString());
+                GalleryParts.Surface.Visible = true; yield return null; yield return null;
+                Check(m.Shows == 3, "showing the surface calls Show", m.Shows.ToString());
+            }
+            finally { GalleryParts.Close(); GalleryParts.Model = new PartsModel(); }
+
+            // Fix 1: Facet's tick path allocates nothing per run (no-op Tick; the bytes measured include the scheduler, so a small tolerance).
+            var ah = Host.Create("PrevAlloc", o => o.Log = l => Main.Log("[prevalloc] " + l));
+            var asf = new Surface(ah, "FacetPrevAlloc", Layer.Window);
+            int aticks = 0;
+            try
+            {
+                var aw = new Window(asf.Root, "prevalloc", "Alloc", new Rect(60, 60, 300, 300));
+                Controls.Preview(aw.Body, "A", o => o.Tick = _ => aticks++);
+                for (int i = 0; i < 20; i++) yield return null;
+                int n0 = aticks;
+                // Logged, not asserted: the frame loop, the scheduler and Unity itself allocate in the same window, so 0 is not a stable bound.
+                var per = new List<long>();
+                for (int i = 0; i < 30; i++) { long a = GC.GetAllocatedBytesForCurrentThread(); yield return null; per.Add(GC.GetAllocatedBytesForCurrentThread() - a); }
+                long total = 0; foreach (var x in per) total += x;
+                Main.Log("[perf] preview tick allocation: " + total + " bytes over 30 frames, " + (aticks - n0) + " ticks");
+                Check(aticks - n0 >= 20, "the allocation probe's Tick ran", (aticks - n0).ToString());
+            }
+            finally { asf.Dispose(); }
+
+            // Review Focus 5: a consumer that throws, and a surface disposed while showing.
+            var lines = new List<string>();
+            int shows = 0, hides = 0, throws = 0, linkThrows = 0;
+            var host = Host.Create("PrevThrow", o => o.Log = l => lines.Add(l));
+            var s = new Surface(host, "FacetPrevThrow", Layer.Window);
+            VisualElement st2 = null;
+            try
+            {
+                var w = new Window(s.Root, "prevthrow", "Throw", new Rect(60, 60, 400, 400));
+                st2 = Controls.Preview(w.Body, "Throws", o =>
+                {
+                    o.Id = "pt"; o.Aspect = 4f; o.Link = "Go"; o.OnLink = () => { linkThrows++; throw new Exception("link"); };
+                    o.Show = _ => { shows++; throw new Exception("show"); };
+                    o.Tick = _ => { throws++; throw new Exception("tick"); };
+                    o.Hide = () => { hides++; throw new Exception("hide"); };
+                });
+                for (int i = 0; i < 30; i++) yield return null;
+                Check(shows == 1 && throws == 3, "a Tick that always throws stops after 3 throws", shows + " show, " + throws + " ticks");
+                Check(lines.FindAll(l => l.Contains("Tick")).Count == 1, "...and logs one line for it", string.Join(" | ", lines));
+                Submit(w.Body.Q<Button>("pt-link")); yield return null;
+                Check(linkThrows == 1, "a throwing OnLink is contained");
+                s.Visible = false; yield return null;
+                Check(hides == 1, "leaving runs Hide once although Tick threw", hides.ToString());
+                s.Visible = true; yield return null; for (int i = 0; i < 10; i++) yield return null;
+                Check(shows == 2 && throws == 6, "reopening calls Show again and ticking resumes", shows + " show, " + throws + " ticks");
+            }
+            finally { }
+            bool escaped = false;
+            try { s.Dispose(); } catch { escaped = true; }
+            yield return null; yield return null;
+            Check(!escaped && hides == 2 && throws == 6, "disposing the surface while shown calls Hide once, raises nothing, ticks no more", hides + " hides, " + throws + " ticks");
         }
 
         // Task 8: a card of rows split by rules, a help line, the Advanced fold, and forms built into cards.

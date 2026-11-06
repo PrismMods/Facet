@@ -98,6 +98,9 @@ namespace Facet
         /// host): a popup closes with the window it came from. Runs under Safe.
         public event Action Hidden;
 
+        /// Raised when the surface goes from hidden to visible. Runs under Safe.
+        internal event Action Shown;
+
         /// name is used for the GameObject, so it shows up in a hierarchy dump.
         public Surface(Host host, string name, Layer layer, UnityEngine.TextCore.Text.FontAsset font = null)
         {
@@ -221,14 +224,20 @@ namespace Facet
                     if (BlocksGameInput) Input.HoldThisFrame();
                     RaiseHidden();
                 }
+                else Raise(Shown, "Surface.Shown");
             }
         }
 
         private void RaiseHidden()
         {
-            var h = Hidden;
+            Raise(Hidden, "Surface.Hidden");
+        }
+
+        // Each subscriber under its own Safe: one that throws leaves the rest to run.
+        private void Raise(Action h, string site)
+        {
             if (h == null) return;
-            Safe.Run(Host, "Surface.Hidden", h);
+            foreach (Action a in h.GetInvocationList()) Safe.Run(Host, site, a);
         }
 
         /// One-shot geometry report: proves layout actually ran and where the element landed.
