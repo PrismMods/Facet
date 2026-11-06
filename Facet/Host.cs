@@ -105,9 +105,12 @@ namespace Facet {
             return string.IsNullOrEmpty(t) ? s : t;
         }
 
-        /// "ko" for Korean; anything else is English.
+        /// "ko" for Korean; anything else is English. Never null or empty: Nav keys its indexes by it.
         public string Language {
-            get { return _o.Language == null ? "en" : Safe.Get(Name, "Host.Language", _o.Language, "en", _log); }
+            get {
+                string l = _o.Language == null ? null : Safe.Get(Name, "Host.Language", _o.Language, "en", _log);
+                return string.IsNullOrEmpty(l) ? "en" : l;
+            }
         }
 
         public string Read(string key) {
