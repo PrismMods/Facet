@@ -269,6 +269,10 @@ namespace Facet.Mod
         // no widget may keep a colour from the old scheme.
         IEnumerator SectionNoStale()
         {
+            // The warm-up window builds a Nav, whose constructor clears the shared search index:
+            // landing mid-section it wiped this page's entries and the search found nothing.
+            var warm = typeof(Surface).Assembly.GetType("Facet.WarmUp").GetField("Done", BindingFlags.NonPublic | BindingFlags.Static);
+            for (var sw = Stopwatch.StartNew(); !(bool)warm.GetValue(null) && sw.ElapsedMilliseconds < 3000;) yield return null;
             var t = new Theme();
             var h = Host.Create("NoStale", o => { o.Log = m => Main.Log("[nostale] " + m); o.Theme = t; });
             var s = new Surface(h, "FacetNoStale", Layer.Window);
