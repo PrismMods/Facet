@@ -33,6 +33,14 @@ static class FacetTest {
         t = 6; History.Record("x", "k", () => { }, () => { });
         History.Undo();
         Check(History.CanUndo, "records 1 s apart (past CoalesceSeconds) stay separate");
+        // Ruling R14: Facet's refresh is its own hook, run first; a consumer assigning AfterApply cannot drop it.
+        string ran = "";
+        History.RefreshAll = () => ran += "r";
+        History.AfterApply = () => ran += "x";
+        History.AfterApply = () => ran += "a";   // a consumer assigns rather than adds
+        History.Undo();
+        Check(ran == "ra", "an undo runs Facet's RefreshAll, then the consumer's AfterApply", ran);
+        History.RefreshAll = null; History.AfterApply = null;
         var l1 = Shared.Get("t", () => new List<int>());
         Check(ReferenceEquals(l1, Shared.Get("t", () => new List<int>())), "Shared.Get returns the same instance twice");
         var dd = AppDomain.CurrentDomain.GetData("Facet.Shared") as Dictionary<string, object>;

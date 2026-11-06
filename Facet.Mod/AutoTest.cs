@@ -449,7 +449,13 @@ namespace Facet.Mod
             // Undo and redo re-read every visible surface at once, not at the next tick.
             History.Record("Toggle", "bind-test", () => Gallery.Model.Flag = false, () => Gallery.Model.Flag = true);
             History.Undo(); History.Redo();
-            Check(on(), "a redo shows its value in the same frame (History.AfterApply refreshes the visible surfaces)");
+            Check(on(), "a redo shows its value in the same frame (undo and redo refresh the visible surfaces)");
+            var consumers = History.AfterApply;
+            History.AfterApply = () => { };   // a consumer assigns rather than adds, as PrismLib's SettingsPanel does
+            History.Undo();
+            Check(!on(), "with History.AfterApply assigned by a consumer, an undo still shows the old value in the same frame");
+            History.Redo();
+            History.AfterApply = consumers;
             History.Clear();
             Check(dotShown(), "the dot shows again with Flag on");
             yield return Click(Ctr(row), 2);

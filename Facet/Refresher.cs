@@ -17,8 +17,8 @@ namespace Facet
     {
         private static readonly List<Refresher> _all = new List<Refresher>();
 
-        // Undo and redo re-read every visible surface at once (Core cannot see Surface: Ruling R2).
-        static Refresher() { History.AfterApply += All; }
+        // Undo and redo re-read every visible surface at once, through History's own hook (Ruling R14).
+        static Refresher() { History.RefreshAll = All; }
 
         private readonly List<Action> _controls = new List<Action>();
         private Surface _surface;

@@ -59,10 +59,13 @@ namespace Facet
         /// Raised whenever the stacks change, so a toolbar can enable or disable its buttons.
         public static event Action Changed;
 
-        /// Called after an undo or redo has been applied, for panels to re-read what they show. Facet's
-        /// Refresher adds itself here and re-reads every visible surface at once; Core cannot see
-        /// Surface, so the hook stays a delegate. Add with +=, or Facet's refresh is lost.
+        /// Called after an undo or redo has been applied, for panels to re-read what they show.
         public static Action AfterApply;
+
+        /* Facet's own re-read of every visible surface (the Refresher sets it; Core cannot see
+           Surface). Internal and run before AfterApply, so a consumer assigning AfterApply with =,
+           as PrismLib's settings panel does, cannot switch it off (Ruling R14). */
+        internal static Action RefreshAll;
 
         public static bool CanUndo => _done.Count > 0;
         public static bool CanRedo => _undone.Count > 0;
@@ -143,12 +146,15 @@ namespace Facet
             catch (Exception e) { Log("History: " + what + " threw: " + e.Message); }
             finally { Applying = false; }
 
-            var after = AfterApply;
-            if (after != null)
-            {
-                try { after(); }
-                catch (Exception e) { Log("History: refresh after " + what + " threw: " + e.Message); }
-            }
+            After(RefreshAll, what);
+            After(AfterApply, what);
+        }
+
+        private static void After(Action a, string what)
+        {
+            if (a == null) return;
+            try { a(); }
+            catch (Exception e) { Log("History: refresh after " + what + " threw: " + e.Message); }
         }
 
         private static void Fire()
