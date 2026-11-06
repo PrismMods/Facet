@@ -733,6 +733,22 @@ namespace Facet.Mod
                 Check(ch >= 2 && tm == 1, "a colour drag raises Changed per frame and Committed once, at release", "changed=" + ch + " committed=" + tm);
             }
 
+            // A channel slider drag, then a typed hex: each commits once, and the drag flag is not stuck
+            var rs = tint.Root.Query<Slider>().First();
+            var rd = rs?.Q(className: "unity-base-slider__dragger");
+            Check(rd != null, "the picker has a channel slider with a dragger");
+            if (rd != null)
+            {
+                ch = 0; tm = 0;
+                var r0 = Ctr(rd);
+                yield return Drag(r0, r0 - new Vector2(40f, 0f), 6, w.Body);
+                Check(ch >= 2 && tm == 1, "a channel slider drag raises Changed per frame and Committed once", "changed=" + ch + " committed=" + tm);
+                var hex = tint.Root.Query<TextField>().ToList().Find(f => f.value.StartsWith("#"));
+                tm = 0;
+                if (hex != null) { Type(hex, "#00ff00"); yield return null; }
+                Check(hex != null && tm == 1 && tint.Value.g > .99f && tint.Value.r < .01f, "a typed hex after the drag still commits once", "committed=" + tm + " v=" + tint.Value);
+            }
+
             // Button rows have nothing to poll
             var s20 = new Surface(h, "FacetValues20", Layer.Window);
             var w20 = new Window(s20.Root, "values20", "Twenty", new Rect(60, 60, 400, 300));

@@ -270,6 +270,9 @@ namespace Facet
             // The slider's own manipulators stop the pointer events they handle: watch in the trickle phase.
             Events.On<PointerDownEvent>(s, e => { if (e.button == 0) _dragging = true; }, TrickleDown.TrickleDown);
             Events.On<PointerUpEvent>(s, e => EndDrag(), TrickleDown.TrickleDown);
+            // The dragger holds mouse capture, so the release reaches the slider only as the capture ending.
+            // EndDrag is a no-op unless a drag is on, so both firing commits once.
+            Events.On<PointerCaptureOutEvent>(s, e => EndDrag(), TrickleDown.TrickleDown);
             var readout = Ui.Muted("", row);
             readout.style.minWidth = 34f;
             readout.style.unityTextAlign = TextAnchor.MiddleRight;
