@@ -35,6 +35,11 @@ namespace Facet
            collapsible branch only when a group is long enough that showing it all is worse. */
         public bool Group;
 
+        /// Runs when a search result lands on this page, or on this tab of a Tabs.Pages row, once the
+        /// Nav has opened it and started revealing the row; the hit says which row. Only the item
+        /// the row is on runs it: a tab's, not its page's.
+        public Action<SearchIndex.Hit> OnHit;
+
         public NavItem(string title, Action<VisualElement> build = null) { Title = title; Build = build; }
 
         public static NavItem Heading(string title, params NavItem[] children)
@@ -116,7 +121,12 @@ namespace Facet
                 label.pickingMode = PickingMode.Ignore;
 
                 // Where it lives, so the result teaches the menu rather than bypassing it.
-                var where = Ui.Text(string.IsNullOrEmpty(h.Section) ? h.Page : h.Page + " · " + h.Section, row, sz.Small, Role.TextMuted);
+                // Each part through the host's table, then joined: the joined string is no key. An entry's Where is the consumer's own text, shown as given.
+                var host = Host.For(_host);
+                string at = h.Open != null ? h.Page : host.Translate(h.Page);
+                if (h.Open == null && !string.IsNullOrEmpty(h.Tab)) at += " · " + host.Translate(h.Tab);
+                if (h.Open == null && !string.IsNullOrEmpty(h.Section)) at += " · " + host.Translate(h.Section);
+                var where = Ui.Text(at, row, sz.Small, Role.TextMuted, true);
                 where.pickingMode = PickingMode.Ignore;
 
                 Paint.Look(row, rowLook);
@@ -124,14 +134,41 @@ namespace Facet
             }
         }
 
-        /// Open the page a hit lives on and bring its row into view.
+        /* Open the page a hit lives on, select its tab in every tab row there that has it, and bring
+           its row into view; then the item it landed on hears of it. A consumer's entry
+           (AddSearchSource) runs its own action instead. */
         private void GoTo(SearchIndex.Hit hit)
         {
+            var host = Host.For(_host);
+            if (hit.Open != null) { Safe.Run(host, "Nav search entry '" + hit.Key + "'", hit.Open); return; }
             var page = hit.PageRef as NavItem;
             if (page == null) return;
             _filter = "";
             Go(page);
+            var landed = page;
+            if (hit.Tab != null)
+                foreach (var e in _content.Query<VisualElement>().ToList())
+                {
+                    var r = Data.Find<Tabs.Ref>(e);
+                    var tab = r == null ? null : r.Tabs.Reveal(hit.Tab);
+                    if (tab != null) landed = tab;
+                }
             Reveal(hit);
+            if (landed.OnHit != null) Safe.Run(host, "NavItem.OnHit '" + landed.Title + "'", () => landed.OnHit(hit));
+        }
+
+        private readonly List<Func<IEnumerable<SearchIndex.Entry>>> _sources = new List<Func<IEnumerable<SearchIndex.Entry>>>();
+
+        /// Add once per Nav; entries refresh when the index rebuilds (a page's Revision or visibility change); to retire a source, yield nothing.
+        /* Search results for pages Facet did not build (a consumer's own menu): `source` is asked for
+           its entries each time the index is built (the first query, and again once a page's
+           Revision or visibility has changed), and choosing one runs its Open. Through Safe: a
+           throwing source or Open is logged, once per 10 s, and goes no further. */
+        public void AddSearchSource(Func<IEnumerable<SearchIndex.Entry>> source)
+        {
+            if (source == null) return;
+            _sources.Add(source);
+            _built.Clear();
         }
 
         /* Unfold every Section on the way to the row (through the fold Section itself uses, so its
@@ -161,6 +198,7 @@ namespace Facet
             row.schedule.Execute(() =>
             {
                 if (done) return;
+                if (Hidden(row)) { done = true; return; }   // the surface went away (an OnHit hid the window): nothing to wait for, so no log
                 bool ready = row.layout.height > 0f;   // NaN or 0 until a layout pass has seen it displayed
                 if (!ready && ++tries <= 30) return;
                 done = true;
@@ -171,6 +209,14 @@ namespace Facet
                    lit and settling is what draws the eye to it. */
                 Paint.Flash(row, Role.Accent, 900);
             }).Every(16).Until(() => done);
+        }
+
+        // Detached, or under an element set to display:none (a hidden window or surface).
+        private static bool Hidden(VisualElement e)
+        {
+            if (e.panel == null) return true;
+            for (; e != null; e = e.hierarchy.parent) if (e.style.display == DisplayStyle.None) return true;
+            return false;
         }
 
         // Title of the nearest Fold or card body above e: a card is a search section but has no Fold.
@@ -431,6 +477,8 @@ namespace Facet
             SearchIndex.Building = b.Index;
             try { IndexInto(_roots, b, host); }
             finally { SearchIndex.Building = was; b.Index.End(); }
+            foreach (var src in _sources)
+                Safe.Run(host, "Nav search source", () => { foreach (var e in src()) b.Index.Add(e); });
             _built[lang] = b;
             host.Log("[perf] search index " + b.Pages + " pages " + sw.ElapsedMilliseconds + " ms");
             return b.Index;
@@ -687,13 +735,13 @@ namespace Facet
             Controls.Seq = 0;   // so an unnamed control has the same history key after every rebuild
             bool ok = Safe.Run(Host.For(_host), "Nav.build '" + what + "'", () => build(_content));
             Active = was;
-            if (!ok) FailedCard(leaf != null && leaf.Owner != null ? leaf.Owner : Host.For(_host).Name);
+            if (!ok) FailedCard(_content, leaf != null && leaf.Owner != null ? leaf.Owner : Host.For(_host).Name);
         }
 
         // Names whose page it was (the page's Owner, else the host), so the reader knows which mod to blame.
-        private void FailedCard(string owner)
+        internal static void FailedCard(VisualElement parent, string owner)
         {
-            var card = Ui.Muted("", _content);
+            var card = Ui.Muted("", parent);
             Action say = () => card.text = Words.OwnF("{0}: this page failed to build — see the log.", Host.For(card).Language, owner);
             say();
             Words.OnRelabel(card, say);
@@ -711,8 +759,28 @@ namespace Facet
         /// The Nav currently building a page, so Controls.SubPage can reach it without plumbing.
         public static Nav Active { get; private set; }
 
-        /// The title of the page being shown (a pushed subpage's, else the open leaf's), for history keys.
-        internal string PageTitle => _stack.Count > 0 ? _stack[_stack.Count - 1].Key : _path.Count > 0 ? _path[_path.Count - 1].Title : "";
+        /// The title of the page being shown (a pushed subpage's, else the open leaf's), and the tab
+        /// being built on it as "<page>/<tab>", for fold and history keys.
+        internal string PageTitle
+        {
+            get
+            {
+                string p = _stack.Count > 0 ? _stack[_stack.Count - 1].Key : _path.Count > 0 ? _path[_path.Count - 1].Title : "";
+                return _tab == null ? p : p + "/" + _tab;
+            }
+        }
+
+        private string _tab;
+
+        /// Build a tab page of the open page (Tabs.Pages): Active is this Nav and PageTitle names the tab.
+        internal void InTab(string tab, Action build)
+        {
+            var was = Active; var wasTab = _tab;
+            Active = this;
+            _tab = wasTab == null ? tab : wasTab + "/" + tab;
+            try { build(); }
+            finally { Active = was; _tab = wasTab; }
+        }
 
         public void Push(string title, Action<VisualElement> build)
         {

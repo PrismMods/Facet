@@ -13,7 +13,10 @@ namespace Facet
 
        A hit knows its page, which is what lets a result navigate rather than just report. It keeps
        the English key beside the shown label, and its tooltip in both forms, so it matches in both
-       languages. */
+       languages. A row on a tab page (Tabs.Pages) also knows its tab, which joins its context.
+
+       A consumer can add entries for pages Facet did not build (Nav.AddSearchSource): each is a
+       label, where it lives, and what opening it does. */
     public sealed class SearchIndex
     {
         public sealed class Hit
@@ -25,15 +28,32 @@ namespace Facet
             public string Page;
             public object PageRef;      // the NavItem, held loosely so this file stays generic
             public string Section;
+            /// The tab page it is on (Tabs.Pages), by title; null outside one.
+            public string Tab;
             internal Search.Text[] Labels, Context;
             /// The row's tooltip, English and shown: a last-resort match (Search.Rate's detail).
             internal Search.Text Tip;
+            /// An entry's action (Nav.AddSearchSource): choosing the hit runs it instead of navigating.
+            internal Action Open;
+        }
+
+        /// A search result for something Facet did not build (Nav.AddSearchSource).
+        public sealed class Entry
+        {
+            /// The English key, translated by the Nav's host like a row's label.
+            public string Label;
+            /// Where it lives, shown beside it and searched like a page name.
+            public string Where;
+            /// What choosing it does.
+            public Action Open;
+            /// A detail matched like a row's tooltip: a last-resort match, English or shown.
+            public string Tip;
         }
 
         private readonly List<Hit> _all = new List<Hit>();
         private readonly Func<string, string> _tr;
         private object _page;
-        private string _pageName, _section;
+        private string _pageName, _section, _tab;
 
         /// The index whose pages are being built right now; null the rest of the time.
         internal static SearchIndex Building;
@@ -42,10 +62,26 @@ namespace Facet
 
         public int Count => _all.Count;
 
-        internal void Begin(object page, string name) { _page = page; _pageName = name; _section = null; }
-        internal void End() { _page = null; _pageName = null; _section = null; }
+        internal void Begin(object page, string name) { _page = page; _pageName = name; _section = null; _tab = null; }
+        internal void End() { _page = null; _pageName = null; _section = null; _tab = null; }
 
         internal static void EnterSection(string title) { if (Building != null) Building._section = title; }
+
+        /// The rows noted next are on this tab (null: off the tabs again) and in `section`: a tab's page may open sections of its own.
+        internal static void EnterTab(string title, string section) { if (Building != null) { Building._tab = title; Building._section = section; } }
+
+        /// The section being built, so Tabs.Pages can put it back around each tab.
+        internal static string CurrentSection => Building?._section;
+
+        internal void Add(Entry e)
+        {
+            if (e == null || string.IsNullOrEmpty(e.Label)) return;
+            Begin(null, e.Where);
+            var h = Add(e.Label, Words.T(e.Label, _tr));
+            h.Open = e.Open;
+            NoteTip(h, e.Tip, Words.T(e.Tip, _tr));
+            End();
+        }
 
         /* Two characters minimum, copied from Topaz's rule and for its reason: a colour picker's
            R, G and B rows are labels too, and a search that offers "R" as a result is noise. */
@@ -63,10 +99,11 @@ namespace Facet
 
         private Hit Add(string key, string shown)
         {
-            var h = new Hit { Label = shown, Key = key, Page = _pageName, PageRef = _page, Section = _section };
+            var h = new Hit { Label = shown, Key = key, Page = _pageName, PageRef = _page, Section = _section, Tab = _tab };
             h.Labels = key == shown ? new[] { new Search.Text(shown) } : new[] { new Search.Text(shown), new Search.Text(key) };
             var ctx = new List<Search.Text>();
-            foreach (var c in new[] { _pageName, _section, _tr == null ? null : _tr(_pageName ?? ""), _tr == null || _section == null ? null : _tr(_section) })
+            foreach (var c in new[] { _pageName, _section, _tab, _tr == null ? null : _tr(_pageName ?? ""), _tr == null || _section == null ? null : _tr(_section),
+                                      _tr == null || _tab == null ? null : _tr(_tab) })
                 if (!string.IsNullOrEmpty(c)) ctx.Add(new Search.Text(c));
             h.Context = ctx.ToArray();
             _all.Add(h);

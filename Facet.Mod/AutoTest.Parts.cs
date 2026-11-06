@@ -827,5 +827,258 @@ namespace Facet.Mod
             }
             finally { fs.Dispose(); }
         }
+
+        // Task 12: the tab row's underline and rule, and tab pages that search reaches.
+        IEnumerator SectionTabs()
+        {
+            var bt = new Theme();
+            bt.Looks.Tab = new Look { Text = Role.TextMuted, SelectedText = Role.Text, FocusBorder = Role.Focus };
+            bt.Looks.Indicator = new Look { SelectedBg = Role.Accent };
+            bt.Looks.Rule = new Look { Bg = Role.Line };   // Dark draws no rule (0.1's look); a skin gives it a colour
+            var bs = new Surface(Host.Create("TabRow", o => { o.Log = l => Main.Log("[tabrow] " + l); o.Theme = bt; }), "FacetTabRow", Layer.Window);
+            try
+            {
+                var bw = new Window(bs.Root, "tabrow", "Tab row", new Rect(60, 60, 400, 200));
+                var row = new Tabs(bw.Body, null);
+                row.Rebuild(new[] { "A", "B", "C" });
+                row.Select(1);
+                yield return null; yield return null;
+                var btns = row.Element.Query<Button>().ToList();
+                Func<int, VisualElement> line = i => btns.Count > i ? btns[i].Q("indicator") : null;
+                Check(btns.Count == 3 && line(0) != null && line(1) != null && line(2) != null, "a bare row A/B/C has an underline under each tab", btns.Count.ToString());
+                if (line(0) != null && line(1) != null && line(2) != null)
+                {
+                    Check(Near(line(1).resolvedStyle.backgroundColor, bt[Role.Accent]) && line(0).resolvedStyle.backgroundColor.a == 0f && line(2).resolvedStyle.backgroundColor.a == 0f,
+                        "after selecting B, B's underline is Accent and the others are clear", line(1).resolvedStyle.backgroundColor + " / " + line(0).resolvedStyle.backgroundColor);
+                    Check(Px(line(1).style.height) == bt.Sizes.Indicator, "the underline is Sizes.Indicator tall", Px(line(1).style.height).ToString());
+                    Check(Near(btns[1].resolvedStyle.color, bt[Role.Text]) && Near(btns[0].resolvedStyle.color, bt[Role.TextMuted]), "B's text is Text and A's TextMuted",
+                        btns[1].resolvedStyle.color + " / " + btns[0].resolvedStyle.color);
+                    var rule = row.Element.Q("rule");
+                    Check(rule != null && Near(rule.resolvedStyle.backgroundColor, bt[Role.Line]) && Px(rule.style.height) == bt.Sizes.Line
+                          && Mathf.Abs(rule.worldBound.yMax - row.Element.worldBound.yMax) < 0.5f && Mathf.Abs(line(1).worldBound.yMax - rule.worldBound.yMax) < 0.5f,
+                        "the row sits on a Looks.Rule line, Sizes.Line tall, that the underline lands on", rule == null ? "none" : rule.worldBound + " / " + line(1).worldBound);
+                }
+
+                var ds = new Surface(Host.Create("TabRuleDark"), "FacetTabRuleDark", Layer.Window);
+                try
+                {
+                    var dw = new Window(ds.Root, "tabruledark", "Dark row", new Rect(80, 80, 300, 120));
+                    var dr = new Tabs(dw.Body, null);
+                    dr.Rebuild(new[] { "A", "B" });
+                    yield return null; yield return null;
+                    var drule = dr.Element.Q("rule");
+                    Check(drule != null && drule.resolvedStyle.backgroundColor.a == 0f, "on Dark a tab row's rule is invisible (0.1 drew none)", drule?.resolvedStyle.backgroundColor.ToString());
+                }
+                finally { ds.Dispose(); }
+
+                // Outside any Nav, an explicit selection opens that page and only it.
+                var built = new int[2];
+                var pt = Tabs.Pages(bw.Body, new List<NavItem> { new NavItem("One", q => built[0]++), new NavItem("Two", q => built[1]++) }, 1);
+                Check(pt.SelectedName == "Two" && built[0] == 0 && built[1] == 1 && pt.Content != null && row.Content == null,
+                    "Tabs.Pages(..., 1) outside a Nav builds only Two; a bare row has no Content", built[0] + "," + built[1]);
+            }
+            finally { bs.Dispose(); }
+
+            GalleryParts.Model = new PartsModel();
+            Gallery.Store.Remove("tab.Tabs");
+            var win = GalleryParts.Open(); yield return null; yield return null;
+            var clock = History.Clock;
+            try
+            {
+                var m = GalleryParts.Model; var nav = GalleryParts.Nav;
+                Func<string, Label> lab = t => win.Body.Query<Label>().ToList().Find(l => l.text == t);
+                Func<string, Button> tab = t => GalleryParts.TabsRow?.Element.Query<Button>().ToList().Find(b => b.text == t);
+                Func<string> builds = () => string.Join(",", m.TabBuilds);
+                nav.Go(GalleryParts.TabsItem); yield return null; yield return null;
+                for (int i = 0; i < 5; i++) yield return null;
+                var rowT = GalleryParts.TabsRow;
+                Check(builds() == "1,0,0" && rowT.SelectedName == "General", "after construction the tab builds are (1, 0, 0)", builds());
+                Check(m.TabShows == 1 && m.TabTicks > 0, "General's preview shows and ticks", m.TabShows + " shows, " + m.TabTicks + " ticks");
+                Check(tab("Combo")?.tooltip == "Combo settings", "a tab carries its NavItem's tooltip", tab("Combo")?.tooltip);
+
+                Submit(tab("Combo"));
+                var content = rowT.Content;
+                Check(content.style.opacity.value == 1f && content.style.display == DisplayStyle.Flex, "at speed 0, the content's opacity is 1 right after the select", content.style.opacity.value.ToString());
+                Check(builds() == "1,1,0", "select Combo: (1, 1, 0)", builds());
+                yield return null;
+                Check(m.TabHides == 1, "General's preview runs Hide when Combo is selected", m.TabHides.ToString());
+                int t0 = m.TabTicks;
+                for (int i = 0; i < 10; i++) yield return null;
+                Check(m.TabTicks == t0, "...and ticks no more", (m.TabTicks - t0).ToString());
+                Submit(tab("General"));
+                Check(builds() == "2,1,0", "select General: (2, 1, 0)", builds());
+                yield return null;
+                Check(m.TabShows == 2, "...and its preview shows again", m.TabShows.ToString());
+
+                Submit(tab("Combo")); yield return null;
+                string kept; Gallery.Store.TryGetValue("tab.Tabs", out kept);
+                nav.Rebuild(); yield return null;
+                Check(GalleryParts.TabsRow != rowT && GalleryParts.TabsRow.SelectedName == "Combo" && builds() == "2,3,0" && kept == "Combo",
+                    "rebuilding the page with selected = -1 reopens Combo (the host holds tab.Tabs = Combo)", builds() + " " + kept);
+
+                // Two flips with a reselect between them are one undo step only if the key stayed the same.
+                History.Clock = () => 1000.0; History.Clear();
+                ClickEl(GalleryParts.ComboToggle.Input); yield return null;
+                Submit(tab("General")); Submit(tab("Combo")); yield return null;
+                ClickEl(GalleryParts.ComboToggle.Input); yield return null;
+                bool one = History.Undo() && !History.CanUndo;
+                Check(one && !m.ComboFlag, "an unnamed Toggle in Combo keeps the same undo key after a reselect", History.CanUndo + " " + m.ComboFlag);
+                History.Clock = clock; History.Clear();
+
+                m.BreakGeneral = true;
+                Submit(tab("General")); yield return null;
+                var failed = GalleryParts.TabsRow.Content.Query<Label>().ToList().Find(l => l.text.Contains("failed to build"));
+                Check(failed != null && GalleryParts.TabsRow.SelectedName == "General", "a tab whose Build throws shows the failed card", failed?.text);
+                Submit(tab("Combo")); yield return null;
+                Check(GalleryParts.TabsRow.SelectedName == "Combo" && lab("Combo flag") != null && (failed == null || failed.panel == null), "...and the other tabs still work");
+                m.BreakGeneral = false;
+
+                var sub = win.Body.Q("combo-sub");
+                if (sub != null) ClickEl(sub);
+                yield return null;
+                Check(lab("Inside combo") != null && GalleryParts.TabsRow.Element.panel == null, "a SubPage row in a tab pushes its page");
+                nav.Pop(); yield return null;
+                Check(GalleryParts.TabsRow.SelectedName == "Combo" && lab("Combo flag") != null, "...and back returns to the Combo tab");
+
+                Check(m.TabBuilds[2] == 0, "Judgement has never been built");
+                nav.Filter("judgement size"); yield return null; yield return null;
+                var hits = nav.Index.Find("judgement size");
+                Check(hits.Count > 0 && hits[0].Tab == "Judgement" && hits[0].Key == "Size" && hits[0].Page == "Tabs",
+                    "Filter(judgement size) finds Size in the never-visited Judgement tab: hit.Tab is Judgement", hits.Count > 0 ? hits[0].Page + "/" + hits[0].Tab + "/" + hits[0].Key : "none");
+                var where = lab("Tabs · Judgement");
+                Check(where != null, "the result says where it lives: Tabs · Judgement");
+                if (where != null) ClickEl(where.parent);
+                var ms = new double[1];
+                Func<bool> revealed = () =>
+                {
+                    var r = win.Body.Q("judge-size"); if (r == null) return false;
+                    var sv = r.GetFirstAncestorOfType<ScrollView>(); if (sv == null) return false;
+                    var vp = sv.contentViewport.worldBound;
+                    return r.worldBound.yMin >= vp.yMin - 1f && r.worldBound.yMax <= vp.yMax + 1f && r.worldBound.height > 0f;
+                };
+                yield return Until(revealed, ms, 2000);
+                Check(ms[0] >= 0 && GalleryParts.TabsRow.SelectedName == "Judgement", "clicking it opens the page, selects Judgement and puts the row inside the viewport",
+                    Ms(ms) + " " + GalleryParts.TabsRow.SelectedName);
+                nav.Filter(""); yield return null;
+            }
+            finally { History.Clock = clock; GalleryParts.Close(); GalleryParts.Model = new PartsModel(); }
+
+            // Ruling Q22: a consumer's own search entries, and a callback when a hit lands on an item.
+            var logs = new List<string>();
+            var qs = new Surface(Host.Create("TabHooks", o => o.Log = l => { logs.Add(l); Main.Log("[tabhooks] " + l); }), "FacetTabHooks", Layer.Window);
+            try
+            {
+                var qw = new Window(qs.Root, "tabhooks", "Hooks", new Rect(60, 60, 600, 400));
+                Func<string, Label> qlab = t => qw.Body.Query<Label>().ToList().Find(l => l.text == t);
+                SearchIndex.Hit pageHit = null, tabHit = null;
+                bool outerRan = false, rowThere = false; string seenTab = null;
+                int runs = 0, throws = 0;
+                Tabs qt = null;
+                var home = new NavItem("Home", p => Controls.Info(p, "Home row", () => "h", o => o.Id = "home-row"));
+                home.OnHit = h => { pageHit = h; rowThere = qw.Body.Q("home-row") != null; };
+                var deep = new NavItem("Deep", p => Controls.Info(p, "Deep row", () => "d")) { OnHit = h => { tabHit = h; seenTab = qt?.SelectedName; } };
+                var tabbed = new NavItem("Tabbed", p => qt = Tabs.Pages(p, new List<NavItem> { new NavItem("Top", q => Controls.Info(q, "Top row", () => "t")), deep }))
+                    { OnHit = h => outerRan = true };
+                var qn = new Nav(qw.Body, new[] { home, tabbed });
+                qn.AddSearchSource(() => { throw new InvalidOperationException("source"); });
+                qn.AddSearchSource(() => new[] {
+                    new SearchIndex.Entry { Label = "Classic profiles", Where = "Classic menu", Open = () => runs++ },
+                    new SearchIndex.Entry { Label = "Classic broken", Where = "Classic menu", Open = () => { throws++; throw new InvalidOperationException("entry"); } },
+                });
+                yield return null; yield return null;
+
+                qn.Filter("classic profiles"); yield return null;
+                var found = qn.Index.Find("classic profiles");
+                Check(found.Count > 0 && found[0].Key == "Classic profiles" && found[0].Page == "Classic menu", "an external entry is in the index with its label and where",
+                    found.Count > 0 ? found[0].Key + " @ " + found[0].Page : "none");
+                Check(logs.Exists(l => l.Contains("source")), "a throwing source is logged and the other source's entries still index", string.Join(" | ", logs));
+                var el = qlab("Classic profiles");
+                Check(el != null && qlab("Classic menu") != null, "it shows among the results with its where text");
+                if (el != null) ClickEl(el.parent);
+                yield return null;
+                Check(runs == 1, "choosing it runs its action once", runs.ToString());
+
+                qn.Filter("classic broken"); yield return null;
+                var bl = qlab("Classic broken");
+                bool escaped = false;
+                try { if (bl != null) { ClickEl(bl.parent); ClickEl(bl.parent); } } catch { escaped = true; }
+                yield return null;
+                Check(!escaped && throws == 2 && logs.FindAll(l => l.Contains("Classic broken")).Count == 1, "an action that throws twice is contained and logged once",
+                    throws + " throws: " + string.Join(" | ", logs));
+
+                qn.Filter("home row"); yield return null;
+                var hl = qlab("Home row");
+                if (hl != null) ClickEl(hl.parent);
+                yield return null;
+                Check(pageHit != null && pageHit.Key == "Home row" && rowThere, "a hit on an item fires its OnHit with the hit, once the page is open", pageHit?.Key + " " + rowThere);
+                qn.Filter("deep row"); yield return null;
+                var dl = qlab("Deep row");
+                if (dl != null) ClickEl(dl.parent);
+                yield return null;
+                Check(tabHit != null && tabHit.Tab == "Deep" && seenTab == "Deep" && !outerRan, "a hit in a tab fires that tab's OnHit with its tab selected, not its page's",
+                    tabHit?.Tab + " " + seenTab + " outer=" + outerRan);
+                // Fix round 1: entry Tip, the hider, the translated where line, section kept, guards.
+                var hid = new NavItem("Hider", p => Controls.Info(p, "Hide me row", () => "x")) { OnHit = h => qs.Visible = false };
+                var cardy = new NavItem("Cardy", p =>
+                {
+                    var c = Controls.Card(p, "Cardy card");
+                    Tabs.Pages(c, new List<NavItem> { new NavItem("T1", q => Controls.Info(q, "In tab row", () => "t")) });
+                    Controls.Info(c, "After tab row", () => "a");
+                });
+                var n2 = new Nav(qw.Body, new[] { hid, cardy });
+                n2.AddSearchSource(() => new[] { new SearchIndex.Entry { Label = "Plain entry", Where = "Elsewhere", Tip = "zebra crossing detail", Open = () => { } } });
+                n2.Filter("zebra crossing"); yield return null;
+                var byTip = n2.Index.Find("zebra crossing");
+                Check(byTip.Count == 1 && byTip[0].Key == "Plain entry", "an entry found only by its Tip", byTip.Count.ToString());
+                n2.Filter("after tab row");
+                var sec = n2.Index.Find("after tab row");
+                var sec2 = n2.Index.Find("in tab row");
+                Check(sec.Count > 0 && sec[0].Section == "Cardy card" && sec[0].Tab == null && sec2.Count > 0 && sec2[0].Tab == "T1" && sec2[0].Section == "Cardy card",
+                    "a row after a tab row in the same Card keeps the card as its section", sec.Count > 0 ? sec[0].Section : "none");
+
+                logs.Clear();
+                n2.Filter("hide me row"); yield return null;
+                var hlab = qlab("Hide me row");
+                if (hlab != null) ClickEl(hlab.parent);
+                yield return new WaitForSeconds(0.8f);
+                bool hidden = !qs.Visible;
+                qs.Visible = true;
+                Check(hidden && !logs.Exists(l => l.Contains("gave up")), "an OnHit that hides the surface ends the reveal without a 'gave up' log", hidden + " " + string.Join(" | ", logs));
+                n2.Filter(""); yield return null;
+            }
+            finally { qs.Dispose(); }
+
+            // The where line translates each part with the host's table, then joins.
+            var tmap = new Dictionary<string, string> { { "Key page", "Seite" }, { "Key tab", "Reiter" }, { "Key section", "Bereich" } };
+            var ts = new Surface(Host.Create("TabWhere", o => { o.Log = l => Main.Log("[tabwhere] " + l); o.Translate = k => tmap.TryGetValue(k, out var v) ? v : k; }), "FacetTabWhere", Layer.Window);
+            try
+            {
+                var tw = new Window(ts.Root, "tabwhere", "Where", new Rect(60, 60, 600, 300));
+                var kp = new NavItem("Key page", p => Tabs.Pages(p, new List<NavItem> { new NavItem("Key tab", q => { Controls.Section(q, "Key section"); Controls.Info(q, "Needle row", () => "n"); }) }));
+                var tn = new Nav(tw.Body, new[] { kp });
+                yield return null; yield return null;
+                tn.Filter("needle row"); yield return null;
+                Check(tw.Body.Query<Label>().ToList().Exists(l => l.text == "Seite · Reiter · Bereich"), "the where line shows the translated page, tab and section",
+                    string.Join(" | ", tw.Body.Query<Label>().ToList().ConvertAll(l => l.text)));
+            }
+            finally { ts.Dispose(); }
+
+            // Pages misuse guards and the session memory of the picked tab.
+            var gs = new Surface(Host.Create("TabGuards"), "FacetTabGuards", Layer.Window);
+            try
+            {
+                var gw = new Window(gs.Root, "tabguards", "Guards", new Rect(60, 60, 400, 200));
+                var list = new List<NavItem> { new NavItem("G1", q => { }), new NavItem("G2", q => { }), new NavItem("G3", q => { }) { VisibleWhen = () => false } };
+                var g = Tabs.Pages(gw.Body, list, 0);
+                list.Clear();
+                g.Rebuild(new[] { "x" });
+                g.Select(2);
+                Check(g.Element.Query<Button>().ToList().Count == 3 && g.Selected == 0, "Rebuild(names) on a Pages row is ignored, and Select ignores a tab VisibleWhen hid, and the list was copied", g.Selected.ToString());
+                g.Select(1);
+                var g2 = Tabs.Pages(gw.Body, new List<NavItem> { new NavItem("G1", q => { }), new NavItem("G2", q => { }) });
+                Check(g2.SelectedName == "G2", "with no host Read/Write a rebuild keeps the tab the user picked", g2.SelectedName);
+            }
+            finally { gs.Dispose(); }
+        }
     }
 }

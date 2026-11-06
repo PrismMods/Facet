@@ -28,6 +28,10 @@ namespace Facet.Mod
         public bool Judge;
         public int Opens;
         public bool HideTiles;
+        /// The Tabs page: builds per tab (General, Combo, Judgement), General's throw switch, Combo's flag, and General's preview.
+        public int[] TabBuilds = new int[3];
+        public bool BreakGeneral, ComboFlag;
+        public int TabShows, TabHides, TabTicks;
     }
 
     // The parts window: one Nav page per part this plan adds, on the Gallery's host.
@@ -42,6 +46,10 @@ namespace Facet.Mod
         public static NavItem FeatureItem { get; private set; }
         public static NavItem CardsItem { get; private set; }
         public static NavItem TilesItem { get; private set; }
+        public static NavItem TabsItem { get; private set; }
+        /// The Tabs page's row and Combo's unnamed toggle, as last built.
+        public static Tabs TabsRow { get; private set; }
+        public static Control<bool> ComboToggle { get; private set; }
 
         public static Window Open()
         {
@@ -49,7 +57,7 @@ namespace Facet.Mod
             Surface = new Surface(Gallery.Host, "FacetGalleryParts", Layer.Window);
             _win = new Window(Surface.Root, "parts", "Facet Parts", new Rect(100, 60, 960, 600));
             _win.CloseRequested += _ => Close();
-            Nav = new Nav(_win.Body, new[] { CardsItem = new NavItem("Cards", Cards), FeatureItem = new NavItem("Feature", Feature), TilesItem = new NavItem("Tiles", Tiles) });
+            Nav = new Nav(_win.Body, new[] { CardsItem = new NavItem("Cards", Cards), FeatureItem = new NavItem("Feature", Feature), TilesItem = new NavItem("Tiles", Tiles), TabsItem = new NavItem("Tabs", TabPages) });
             return _win;
         }
 
@@ -122,6 +130,32 @@ namespace Facet.Mod
             }
             var j = Controls.Tiles(p, o => o.Columns = 4);
             Controls.Tile(j, "Perfect", Bind.To(() => Model.Judge, v => Model.Judge = v), o => { o.Id = "judge"; o.Switch = false; o.Colour = new Color(1f, 0f, 0f); });
+        }
+
+        // Task 12: tab pages. General holds a preview, Combo an unnamed toggle and a subpage, Judgement a row far down.
+        static void TabPages(VisualElement p)
+        {
+            TabsRow = Tabs.Pages(p, new List<NavItem>
+            {
+                new NavItem("General", g =>
+                {
+                    Model.TabBuilds[0]++;
+                    if (Model.BreakGeneral) throw new InvalidOperationException("General is broken");
+                    Controls.Preview(g, "Tab preview", o => { o.Show = _ => Model.TabShows++; o.Tick = _ => Model.TabTicks++; o.Hide = () => Model.TabHides++; });
+                }),
+                new NavItem("Combo", c =>
+                {
+                    Model.TabBuilds[1]++;
+                    ComboToggle = Controls.Toggle(c, "Combo flag", Bind.To(() => Model.ComboFlag, v => Model.ComboFlag = v));
+                    Controls.SubPage(c, "Combo extras", q => Controls.Info(q, "Inside combo", () => "x"), o => o.Id = "combo-sub");
+                }) { Tooltip = "Combo settings" },
+                new NavItem("Judgement", j =>
+                {
+                    Model.TabBuilds[2]++;
+                    Ui.Box(j).style.height = 900f;
+                    Controls.Slider(j, "Size", Bind.To(() => Model.Size, v => Model.Size = v), o => { o.Id = "judge-size"; o.Min = 0.5f; o.Max = 2f; });
+                }),
+            });
         }
 
         public static void Close()
