@@ -65,7 +65,7 @@ namespace Facet
             if (_horizontal != null) return _horizontal;
             _horizontal = Draw((x, y) =>
             {
-                int cx = S / 2, cy = S / 2;
+                int cy = S / 2;
                 if (y == cy && x >= 4 && x <= S - 5) return true;              // shaft
                 int d = Mathf.Abs(y - cy);
                 if (d <= 4 && (x == 4 + d || x == S - 5 - d)) return true;     // heads

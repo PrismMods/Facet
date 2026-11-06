@@ -9,7 +9,7 @@ namespace Facet
 
        An element finds its scheme with For(): the nearest ancestor that was given one (a Surface,
        or a popup card that took its anchor's), else the scheme of the build in progress (Use), else
-       its host's, else Dark.
+       its host's (Host.Fallback's is Dark).
 
        Elements remember the ROLE they draw with (Paint), not the colour, so Recolour re-themes what
        is already on screen: each surface wearing the scheme re-applies on Changed. */

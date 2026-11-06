@@ -44,7 +44,7 @@ namespace Facet
         /// something recording in a loop.
         public const int Limit = 500;
 
-        /// Where a throwing undo or redo is reported; Ui points it at Ui.Log. Core cannot see Ui.
+        /// Where a throwing undo or redo is reported; Host.Fallback points it at its log. Core cannot see Host.
         public static Action<string> Log = _ => { };
 
         private static readonly Stopwatch _clock = Stopwatch.StartNew();

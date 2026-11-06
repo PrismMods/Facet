@@ -7,9 +7,8 @@ namespace Facet
 
        Three mods each grew their own settings search, and each one was a different `Contains` —
        which means the same query finds a setting in one mod and misses it in another. This is the
-       one implementation, and it lives in PrismLib.dll rather than PrismLib.UI because it is pure
-       logic: no Unity, testable offline, and usable by the settings registry and the dashboard as
-       well as by anything that draws.
+       one implementation, and it lives in Core because it is pure logic: no Unity, testable
+       offline, and usable by anything that searches as well as by anything that draws.
 
        Korean initial consonants (ㄴㅌ) match a label's initials form. The matcher is Quartz's (its settings search was the most worked-over of the three):
 
@@ -31,9 +30,8 @@ namespace Facet
         public const int NoMatch = -1;
 
         /* Lower-is-better bands for the per-string API. Real matches sit under RealCeiling and a
-           subsequence at Subsequence or above, so callers that add their own offsets for weaker
-           fields (SearchIndex adds 500 for a group hit and 800 for a page hit) still rank a real
-           hit anywhere above a scattered one. */
+           subsequence at Subsequence or above, so a caller that adds its own offsets for weaker
+           fields still ranks a real hit anywhere above a scattered one. */
         private const int RealCeiling = 500;
         private const int Subsequence = 2000;
 

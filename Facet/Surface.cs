@@ -100,7 +100,7 @@ namespace Facet
         public Surface(Host host, string name, Layer layer, UnityEngine.TextCore.Text.FontAsset font = null)
         {
             Host = host ?? Host.Fallback;
-                        Layer = layer;
+            Layer = layer;
             Name = name;
             L("Surface '" + name + "': creating UI Toolkit panel");
             _settings = ScriptableObject.CreateInstance<PanelSettings>();
@@ -275,7 +275,6 @@ namespace Facet
 
         private static readonly float[] _bandBase = { 29000f, 30000f, 31000f, 31500f, 32000f };
         private static readonly float[] _bandSpan = { 1000f, 1000f, 500f, 500f, 500f };
-        // Shared across loaded Facet versions so their windows stack in one order.
         // Shared across loaded Facet versions so their windows stack in one order.
         private static readonly float[] _bandNext = Input.BandNext;
 

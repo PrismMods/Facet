@@ -629,49 +629,12 @@ namespace Facet
             if (open) foreach (var c in item.Children) AddRailItem(c, depth + 1);
         }
 
-        /// Title Case for headings. Page names come from a mod and arrive in whatever case its
-        /// author used; a rail of mixed cases reads as a bug.
-        private static string Title(string s)
-        {
-            if (string.IsNullOrEmpty(s)) return s;
-            var words = s.Split(' ');
-            for (int i = 0; i < words.Length; i++)
-                if (words[i].Length > 0) words[i] = char.ToUpperInvariant(words[i][0]) + words[i].Substring(1);
-            return string.Join(" ", words);
-        }
-
+        // Titles live in the rail; _crumbs stays for search's results heading (see where it is built).
         private void RebuildCrumbs()
         {
             _crumbs.Clear();
             _crumbs.style.paddingTop = 0f;
             _crumbs.style.paddingBottom = 0f;
-            if (true) return;   // titles live in the rail; see the comment where _crumbs is built
-            var steps = _path.FindAll(x => !x.Group);
-            for (int i = 0; i < steps.Count; i++)
-            {
-                var step = steps[i];
-                bool last = i == steps.Count - 1;
-                if (i > 0)
-                {
-                    var sep = Ui.Muted("›", _crumbs);
-                    sep.style.marginLeft = 4f;
-                    sep.style.marginRight = 4f;
-                }
-                var crumb = Ui.Text(Title(step.Title), _crumbs,
-                                    last ? Tokens.FontSizeTitle : Tokens.FontSizeSmall,
-                                    last ? Role.Text : Role.TextMuted);
-                if (last) crumb.style.unityFontStyleAndWeight = FontStyle.Bold;
-                if (last) continue;
-                // An ancestor crumb expands its branch in the rail; there is no page of its own to
-                // show, which is exactly what a branch means here.
-                crumb.pickingMode = PickingMode.Position;
-                Events.On<ClickEvent>(crumb, _ =>
-                {
-                    _expanded.Add(step.Title);
-                    var leaf = step.IsBranch ? FirstLeaf(step.Children) : step;
-                    if (leaf != null) Go(leaf);
-                });
-            }
         }
 
         private void RebuildContent()

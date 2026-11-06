@@ -7,8 +7,8 @@ namespace Facet
        anything untranslated shows in English.
 
        A string is translated only by the table of whoever wrote it. English keys carry no context,
-       so a lookup in someone else's table finds the same word in another sense: CamDisplay's
-       "Undo" (remove the camera patch) came out as the editor's 실행 취소. So the rules here take
+       so a lookup in someone else's table finds the same word in another sense: one mod's "Undo"
+       (remove its patch) came out as another's 실행 취소 (undo an edit). So the rules here take
        ONE translator at a time, never a list:
        - T(english, translator): the translator of the host whose string it is.
        - Own(english, language): Facet's own table, for Facet's own words, whatever any host maps.
