@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <Version>0.1.0</Version>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <RootNamespace>Facet</RootNamespace>
+    <AssemblyName>Facet.$([System.Version]::Parse($(Version)).ToString(2))</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="UnityEngine.Modules" Version="2022.3.0" IncludeAssets="compile" PrivateAssets="all" />
+  </ItemGroup>
+</Project>
