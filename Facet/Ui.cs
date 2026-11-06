@@ -105,6 +105,18 @@ namespace Facet
         public static Label Muted(string text, VisualElement parent = null, bool own = false)
             => Text(text, parent, Theme.For(parent).Sizes.Small, Role.TextMuted, own);
 
+        /// An upper-case header (a card title, a rail group): translated first, then upper-cased, and
+        /// still upper-case after a relabel. Hangul and Han have no case and pass through unchanged.
+        public static Label Caps(string text, VisualElement parent = null, bool own = false)
+        {
+            var t = Theme.For(parent); var s = t.Sizes;
+            var l = NewLabel(parent, s.Caps);
+            l.style.letterSpacing = s.CapsSpacing;
+            Words.Caps(l, text, own);
+            Paint.Look(l, t.Looks.Caps);
+            return l;
+        }
+
         /// The theme's Looks.Button: hover, pressed and selected (Paint.Select) are Paint's, not the caller's.
         public static Button Btn(string text, Action onClick, VisualElement parent = null, bool own = false)
         {

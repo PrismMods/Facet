@@ -26,7 +26,7 @@ namespace Facet
             _onSelect = onSelect;
             _bar = Ui.Row(parent);
             _bar.style.flexWrap = Wrap.Wrap;
-            _bar.style.marginBottom = Tokens.Gap;
+            _bar.style.marginBottom = Theme.For(_bar).Sizes.Gap;
         }
 
         public VisualElement Element => _bar;
@@ -43,10 +43,12 @@ namespace Facet
             int keep = wasSelected != null ? _names.IndexOf(wasSelected) : -1;
             Selected = keep >= 0 ? keep : (_names.Count > 0 ? 0 : -1);
 
+            var tab = Theme.For(_bar).Looks.Tab;
             for (int i = 0; i < _names.Count; i++)
             {
                 int idx = i;
                 var b = Ui.Btn(_names[i], () => Select(idx), _bar);
+                Facet.Paint.Look(b, tab);
                 _buttons.Add(b);
             }
             Paint();
@@ -57,7 +59,6 @@ namespace Facet
             if (index < 0 || index >= _names.Count || index == Selected) return;
             Selected = index;
             Paint();
-            Anim.Pop(_buttons[index]);
             if (_onSelect != null) Safe.Run(Host.For(_bar), "Tabs.onSelect", () => _onSelect(index));
         }
 

@@ -18,7 +18,8 @@ namespace Facet
     {
         public const float MinWidth = 320f, MinHeight = 200f;
         private const float GripSize = 16f;
-        private const float TitleHeight = 40f;
+        // The theme's TitleBarHeight, kept at build: Clamp runs on every drag and resize move.
+        private readonly float _titleBar;
 
         /// The outer element. Style it as little as possible from outside; use Body.
         public VisualElement Root { get; private set; }
@@ -29,6 +30,9 @@ namespace Facet
 
         /// Right-hand side of the title bar. Put toolbar buttons here.
         public VisualElement TitleBarRight { get; private set; }
+
+        /// The title block on the left of the title bar, holding the title. A logo goes in at index 0.
+        public VisualElement TitleBarLeft => _headerGap;
 
         /// Search box in the header. Hidden until a panel calls ShowSearch.
         public TextField Search { get; private set; }
@@ -141,6 +145,8 @@ namespace Facet
             else _rect = initial;
 
             Root = Ui.Card(parent);
+            var t = Theme.For(Root); var sz = t.Sizes; var looks = t.Looks;
+            _titleBar = sz.TitleBarHeight;
             Root.pickingMode = PickingMode.Position;
             Root.style.position = Position.Absolute;
             Root.style.overflow = Overflow.Hidden;      // chrome is never painted over
@@ -149,10 +155,10 @@ namespace Facet
             Root.style.transformOrigin = new TransformOrigin(0f, 0f, 0f);
 
             var bar = Ui.Row(Root);
-            bar.style.height = TitleHeight;
-            Paint.Look(bar, Look.Chrome);
-            bar.style.paddingLeft = Tokens.Pad;
-            bar.style.paddingRight = Tokens.Gap;
+            bar.style.height = _titleBar;
+            Paint.Look(bar, looks.Chrome);
+            bar.style.paddingLeft = sz.Pad;
+            bar.style.paddingRight = sz.Gap;
             // No rail toggle: the rail has a drag handle of its own, which resizes as well as
             // collapses. The title takes the space that button used to.
             /* The title sits in a block as wide as the rail, so the search box that follows starts
@@ -163,11 +169,11 @@ namespace Facet
             _headerGap.style.width = RailAlign;
             _headerGap.style.flexShrink = 0f;
 
-            var label = Ui.Text(title, _headerGap, Tokens.FontSize);
+            var label = Ui.Text(title, _headerGap, sz.Body);
             label.style.unityFontStyleAndWeight = FontStyle.Bold;
             label.style.marginLeft = 2f;
             // Keeps the name off the search box when the rail is collapsed and the block is narrow.
-            label.style.marginRight = Tokens.Pad;
+            label.style.marginRight = sz.Pad;
             label.style.flexShrink = 0f;
             label.pickingMode = PickingMode.Ignore;     // clicks on the text still drag the bar
             /* A search box in the header, where the mods already put theirs. Empty and hidden
@@ -178,7 +184,7 @@ namespace Facet
             var searchBox = Ui.Row(bar);
             searchBox.style.flexGrow = 1f;
             searchBox.style.maxWidth = 420f;
-            searchBox.style.marginRight = Tokens.Gap;
+            searchBox.style.marginRight = sz.Gap;
             searchBox.style.display = DisplayStyle.None;
             _searchBox = searchBox;
 
@@ -194,7 +200,7 @@ namespace Facet
             _searchClear.style.marginRight = 4f;
             Ui.SetPadding(_searchClear, 0f);
             _searchClear.style.unityTextAlign = TextAnchor.MiddleCenter;
-            Paint.Look(_searchClear, Look.FlatButton);
+            Paint.Look(_searchClear, looks.FlatButton);
             _searchClear.style.display = DisplayStyle.None;
 
             var spacer = Ui.Box(bar);
@@ -205,8 +211,8 @@ namespace Facet
             /* Undo and redo in the header, where they apply to whatever the window is showing.
                Text rather than ↶ ↷: the panel draws in an OS font chosen at runtime and there is
                no guarantee it carries those glyphs, whereas a missing glyph is a blank button. */
-            var undo = Glyph(TitleBarRight, "\u21B6", () => History.Undo());
-            var redo = Glyph(TitleBarRight, "\u21B7", () => History.Redo());
+            var undo = Glyph(TitleBarRight, "\u21B6", () => History.Undo(), sz.Body + 2f);
+            var redo = Glyph(TitleBarRight, "\u21B7", () => History.Redo(), sz.Body + 2f);
             Action refreshHistory = () =>
             {
                 string lang = _host.Language;
@@ -233,7 +239,7 @@ namespace Facet
                look off-centre. */
             Ui.SetPadding(close, 0f);
             close.style.unityTextAlign = TextAnchor.MiddleCenter;
-            close.style.fontSize = Tokens.FontSize;
+            close.style.fontSize = sz.Body;
 
             Body = Ui.Box(Root);
             Body.style.flexGrow = 1f;
@@ -245,14 +251,14 @@ namespace Facet
             Body.style.flexShrink = 1f;
             Body.style.minHeight = 0f;
             Body.style.overflow = Overflow.Hidden;
-            Ui.SetPadding(Body, Tokens.Pad);
+            Ui.SetPadding(Body, sz.Pad);
 
             Footer = Ui.Row(Root);
-            Paint.Look(Footer, Look.Chrome);
+            Paint.Look(Footer, looks.Chrome);
             // No scale buttons on the chrome: panel size is a setting, and a control that lives on
             // every window competes with the content for a job done once.
-            Footer.style.paddingLeft = Tokens.Pad;
-            Footer.style.paddingRight = Tokens.Pad;
+            Footer.style.paddingLeft = sz.Pad;
+            Footer.style.paddingRight = sz.Pad;
             Footer.style.paddingTop = 4f;
             Footer.style.paddingBottom = 4f;
             /* Version on the left, hint on the right beside the grip — the grip is a corner
@@ -272,12 +278,12 @@ namespace Facet
 
         /* ↶ and ↷. These live in Arrows, which every OS UI font carries — unlike the pictographic
            blocks, where a miss is a blank button rather than a wrong-looking one. */
-        private static Button Glyph(VisualElement parent, string glyph, Action onClick)
+        private static Button Glyph(VisualElement parent, string glyph, Action onClick, float size)
         {
             var b = Ui.Btn(glyph, onClick, parent);
             b.style.width = 30f;
             b.style.height = 26f;
-            b.style.fontSize = Tokens.FontSize + 2f;
+            b.style.fontSize = size;
             Ui.SetPadding(b, 0f);
             b.style.unityTextAlign = TextAnchor.MiddleCenter;
             return b;
@@ -359,7 +365,7 @@ namespace Facet
             _rect.height = Mathf.Clamp(_rect.height, MinHeight, Mathf.Max(MinHeight, size.y));
             // At least the title bar stays on screen, horizontally by a good grab's worth.
             float maxX = size.x - 80f;
-            float maxY = size.y - TitleHeight * _scale;
+            float maxY = size.y - _titleBar * _scale;
             _rect.x = Mathf.Clamp(_rect.x, -_rect.width + 80f, Mathf.Max(0f, maxX));
             _rect.y = Mathf.Clamp(_rect.y, 0f, Mathf.Max(0f, maxY));
         }

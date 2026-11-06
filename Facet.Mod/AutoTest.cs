@@ -107,6 +107,7 @@ namespace Facet.Mod
             yield return Run("SectionSpeed", SectionSpeed());
             yield return Run("SectionWheel", SectionWheel());
             yield return Run("SectionThemeShape", SectionThemeShape());
+            yield return Run("SectionSkin", SectionSkin());
             yield return Run("SectionClose", SectionClose());
             // Later tasks: yield return Run("Section...", Section...());
 

@@ -18,35 +18,38 @@ namespace Facet
        assumed. */
     public static class Skin
     {
+        /// The track (Looks.Track, Sizes.Track thick) and the thumb (Looks.Thumb, ThumbWidth x ThumbHeight).
         public static void Slider(VisualElement slider)
         {
             if (slider == null) return;
+            var t = Theme.For(slider); var sz = t.Sizes; var k = t.Looks;
             var tracker = slider.Q(className: "unity-base-slider__tracker");
             if (tracker != null)
             {
-                Paint.Bg(tracker, Role.RowAlt);
+                Paint.Look(tracker, k.Track);
                 tracker.style.position = Position.Absolute;
                 tracker.style.left = 0f; tracker.style.right = 0f;
                 tracker.style.top = Length.Percent(50f);
-                tracker.style.height = 4f;
-                tracker.style.marginTop = -2f;
-                Ui.SetRadius(tracker, 2f);
+                tracker.style.height = sz.Track;
+                tracker.style.marginTop = -sz.Track / 2f;
+                Ui.SetRadius(tracker, sz.Track / 2f);
                 Ui.SetBorderWidth(tracker, 0f);
             }
             var dragger = slider.Q(className: "unity-base-slider__dragger");
             if (dragger != null)
             {
-                Paint.Bg(dragger, Role.Accent);
-                dragger.style.width = 12f;
-                dragger.style.height = 12f;
-                Ui.SetRadius(dragger, 6f);
+                Paint.Look(dragger, k.Thumb);
+                dragger.style.width = sz.ThumbWidth;
+                dragger.style.height = sz.ThumbHeight;
+                // KnobRadius, at most a round end (ruling Q3's ThumbHeight/2): Dark gives 0.1's 6.
+                Ui.SetRadius(dragger, Mathf.Min(sz.KnobRadius, sz.ThumbHeight / 2f));
                 Ui.SetBorderWidth(dragger, 0f);
                 /* Centre it on the track. Both the tracker and the dragger are laid out by the
                    theme — which a runtime mod does not get — so each is placed here against the
                    drag container's midline. Positioning only the dragger just moved the mismatch:
                    the track was not centred either. */
                 dragger.style.top = Length.Percent(50f);
-                dragger.style.marginTop = -6f;
+                dragger.style.marginTop = -sz.ThumbHeight / 2f;
             }
             // The drag container is what gives the row its height; the default theme sizes it.
             var drag = slider.Q(className: "unity-base-slider__drag-container");
@@ -62,10 +65,11 @@ namespace Facet
             if (input == null) input = field.Q("unity-text-input");
             if (input != null)
             {
-                Paint.Look(input, Look.Field);
-                Ui.SetBorderWidth(input, 1f);
-                Ui.SetRadius(input, 4f);
-                Ui.SetPadding(input, 4f);
+                var t = Theme.For(input); var sz = t.Sizes;
+                Paint.Look(input, t.Looks.Field);
+                Ui.SetBorderWidth(input, sz.Line);
+                Ui.SetRadius(input, sz.Radius);
+                Ui.SetPadding(input, sz.FieldPad);
                 input.style.unityTextAlign = TextAnchor.MiddleLeft;
                 // Without this the caret is drawn in the theme's colour, which is nothing.
                 Paint.Tint(input, Role.Text);
@@ -79,8 +83,11 @@ namespace Facet
         public static void Scroll(ScrollView view)
         {
             if (view == null) return;
-            Scroller(view.verticalScroller);
-            Scroller(view.horizontalScroller);
+            // The thumb's radius is the view's theme's: one not yet in a panel is skinned when it joins one.
+            if (view.panel == null) { When<ScrollView>(view, Scroll); return; }
+            float radius = Theme.For(view).Sizes.Radius;
+            Scroller(view.verticalScroller, radius);
+            Scroller(view.horizontalScroller, radius);
             /* The editor theme's stylesheet clips the viewport; a runtime panel has no theme, so
                without this, scrolled rows draw over whatever sits above the view (a window's title
                bar, its search box). */
@@ -88,7 +95,7 @@ namespace Facet
             if (view.contentViewport != null) view.contentViewport.style.overflow = Overflow.Hidden;
         }
 
-        private static void Scroller(Scroller s)
+        private static void Scroller(Scroller s, float radius)
         {
             if (s == null) return;
             s.style.width = 10f;
@@ -105,7 +112,7 @@ namespace Facet
                 {
                     Paint.Bg(dragger, Role.RowHover);
                     dragger.style.width = 6f;
-                    Ui.SetRadius(dragger, 3f);
+                    Ui.SetRadius(dragger, radius);
                     Ui.SetBorderWidth(dragger, 0f);
                 }
             }

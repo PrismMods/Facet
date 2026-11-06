@@ -90,10 +90,12 @@ namespace Facet
 
         private void ShowResults()
         {
+            // Once per query, above the rows: Dark's Sizes and Looks are fresh copies on every read.
+            var t = Theme.For(_content); var sz = t.Sizes; var rowLook = t.Looks.Row;
             _crumbs.Clear();
-            _crumbs.style.paddingTop = Tokens.Gap;
-            _crumbs.style.paddingBottom = Tokens.Gap;
-            var title = Ui.Text("Results for \u201c" + _filter + "\u201d", _crumbs, Tokens.FontSizeTitle);
+            _crumbs.style.paddingTop = sz.Gap;
+            _crumbs.style.paddingBottom = sz.Gap;
+            var title = Ui.Text("Results for \u201c" + _filter + "\u201d", _crumbs, sz.Title);
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
 
             _content.Clear();
@@ -104,20 +106,20 @@ namespace Facet
             {
                 var h = hit;
                 var row = Ui.Row(_content);
-                row.style.minHeight = 34f;
+                row.style.minHeight = sz.RowHeight + 2f;
                 row.style.paddingLeft = 8f;
                 row.pickingMode = PickingMode.Position;
-                Ui.SetRadius(row, Tokens.Radius);
+                Ui.SetRadius(row, sz.Radius);
 
-                var label = Ui.Text(h.Label, row, Tokens.FontSize);
+                var label = Ui.Text(h.Label, row, sz.Body);
                 label.style.flexGrow = 1f;
                 label.pickingMode = PickingMode.Ignore;
 
                 // Where it lives, so the result teaches the menu rather than bypassing it.
-                var where = Ui.Muted(string.IsNullOrEmpty(h.Section) ? h.Page : h.Page + " · " + h.Section, row);
+                var where = Ui.Text(string.IsNullOrEmpty(h.Section) ? h.Page : h.Page + " · " + h.Section, row, sz.Small, Role.TextMuted);
                 where.pickingMode = PickingMode.Ignore;
 
-                Paint.Look(row, Look.Row);
+                Paint.Look(row, rowLook);
                 Events.On<ClickEvent>(row, _ => GoTo(h));
             }
         }
@@ -328,10 +330,11 @@ namespace Facet
             Events.On<MouseLeaveEvent>(handle, _ => Cursors.Apply(Cursors.Kind.Default));
             Events.On<DetachFromPanelEvent>(handle, _ => Cursors.Apply(Cursors.Kind.Default));
 
+            var sz = Theme.For(handle).Sizes;
             var line = Ui.Box(handle);
             line.style.position = Position.Absolute;
             line.style.top = 0f; line.style.bottom = 0f;
-            line.style.width = 1f;
+            line.style.width = sz.Line;
             Paint.Look(line, HandleLine);
             line.pickingMode = PickingMode.Ignore;
 
@@ -341,11 +344,10 @@ namespace Facet
             knob.style.alignItems = Align.Center;
             knob.style.justifyContent = Justify.Center;
             Paint.Look(knob, HandleKnob);
-            Ui.SetRadius(knob, Tokens.Radius);
+            Ui.SetRadius(knob, sz.Radius);
             knob.style.display = DisplayStyle.None;
             knob.pickingMode = PickingMode.Ignore;
-            var knobArrow = Ui.Muted("\u203A", knob);
-            knobArrow.style.fontSize = Tokens.FontSize;
+            var knobArrow = Ui.Text("\u203A", knob, sz.Body, Role.TextMuted);
             knobArrow.pickingMode = PickingMode.Ignore;
 
             _railLine = line;
@@ -359,7 +361,7 @@ namespace Facet
             right.style.flexGrow = 1f;
             right.style.flexShrink = 1f;
             right.style.minHeight = 0f;
-            right.style.paddingLeft = Tokens.Pad;
+            right.style.paddingLeft = sz.Pad;
 
             /* No page title. The rail already shows which page is open, and repeating it cost a
                line of height at the top of every page to say something the eye had just read.
@@ -549,10 +551,11 @@ namespace Facet
         private void RebuildRail()
         {
             _rail.Clear();
-            foreach (var i in _roots) AddRailItem(i, 0);
+            var t = Theme.For(_rail);   // once per rebuild, not per entry
+            foreach (var i in _roots) AddRailItem(i, 0, t.Sizes, t.Looks);
         }
 
-        private void AddRailItem(NavItem item, int depth)
+        private void AddRailItem(NavItem item, int depth, Sizes sz, Looks k)
         {
             if (!Visible(item)) return;
             if (item.Group)
@@ -560,15 +563,13 @@ namespace Facet
                 /* A heading has to be obviously NOT clickable, or it reads as a page that does
                    nothing. Upper case, smaller than the items under it, and muted — the opposite
                    of the treatment a selected item gets. */
-                var heading = Ui.Text(item.Title.ToUpperInvariant(), _rail,
-                                      Tokens.FontSizeSmall - 2f, Role.TextMuted);
+                var heading = Ui.Caps(item.Title, _rail);   // translated, then upper-cased
                 heading.style.unityFontStyleAndWeight = FontStyle.Bold;
-                heading.style.letterSpacing = 1.5f;
-                heading.style.marginTop = depth == 0 ? Tokens.Pad + 4f : Tokens.Gap;
+                heading.style.marginTop = depth == 0 ? sz.Pad + 4f : sz.Gap;
                 heading.style.marginBottom = 4f;
                 heading.style.paddingLeft = 8f + depth * 12f;
                 heading.pickingMode = PickingMode.Ignore;   // a heading is not a destination
-                foreach (var c in item.Children) AddRailItem(c, depth);
+                foreach (var c in item.Children) AddRailItem(c, depth, sz, k);
                 return;
             }
 
@@ -576,20 +577,20 @@ namespace Facet
             bool open = item.IsBranch && _expanded.Contains(item.Title);
 
             var row = Ui.Row(_rail);
-            row.style.minHeight = 30f;
+            row.style.minHeight = sz.NavRowHeight;
             row.style.paddingLeft = 10f + depth * 12f;
             row.pickingMode = PickingMode.Position;
             // The selected LEAF is the highlighted one. A branch on the path is merely open, and
             // colouring it as selected too makes it unclear which page is actually showing.
             bool selected = onPath && !item.IsBranch;
-            Paint.Look(row, Look.RailItem);
+            Paint.Look(row, k.RailItem);
             Paint.Select(row, selected);
-            Ui.SetRadius(row, 4f);
+            Ui.SetRadius(row, sz.Radius);
             if (!string.IsNullOrEmpty(item.Tooltip)) row.tooltip = item.Tooltip;
 
             if (item.IsBranch)
             {
-                var chev = Ui.Muted(open ? "▾" : "▸", row);
+                var chev = Ui.Text(open ? "▾" : "▸", row, sz.Small, Role.TextMuted);
                 chev.style.width = 14f;
                 chev.pickingMode = PickingMode.Ignore;
             }
@@ -601,7 +602,7 @@ namespace Facet
 
             // The row's look drives the text (muted, full on hover or selected); without hover
             // feedback nothing in the rail looks clickable until you click it.
-            var label = Ui.Text(item.Title, row, Tokens.FontSize);
+            var label = Ui.Text(item.Title, row, sz.Body);
             Paint.Inherit(label);
             label.style.flexGrow = 1f;
             label.pickingMode = PickingMode.Ignore;
@@ -626,7 +627,7 @@ namespace Facet
                 else Go(item);
             });
 
-            if (open) foreach (var c in item.Children) AddRailItem(c, depth + 1);
+            if (open) foreach (var c in item.Children) AddRailItem(c, depth + 1, sz, k);
         }
 
         // Titles live in the rail; _crumbs stays for search's results heading (see where it is built).
@@ -659,16 +660,17 @@ namespace Facet
                 // Back row, naming where it goes: "Back" alone leaves you guessing after two pushes.
                 string home = _stack.Count > 1 ? _stack[_stack.Count - 2].Key
                             : _path.Count > 0 ? _path[_path.Count - 1].Title : "back";
+                var sz = Theme.For(_content).Sizes;
                 var back = Ui.Row(_content);
-                back.style.minHeight = 30f;
+                back.style.minHeight = sz.NavRowHeight;
                 back.pickingMode = PickingMode.Position;
-                var arrow = Ui.Text("\u2039  " + home, back, Tokens.FontSize, Role.Accent);
+                var arrow = Ui.Text("\u2039  " + home, back, sz.Body, Role.Accent);
                 arrow.pickingMode = PickingMode.Ignore;
                 Events.On<ClickEvent>(back, _ => Pop());
 
-                var heading = Ui.Text(what, _content, Tokens.FontSizeTitle);
+                var heading = Ui.Text(what, _content, sz.Title);
                 heading.style.unityFontStyleAndWeight = FontStyle.Bold;
-                heading.style.marginBottom = Tokens.Gap;
+                heading.style.marginBottom = sz.Gap;
             }
             else
             {

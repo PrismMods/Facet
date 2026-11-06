@@ -88,7 +88,7 @@ namespace Facet
                 _dot.style.height = 6f;
                 _dot.style.marginRight = 4f;
                 _dot.style.flexShrink = 0f;
-                Ui.SetRadius(_dot, 3f);
+                Ui.SetRadius(_dot, Theme.For(Root).Sizes.Radius);
                 Paint.Bg(_dot, Role.Accent);
                 Root.Insert(0, _dot);
             }

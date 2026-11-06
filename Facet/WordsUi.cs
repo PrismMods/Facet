@@ -12,6 +12,7 @@ namespace Facet {
             public Host Labelled;
             public bool Watching;
             public bool OwnText, OwnTip;
+            public bool Upper;   // Ui.Caps: upper-cased after translating, at every relabel
             public Action Hook;
         }
 
@@ -41,8 +42,20 @@ namespace Facet {
         public static void Label(TextElement e, string english, bool own = false) {
             var k = Data.Get<Key>(e);
             k.Text = english ?? ""; k.OwnText = own || _ownScope > 0;
-            e.text = k.Shown = Show(k.Text, k.Labelled = Host.For(e), k.OwnText);
+            e.text = k.Shown = Shown(k, k.Labelled = Host.For(e));
             Watch(e, k);
+        }
+
+        /// Label, upper-cased after it is translated (Ui.Caps). Upper-casing the key first would miss
+        /// the host's table: "TINT" is not "Tint".
+        internal static void Caps(TextElement e, string english, bool own) {
+            Data.Get<Key>(e).Upper = true;
+            Label(e, english, own);
+        }
+
+        static string Shown(Key k, Host h) {
+            var s = Show(k.Text, h, k.OwnText);
+            return k.Upper ? s.ToUpperInvariant() : s;
         }
 
         /// The element's tooltip from its English key, kept up with the language like Label.
@@ -73,7 +86,7 @@ namespace Facet {
             var h = k.Labelled = Host.For(e);
             var t = e as TextElement;
             // Text someone set by hand since (a readout, a key's name) is no longer ours to translate.
-            if (t != null && k.Text != null && t.text == k.Shown) t.text = k.Shown = Show(k.Text, h, k.OwnText);
+            if (t != null && k.Text != null && t.text == k.Shown) t.text = k.Shown = Shown(k, h);
             if (k.Tip != null) e.tooltip = Show(k.Tip, h, k.OwnTip);
             if (k.Hook != null) Safe.Run(h, "Words.Relabel", k.Hook);
         }

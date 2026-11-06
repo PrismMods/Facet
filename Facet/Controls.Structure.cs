@@ -8,6 +8,7 @@ namespace Facet
        follows a switch, and rows with a page behind them. */
     public static partial class Controls
     {
+        /// Facet's default setting-row height; a part reads its theme's Sizes.RowHeight.
         public const float RowHeight = 32f;
         private const float ArrowSlot = 22f;
         private const float ArrowSize = 20f;   // the chevron was a speck at body size
@@ -40,14 +41,15 @@ namespace Facet
         {
             var row = Ui.Row(parent);
             Noted(row, label, tooltip);
-            row.style.minHeight = RowHeight;
+            var t = Theme.For(row); var sz = t.Sizes;
+            row.style.minHeight = sz.RowHeight;
             row.style.marginBottom = 2f;
             row.style.justifyContent = Justify.SpaceBetween;
             row.style.paddingLeft = 4f;
             row.style.paddingRight = 4f;
             Words.Tip(row, tooltip);
 
-            var l = Ui.Text(label, row);
+            var l = Ui.Text(label, row, sz.Body);
             l.style.flexGrow = 1f;
             l.style.flexShrink = 1f;
             // A long label gives way (ellipsis, one line) before the control does: without minWidth 0
@@ -55,7 +57,7 @@ namespace Facet
             l.style.minWidth = 0f;
             l.pickingMode = PickingMode.Ignore;
 
-            Paint.Look(row, Look.Row);
+            Paint.Look(row, t.Looks.Row);
 
             var right = Ui.Row(row);
             right.style.flexShrink = 0f;
@@ -80,7 +82,7 @@ namespace Facet
         {
             var c = Toggle(parent, label, bind, configure);
             var body = Ui.Box(parent);
-            body.style.paddingLeft = Tokens.Pad;
+            body.style.paddingLeft = Theme.For(body).Sizes.Pad;
             Action<bool> follow = v => body.style.display = v ? DisplayStyle.Flex : DisplayStyle.None;
             c.OnShown = follow;
             follow(c.Value);
@@ -106,19 +108,19 @@ namespace Facet
             bool open = saved == "1" ? true : saved == "0" ? false : _folds.TryGetValue(mem, out var m) ? m : defaultOpen;
 
             var head = Ui.Row(parent);
-            head.style.marginTop = Tokens.Pad;
+            var sz = Theme.For(head).Sizes;
+            head.style.marginTop = sz.Pad;
             head.pickingMode = PickingMode.Position;
-            var arrow = Ui.Muted(open ? "▾" : "▸", head);
+            var arrow = Ui.Text(open ? "▾" : "▸", head, sz.Body + 3f, Role.TextMuted);   // it was a speck at body size
             arrow.style.width = 18f;
-            arrow.style.fontSize = Tokens.FontSize + 3f;   // it was a speck at body size
-            var l = Ui.Text(title, head, Tokens.FontSize);
+            var l = Ui.Text(title, head, sz.Body);
             l.style.unityFontStyleAndWeight = FontStyle.Bold;
             Paint.Fg(l, Role.TextMuted);
             l.pickingMode = PickingMode.Ignore;
 
             var body = Ui.Box(parent);
             body.style.display = open ? DisplayStyle.Flex : DisplayStyle.None;
-            body.style.marginBottom = Tokens.Gap;
+            body.style.marginBottom = sz.Gap;
 
             // One path for a click and for a search hit revealing the row: state, host and look stay in step.
             Action<bool, bool> fold = (to, animate) =>
@@ -146,11 +148,12 @@ namespace Facet
         public static VisualElement Item(VisualElement parent, string title, string note = null)
         {
             var row = Ui.Row(parent);
-            row.style.minHeight = 38f;
+            var sz = Theme.For(row).Sizes;
+            row.style.minHeight = sz.ItemHeight;
             row.style.paddingLeft = 8f;
             row.style.paddingRight = 4f;
             row.style.marginBottom = 2f;
-            Ui.SetRadius(row, Tokens.Radius);
+            Ui.SetRadius(row, sz.Radius);
             Paint.Bg(row, Role.Row);
 
             var text = Ui.Box(row);
@@ -172,8 +175,9 @@ namespace Facet
         /// Marks a list entry as the active one, the way a profile list shows which is loaded.
         public static void MarkActive(VisualElement actions, string label = null)
         {
-            var tag = Ui.Text(label ?? "Active", actions, Tokens.FontSizeSmall, Role.Accent, label == null);
-            tag.style.marginRight = Tokens.Gap;
+            var sz = Theme.For(actions).Sizes;
+            var tag = Ui.Text(label ?? "Active", actions, sz.Small, Role.Accent, label == null);
+            tag.style.marginRight = sz.Gap;
             tag.SendToBack();
         }
 
@@ -230,11 +234,12 @@ namespace Facet
 
         public static Label Header(VisualElement parent, string text)
         {
-            var l = Ui.Text(text, parent, Tokens.FontSize);
+            var sz = Theme.For(parent).Sizes;
+            var l = Ui.Text(text, parent, sz.Body);
             l.style.unityFontStyleAndWeight = FontStyle.Bold;
             Paint.Fg(l, Role.TextMuted);
-            l.style.marginTop = Tokens.Pad;
-            l.style.marginBottom = Tokens.Gap;
+            l.style.marginTop = sz.Pad;
+            l.style.marginBottom = sz.Gap;
             l.style.flexShrink = 0f;
             return l;
         }

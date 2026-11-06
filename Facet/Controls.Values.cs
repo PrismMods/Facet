@@ -66,9 +66,10 @@ namespace Facet
         /// Reachable by Tab / NavigationMove, and draws Role.Focus around itself while focused.
         internal static void Ring(VisualElement e)
         {
+            var t = Theme.For(e);
             e.focusable = true;
-            Ui.SetBorderWidth(e, 1f);
-            Paint.Look(e, Look.Ring);
+            Ui.SetBorderWidth(e, t.Sizes.Line);
+            Paint.Look(e, t.Looks.Ring);
         }
 
         public static Control<bool> Toggle(VisualElement parent, string label, Bind<bool> bind, Action<Options<bool>> configure = null)
@@ -77,7 +78,6 @@ namespace Facet
             var right = Controls.Row(parent, label);
             Action<bool> show;
             var track = Switch(right, out show);
-            Ring(track);
             var c = new Control<bool>(right.parent, track, label, Tracked(parent, label, o, bind), show, o);
             Events.On<ClickEvent>(track, e => { c.Set(!c.Value); e.StopPropagation(); });
             return c;
@@ -104,11 +104,11 @@ namespace Facet
             var o = ControlOptions.Make(parent, label, configure);
             var right = Controls.Row(parent, label);
             var s = new SliderInt(o.Min, o.Max);
-            s.style.width = 180f;
+            s.style.width = Theme.For(right).Sizes.SliderWidth;
             Skin.When<SliderInt>(s, Skin.Slider);
-            Ring(s);
             var field = NumberField(right, o.Id);
             right.Insert(0, s);
+            Ring(s);   // once in the row, so it finds the row's theme
 
             Control<int> c = null;
             Action<int> show = v =>
@@ -148,7 +148,7 @@ namespace Facet
             for (int i = 0; i < (items != null ? items.Count : 0); i++)
             {
                 int idx = i;
-                buttons.Add(Ui.Btn(items[i], () => { if (idx != c.Value) { c.Set(idx); Anim.Pop(buttons[idx]); } }, right));
+                buttons.Add(Ui.Btn(items[i], () => { if (idx != c.Value) c.Set(idx); }, right));
             }
             Action<int> show = v => { for (int j = 0; j < buttons.Count; j++) Paint.Select(buttons[j], j == v); };
             c = new Control<int>(right.parent, right, label, Tracked(parent, label, o, bind), show, o);
@@ -164,7 +164,7 @@ namespace Facet
             Control<int> c = null;
             Button b = null;
             b = Ui.Btn("", () => Popup.Menu(b, items, c.Value, i => c.Set(i), o.ItemFont), right);
-            b.style.minWidth = 120f;
+            b.style.minWidth = Theme.For(b).Sizes.DropdownWidth;
             // An item's English key, translated like any label; out of range shows blank.
             Action<int> show = v => Words.Label(b, v >= 0 && v < items.Count ? items[v] : "");
             c = new Control<int>(right.parent, b, label, Tracked(parent, label, o, bind), show, o);
@@ -178,7 +178,7 @@ namespace Facet
             var f = new TextField();
             f.style.width = o.Width;
             Skin.When<TextField>(f, Skin.Field);
-            f.style.fontSize = Tokens.FontSizeSmall;
+            f.style.fontSize = Theme.For(right).Sizes.Small;
             right.Add(f);
             var c = new Control<string>(right.parent, f, label, Tracked(parent, label, o, bind), v => f.SetValueWithoutNotify(v ?? ""), o);
             // On commit, not per keystroke: a setter that persists to disk should not run once per
@@ -204,7 +204,7 @@ namespace Facet
             c = new Control<Color>(root, inner, label, Tracked(parent, label, o, bind), picker.SetColour, o);
             // The dot sits in the flow before the picker: level it with the header, not the whole picker.
             var dot = root.Q("changed");
-            if (dot != null) dot.style.marginTop = (Controls.RowHeight - 6f) / 2f;
+            if (dot != null) dot.style.marginTop = (Theme.For(root).Sizes.RowHeight - 6f) / 2f;
             return c;
         }
 
@@ -252,7 +252,6 @@ namespace Facet
                 {
                     if (mine != gen) return;
                     end(false);
-                    Anim.Pop(b);
                     name = name ?? "";
                     if (name != (c.Value ?? "")) c.Set(name); else Draw(b, name);
                 }));
@@ -311,7 +310,7 @@ namespace Facet
         {
             var o = ControlOptions.Make(parent, text, configure);
             var row = Ui.Row(parent);
-            row.style.minHeight = Controls.RowHeight;
+            row.style.minHeight = Theme.For(row).Sizes.RowHeight;
             row.style.marginBottom = 2f;
             Controls.Noted(row, text);
             var b = Armed(text, onConfirm, row);
@@ -332,7 +331,6 @@ namespace Facet
                     armed = true;
                     Words.Label(b, "Sure?", true);
                     Paint.Select(b, true);
-                    Anim.Pop(b);
                     return;
                 }
                 armed = false;
@@ -340,7 +338,7 @@ namespace Facet
                 Paint.Select(b, false);
                 Safe.Run(Host.For(b), "Danger handler", () => { if (onConfirm != null) onConfirm(); });
             }, parent);
-            Paint.Look(b, Look.DangerButton);
+            Paint.Look(b, Theme.For(b).Looks.DangerButton);
             return b;
         }
 
@@ -354,31 +352,39 @@ namespace Facet
 
         /// A switch, not a checkbox: UI Toolkit's Toggle is a tick box whose styling lives in the
         /// theme style sheet we do not have, so it would come out unstyled. Drawn from two elements
-        /// instead — a track and a knob — which also lets it animate.
+        /// instead — a track and a knob — which also lets it animate. Focusable, with the focus ring
+        /// in its look (Looks.Switch); on is Paint.Select.
         internal static VisualElement Switch(VisualElement host, out Action<bool> show)
         {
+            var t = Theme.For(host); var s = t.Sizes; var k = t.Looks;
             var track = new VisualElement();
-            track.style.width = 36f;
-            track.style.height = 18f;
-            Ui.SetRadius(track, 9f);
+            track.style.width = s.SwitchWidth;
+            track.style.height = s.SwitchHeight;
+            Ui.SetRadius(track, s.SwitchRadius);
+            Ui.SetBorderWidth(track, s.Line);
+            track.focusable = true;
             track.pickingMode = PickingMode.Position;
 
+            // The knob sits 2 in from the track's edges; positions are worked out here, not in show,
+            // which the refresher calls.
+            float size = s.SwitchHeight - 4f, off = 2f, on = s.SwitchWidth - size - 2f;
             var knob = new VisualElement();
             knob.style.position = Position.Absolute;
             knob.style.top = 2f;
-            knob.style.width = 14f;
-            knob.style.height = 14f;
-            Ui.SetRadius(knob, 7f);
-            Paint.Bg(knob, Role.Text);
+            knob.style.width = size;
+            knob.style.height = size;
+            Ui.SetRadius(knob, s.KnobRadius);
             knob.pickingMode = PickingMode.Ignore;
             track.Add(knob);
             host.Add(track);
+            Paint.Look(track, k.Switch);
+            Paint.Look(knob, k.Knob);
 
             // Before the first layout `left` resolves to NaN and Anim.Move starts at the target: a new switch does not slide in.
             show = v =>
             {
-                Paint.Bg(track, v ? Role.Accent : Role.RowAlt);
-                Anim.Move(knob, v ? 20f : 2f, Anim.Fast);
+                Paint.Select(track, v);
+                Anim.Move(knob, v ? on : off, Anim.Fast);
             };
             return track;
         }
@@ -394,10 +400,10 @@ namespace Facet
             if (withTrack)
             {
                 s = new Slider(0f, 1f);
-                s.style.width = 180f;
+                s.style.width = Theme.For(right).Sizes.SliderWidth;
                 Skin.When<Slider>(s, Skin.Slider);
-                Ring(s);
                 right.Insert(0, s);
+                Ring(s);   // once in the row, so it finds the row's theme
             }
             var scale = o.Scale ?? ValueScale.Linear;
             float min = o.Min, max = o.Max;
@@ -436,10 +442,11 @@ namespace Facet
         // The number beside a slider, named <Id>-number.
         private static TextField NumberField(VisualElement right, string id)
         {
+            var sz = Theme.For(right).Sizes;
             var f = new TextField();
-            f.style.width = 62f;
-            f.style.marginLeft = Tokens.Gap;
-            f.style.fontSize = Tokens.FontSizeSmall;
+            f.style.width = sz.NumberWidth;
+            f.style.marginLeft = sz.Gap;
+            f.style.fontSize = sz.Small;
             Skin.When<TextField>(f, Skin.Field);
             Cursors.Set(f, Cursors.Kind.Text);
             if (id != null) f.name = id + "-number";

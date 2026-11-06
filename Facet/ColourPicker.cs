@@ -31,6 +31,7 @@ namespace Facet
         private readonly Action _onCommit;
         private bool _dragging;     // a pointer drag is in progress: changes are edits, the release commits
         private bool _writing;      // guards the channel sliders against their own updates
+        private Sizes _sz;          // the theme's, read once at build
 
         public VisualElement Root { get; private set; }
 
@@ -46,6 +47,7 @@ namespace Facet
 
             Root = Ui.Box(parent);
             Root.name = "facet-picker";   // SectionNoStale: swatches under here may hold literal colours
+            _sz = Theme.For(Root).Sizes;
             BuildHeader(label);
             BuildBody();
             Sync(true);
@@ -64,26 +66,25 @@ namespace Facet
         private void BuildHeader(string label)
         {
             var head = Ui.Row(Root);
-            head.style.minHeight = Controls.RowHeight;
+            head.style.minHeight = _sz.RowHeight;
             head.pickingMode = PickingMode.Position;
 
-            var chevron = Ui.Muted("▸", head);
+            var chevron = Ui.Text("▸", head, _sz.Body + 3f, Role.TextMuted);
             chevron.style.width = 18f;
-            chevron.style.fontSize = Tokens.FontSize + 3f;
 
-            var title = Ui.Text(label, head);
+            var title = Ui.Text(label, head, _sz.Body);
             title.style.flexGrow = 1f;
             title.pickingMode = PickingMode.Ignore;
 
             _hexLabel = Ui.Muted("", head);
-            _hexLabel.style.marginRight = Tokens.Gap;
+            _hexLabel.style.marginRight = _sz.Gap;
             _hexLabel.pickingMode = PickingMode.Ignore;
 
             // Checkerboard behind the swatch, so a transparent colour looks transparent.
             var swatchBg = new VisualElement();
             swatchBg.style.width = 44f;
             swatchBg.style.height = 18f;
-            Ui.SetRadius(swatchBg, 4f);
+            Ui.SetRadius(swatchBg, _sz.Radius);
             swatchBg.style.backgroundImage = new StyleBackground(Tex.Checker());
             swatchBg.style.backgroundRepeat = new BackgroundRepeat(Repeat.Repeat, Repeat.Repeat);
             head.Add(swatchBg);
@@ -92,8 +93,8 @@ namespace Facet
             _swatch.style.position = Position.Absolute;
             _swatch.style.left = 0f; _swatch.style.top = 0f;
             _swatch.style.right = 0f; _swatch.style.bottom = 0f;
-            Ui.SetRadius(_swatch, 4f);
-            Ui.SetBorderWidth(_swatch, 1f);
+            Ui.SetRadius(_swatch, _sz.Radius);
+            Ui.SetBorderWidth(_swatch, _sz.Line);
             Paint.Border(_swatch, Role.PanelBorder);
             swatchBg.Add(_swatch);
 
@@ -110,7 +111,7 @@ namespace Facet
         {
             _body = Ui.Box(Root);
             _body.style.display = DisplayStyle.None;
-            Ui.SetPadding(_body, Tokens.Gap);
+            Ui.SetPadding(_body, _sz.Gap);
 
             var top = Ui.Row(_body);
             top.style.alignItems = Align.FlexStart;
@@ -119,7 +120,7 @@ namespace Facet
             _square = new VisualElement();
             _square.style.width = SquareSize;
             _square.style.height = SquareSize;
-            Ui.SetRadius(_square, 4f);
+            Ui.SetRadius(_square, _sz.Radius);
             _square.style.backgroundColor = Color.HSVToRGB(_h, 1f, 1f);
             _square.pickingMode = PickingMode.Position;
             top.Add(_square);
@@ -155,12 +156,12 @@ namespace Facet
 
             var hexRow = Ui.Row(_body);
             hexRow.style.minHeight = 26f;
-            hexRow.style.marginTop = Tokens.Gap;
+            hexRow.style.marginTop = _sz.Gap;
             var hl = Ui.Muted("Hex", hexRow);
             hl.style.width = 32f;
             _hexField = new TextField { value = "" };
             _hexField.style.width = 110f;
-            _hexField.style.fontSize = Tokens.FontSizeSmall;
+            _hexField.style.fontSize = _sz.Small;
             Skin.When<TextField>(_hexField, Skin.Field);
             Cursors.Set(_hexField, Cursors.Kind.Text);
             // Commit on Enter or focus loss, never per keystroke: "#1a" is not a colour yet.
@@ -207,8 +208,8 @@ namespace Facet
             var strip = new VisualElement();
             strip.style.width = StripWidth;
             strip.style.height = SquareSize;
-            strip.style.marginLeft = Tokens.Gap;
-            Ui.SetRadius(strip, 3f);
+            strip.style.marginLeft = _sz.Gap;
+            Ui.SetRadius(strip, _sz.Radius);
             strip.style.backgroundImage = new StyleBackground(bg);
             strip.style.backgroundRepeat = new BackgroundRepeat(Repeat.Repeat, Repeat.Repeat);
             strip.pickingMode = PickingMode.Position;

@@ -78,6 +78,80 @@ namespace Facet.Mod
             Check(threw, "Theme.Dark.Notify() throws InvalidOperationException");
         }
 
+        static float Px(StyleLength l) => l.value.value;
+
+        // Review Focus 3, second half: a skin restyles every part on its own surface, and only there.
+        IEnumerator SectionSkin()
+        {
+            var b = new Theme();
+            var z = b.Sizes;
+            z.Radius = 6f; z.SwitchRadius = 1f; z.KnobRadius = 1f; z.Line = 2f; z.RowHeight = 40f; z.Body = 20f; z.Small = 16f;
+            z.Title = 25f; z.Caps = 14f; z.CapsSpacing = 3f; z.SwitchWidth = 50f; z.SwitchHeight = 24f;
+            b.Looks.Button.Bg = Role.Danger;
+            Gallery.Model = new Model();
+            Gallery.Open(); yield return null;
+            var h = Host.Create("Skin", o => { o.Log = m => Main.Log("[skin] " + m); o.Theme = b; });
+            var s = new Surface(h, "FacetSkin", Layer.Window);
+            try
+            {
+                var w = Gallery.Build(s.Root, "skin");
+                yield return null; yield return null;
+                var flag = w.Root.Q("flag"); var track = w.Root.Q("flag-input");
+                Check(Px(flag.style.minHeight) == 40f && flag.Q<Label>().style.fontSize.value.value == 20f, "B: the flag row is 40 tall and its label 20",
+                    Px(flag.style.minHeight) + " / " + flag.Q<Label>().style.fontSize.value.value);
+                Check(Px(track.style.width) == 50f && Px(track.style.borderTopLeftRadius) == 1f, "B: the switch track is 50 wide with radius 1",
+                    Px(track.style.width) + " r" + Px(track.style.borderTopLeftRadius));
+                Check(w.Root.Q("size-number").style.fontSize.value.value == 16f, "B: the size number field's font is 16");
+                // Built before they join the row or the window: still B's, not the fallback theme's.
+                Check(w.Root.Q("size-input").style.borderLeftWidth.value == 2f, "B: the slider's focus ring is B's Line wide",
+                    w.Root.Q("size-input").style.borderLeftWidth.value.ToString());
+                var thumb = w.Body.Q<ScrollView>().verticalScroller.slider.Q(className: "unity-base-slider__dragger");
+                Check(thumb != null && Px(thumb.style.borderTopLeftRadius) == 6f, "B: the Gallery's scrollbar thumb, skinned before it was added, has B's radius",
+                    thumb == null ? "none" : Px(thumb.style.borderTopLeftRadius).ToString());
+                var seg = w.Root.Q("mode").Query<Button>().ToList()[1];
+                Check(Near(seg.style.backgroundColor.value, b[Role.Danger]), "B: a Choice button's background is B's Danger", seg.style.backgroundColor.value.ToString());
+                Check(Px(w.Root.style.borderTopLeftRadius) == 6f && w.Root.style.borderLeftWidth.value == 2f, "B: the window card has radius 6 and border width 2",
+                    Px(w.Root.style.borderTopLeftRadius) + " / " + w.Root.style.borderLeftWidth.value);
+                ClickEl(track);
+                var knob = track.hierarchy[0];
+                Check(Px(knob.style.left) == 50f - 20f - 2f && Px(knob.style.width) == 20f, "B: switched on, the knob (20 wide) sits at 50 - 20 - 2",
+                    Px(knob.style.width) + " at " + Px(knob.style.left));
+
+                // The default Gallery beside it keeps Facet's own sizes.
+                var df = Root.Q("flag"); var dt = Root.Q("flag-input");
+                Check(Px(df.style.minHeight) == 32f && df.Q<Label>().style.fontSize.value.value == 15f && Px(dt.style.width) == 36f
+                      && Px(dt.style.borderTopLeftRadius) == 9f, "the default Gallery keeps 32, 15, 36 and radius 9",
+                    Px(df.style.minHeight) + " " + df.Q<Label>().style.fontSize.value.value + " " + Px(dt.style.width) + " r" + Px(dt.style.borderTopLeftRadius));
+
+                var logo = new VisualElement();
+                w.TitleBarLeft.Insert(0, logo);
+                Check(w.TitleBarLeft.IndexOf(logo) == 0 && w.TitleBarLeft.Q<Label>()?.text == "Facet Gallery" && w.TitleBarLeft.parent == w.Root.hierarchy[0],
+                    "Window.TitleBarLeft is the title bar's title block, and a logo goes in before the title");
+                var bc = Ui.Caps("Tint", flag);
+                Check(bc.style.fontSize.value.value == 14f && bc.style.letterSpacing.value.value == 3f, "B: Ui.Caps is 14 with letter spacing 3",
+                    bc.style.fontSize.value.value + " / " + bc.style.letterSpacing.value.value);
+
+                // Review Focus 4: translated first, upper-cased after, and still so through a relabel.
+                var cap = Ui.Caps("Tint", df);
+                try
+                {
+                    Check(cap.text == "TINT", "Ui.Caps(\"Tint\") reads TINT", cap.text);
+                    Gallery.Lang = "ko"; Gallery.Surface.Relabel();
+                    Check(cap.text == "틴트", "in Korean, after Relabel, it reads the translation unchanged", cap.text);
+                    Gallery.Lang = "en"; Gallery.Surface.Relabel();
+                    Check(cap.text == "TINT", "back in English it reads TINT again", cap.text);
+                }
+                finally { Gallery.Lang = "en"; Gallery.Surface.Relabel(); cap.RemoveFromHierarchy(); }
+
+                // Motion is fades and slides only: picking a segment pops nothing.
+                var pick = w.Root.Q("mode").Query<Button>().ToList()[2];
+                Submit(pick); yield return null;
+                Check(Gallery.Model.Mode == 2 && pick.style.scale.keyword == StyleKeyword.Null, "a Choice click leaves the button's scale unset (no pop)",
+                    Gallery.Model.Mode + " " + pick.style.scale.keyword);
+            }
+            finally { s.Dispose(); Gallery.Model = new Model(); Gallery.Close(); }
+        }
+
         // Review Focus 1: two mods tick the wheel in one frame, the first with a gated zero read.
         // Chinese, Japanese and Korean labels draw through an OS fallback face (glyph presence, not label width).
         IEnumerator SectionCjk()

@@ -54,8 +54,9 @@ namespace Facet
             // Inset by half a marker so the end stops do not clip at the edges.
             _strip.style.marginLeft = MarkerWidth / 2f;
             _strip.style.marginRight = MarkerWidth / 2f;
-            Ui.SetRadius(_strip, 3f);
-            Ui.SetBorderWidth(_strip, 1f);
+            var sz = Theme.For(Root).Sizes;
+            Ui.SetRadius(_strip, sz.Radius);
+            Ui.SetBorderWidth(_strip, sz.Line);
             Paint.Border(_strip, Role.PanelBorder);
             _strip.pickingMode = PickingMode.Position;
             Root.Add(_strip);

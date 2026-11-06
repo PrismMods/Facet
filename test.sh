@@ -16,3 +16,8 @@ if grep -rnE 'class \w+ *: *(VisualElement|Button|Label|TextField|ScrollView|Mon
 # Colour is painted by role (Paint.cs); only the pickers' swatches may write a literal.
 if grep -rnE 'style\.(backgroundColor|color|border[A-Za-z]*Color|unity[A-Za-z]*Color) *=' Facet/ --include='*.cs' | grep -v 'Paint.cs\|ColourPicker.cs\|GradientEditor.cs'; then
     echo "direct colour write outside Paint.cs and the pickers: paint by role"; exit 1; fi
+# Sizes and looks come from the part's theme (Theme.For(e).Sizes / .Looks), never a literal or a preset.
+if grep -rnE 'SetRadius\([^,]+, *([1-9][0-9.]*|0\.[0-9]+)f?\)|fontSize *= *[0-9]' Facet/ --include='*.cs'; then
+    echo "a size literal in a part: read it from the theme's Sizes"; exit 1; fi
+if grep -rnE '\bLook\.(Button|FlatButton|AccentButton|DangerButton|Row|RailItem|Field|Ring|Card|Chrome)\b' Facet/ --include='*.cs' | grep -v 'Core/Looks.cs'; then
+    echo "a part paints a Look preset: take it from the theme's Looks"; exit 1; fi

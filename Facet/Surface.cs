@@ -13,7 +13,7 @@ namespace Facet
 
        What is NOT available is the authoring half. USS and UXML are imported by the editor, so a
        mod cannot compile a stylesheet at runtime — every style here is set in C#: colours by
-       role (Theme, Paint), sizes as Tokens. That is also why themeStyleSheet gets an empty instance and
+       role (Theme, Paint), sizes from the theme (Sizes). That is also why themeStyleSheet gets an empty instance and
        disableNoThemeWarning is set: a panel with no theme renders fine, it just has no built-in
        control styling, which we do not want anyway since we style our own elements. It does log one
        "no theme style sheet" warning per panel — disableNoThemeWarning exists but is not public.

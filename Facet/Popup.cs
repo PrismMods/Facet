@@ -60,15 +60,16 @@ namespace Facet
             menu = Open(anchor, content =>
             {
                 content.style.minWidth = anchor.layout.width;
+                var sz = Theme.For(content).Sizes;   // once, above the rows: Dark's is a fresh copy per read
                 for (int i = 0; i < items.Count; i++)
                 {
                     int index = i;
                     var row = Ui.Row(content);
                     row.pickingMode = PickingMode.Position;
-                    row.style.height = Tokens.RowHeight;
-                    row.style.paddingLeft = 8f; row.style.paddingRight = 8f;
-                    Ui.SetRadius(row, 4f);
-                    var label = Ui.Text(items[i], row, Tokens.FontSizeSmall, i == selected ? Role.Accent : Role.Text);
+                    row.style.height = sz.ListRowHeight;
+                    row.style.paddingLeft = sz.Pad; row.style.paddingRight = sz.Pad;
+                    Ui.SetRadius(row, sz.Radius);
+                    var label = Ui.Text(items[i], row, sz.Small, i == selected ? Role.Accent : Role.Text);
                     label.pickingMode = PickingMode.Ignore;
                     if (itemFont != null)
                     {
