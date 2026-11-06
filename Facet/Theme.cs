@@ -34,7 +34,13 @@ namespace Facet
 
         private readonly Color[] _c;
 
-        private Theme(Color[] c) { _c = c; }
+        // Sized by the Role count, not the list above: a Role appended without a Dark colour is clear here
+        // rather than an IndexOutOfRange in Derive.
+        private Theme(Color[] c)
+        {
+            _c = new Color[Palette.Count];
+            Array.Copy(c, _c, Math.Min(c.Length, _c.Length));
+        }
 
         /// A copy of Dark, to adjust.
         public Theme() { _c = (Color[])Dark._c.Clone(); }
