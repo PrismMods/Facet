@@ -156,8 +156,7 @@ namespace Facet
                 if (!WarmUpStarted)
                 {
                     WarmUpStarted = true;   // before scheduling: the warm-up window is a surface too
-                    var first = Host;
-                    Root.schedule.Execute(() => WarmUp.Run(first)).StartingIn(500);
+                    Root.schedule.Execute(WarmUp.Run).StartingIn(500);
                 }
             }
         }

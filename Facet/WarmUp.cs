@@ -9,15 +9,21 @@ namespace Facet
        opened — a visible hitch on the hotkey. Drawing one throwaway window off screen for a moment,
        half a second after the first surface exists (at load, in practice), moves that cost there;
        the next window opened in 18 ms (measured in game, 2026-11-06). */
-    internal static class WarmUp
+    public static class WarmUp
     {
-        internal static bool Done;
+        private static bool _started;
 
-        internal static void Run(Host owner)
+        /// Set once the warm-up window has been drawn and thrown away.
+        public static bool Done { get; private set; }
+
+        /// Draws the warm-up window, once per session: later calls do nothing. The first surface
+        /// schedules it half a second after it exists; a host that knows its load better may call it.
+        public static void Run()
         {
-            // Its own host with no Write (its geometry is not worth a saved key), logging to the
-            // consumer whose first surface scheduled it.
-            var host = Host.Create("FacetWarmUp", o => o.Log = owner.Log);
+            if (_started) return;
+            _started = true;   // before the surface: the warm-up window is a surface too
+            // Fallback has no Write, so the throwaway window's geometry is never saved.
+            var host = Host.Fallback;
             Surface s = null;
             Action done = () =>
             {
@@ -40,7 +46,7 @@ namespace Facet
             catch (Exception e) { host.Log("WarmUp: failed: " + e.Message); done(); }
         }
 
-        // One of each row kind, with every printable ASCII character between them.
+        // One of each control kind, with every printable ASCII character between them.
         private static void Rows(VisualElement page)
         {
             const string upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", lower = "abcdefghijklmnopqrstuvwxyz";
@@ -48,12 +54,19 @@ namespace Facet
             var s = Controls.Section(page, upper);
             Controls.Toggle(s, lower, Bind.Value(true));
             Controls.Slider(s, rest, Bind.Value(0.5f), o => o.Max = 2f);
+            Controls.Number(s, upper, Bind.Value(4f), o => o.Max = 100f);
             Controls.IntSlider(s, upper, Bind.Value(1), o => o.Max = 2);
             Controls.Choice(s, lower, Bind.Value(1), o => o.Items = new[] { "One", "Two" });
+            Controls.Dropdown(s, rest, Bind.Value(0), o => o.Items = new[] { "One", "Two" });
             Controls.Text(s, rest, Bind.Value(lower));
+            Controls.Key(s, upper, Bind.Value("F8"));
+            Controls.Colour(s, rest, Bind.Value(Theme.Dark[Role.Accent]));
             Controls.Info(s, upper, () => lower);
             Controls.Action(s, lower, "Run", () => { });
-            Controls.Colour(s, rest, Bind.Value(Theme.Dark[Role.Accent]));
+            Controls.Danger(s, upper, "Wipe", () => { });
+            Controls.ToggleGroup(s, lower, Bind.Value(true));
+            Controls.Item(page, upper, lower);
+            Form.Build(page, new[] { new Field { Group = rest, Label = lower, Kind = FieldKind.Bool, Get = () => true, Set = _ => { } } });
         }
     }
 }
