@@ -685,53 +685,127 @@ namespace Facet.Mod
         IEnumerator SectionForm()
         {
             var logs = new List<string>();
-            var ha = Host.Create("FormA", o => { o.Log = m => logs.Add(m); o.Translate = s => s == "Greeting" ? "\uC548\uB155" : null; });
-            var hp = Host.Create("FormP", o => o.Log = m => logs.Add(m));
+            var ha = Host.Create("FormA", o => { o.Log = m => logs.Add(m); o.Translate = s => s == "Greeting" ? "안녕" : null; });
+            var hp = Host.Create("FormP", o => { o.Log = m => logs.Add(m); o.Translate = s => s == "Hello" ? "PARENT" : null; });
+            var dup1 = Host.Create("FormDup");
+            var dupLogs = new List<string>();
+            var dup2 = Host.Create("FormDup", o => o.Log = dupLogs.Add);
+            Check(Host.Named("FormDup") == dup1 && dup2 != dup1, "a second host named FormDup does not replace the first in Host.Named");
+            Check(dupLogs.Count == 1, "...and logs one line through the new host", dupLogs.Count.ToString());
+            var facetLogs = new List<string>();
+            var hf = Host.Create("Facet", o => o.Log = facetLogs.Add);
+            Check(Host.Named("Facet") == Host.Fallback && hf != Host.Fallback && facetLogs.Count == 1, "a consumer host named Facet is not registered; Named(\"Facet\") stays Fallback", facetLogs.Count.ToString());
+
             var surf = new Surface(hp, "FacetForm", Layer.Window);
             var w = new Window(surf.Root, "form", "Form", new Rect(60, 60, 600, 700));
-            bool b = false; int i = 3; float f = 0.5f; string t = "hi", key = "F1", col = "#ff0000"; var set = new List<object>();
-            bool acted = false;
+            bool b = false, bs = true, b1 = true; int i = 3; float f = 0.5f; string t = "hi", key = "F1", col = "#336699"; object colObj = null, col8 = null;
+            var sc = new List<object>(); var sd = new List<object>(); var sn = new List<object>();
+            bool acted = false; object bsv = null, b1v = null;
             var fields = new[] {
                 new Field { Group = "G", Label = "fb", Kind = FieldKind.Bool, Get = () => b, Set = v => b = (bool)v },
                 new Field { Group = "G", Label = "fi", Kind = FieldKind.Int, Min = 0, Max = 10, Get = () => i, Set = v => i = (int)v },
                 new Field { Group = "G", Label = "ff", Kind = FieldKind.Float, Min = 0, Max = 1, Get = () => f, Set = v => f = (float)v },
-                new Field { Group = "G", Label = "fc", Kind = FieldKind.Choice, Options = new[] { "a", "b" }, Get = () => 1, Set = v => set.Add(v) },
+                new Field { Group = "G", Label = "fc", Kind = FieldKind.Choice, Options = new[] { "a", "b" }, Get = () => 1, Set = v => sc.Add(v) },
                 new Field { Group = "G", Label = "ft", Kind = FieldKind.Text, Get = () => t, Set = v => t = (string)v },
                 new Field { Group = "G", Label = "fa", Kind = FieldKind.Action, ActionLabel = "Go", Set = v => acted = true },
                 new Field { Group = "G", Label = "fcol", Kind = FieldKind.Colour, Get = () => col, Set = v => col = (string)v },
+                new Field { Group = "G", Label = "fcolc", Kind = FieldKind.Colour, Get = () => new Color(0.2f, 0.4f, 0.6f, 1f), Set = v => colObj = v },
+                new Field { Group = "G", Label = "fcol8", Kind = FieldKind.Colour, Get = () => "#33669980", Set = v => col8 = v },
                 new Field { Group = "G", Label = "fk", Kind = FieldKind.Key, Get = () => key, Set = v => key = (string)v, Capture = cb => cb("F2") },
                 new Field { Group = "G", Label = "fin", Kind = FieldKind.Info, Get = () => "info" },
-                new Field { Group = "H", Label = "fd", Kind = FieldKind.Dropdown, Options = new[] { "x", "y" }, Get = () => 0, Set = v => set.Add(v) },
-                new Field { Group = "H", Label = "fn", Kind = FieldKind.Number, Min = 0, Max = 5, Get = () => 2f, Set = v => set.Add(v) },
+                new Field { Group = "H", Label = "fd", Kind = FieldKind.Dropdown, Options = new[] { "x", "y" }, Get = () => 0, Set = v => sd.Add(v) },
+                new Field { Group = "H", Label = "fn", Kind = FieldKind.Number, Min = 0, Max = 5, Get = () => 2f, Set = v => sn.Add(v) },
                 new Field { Group = "H", Label = "badf", Kind = FieldKind.Float, Get = () => null },
                 new Field { Group = "H", Label = "badi", Kind = FieldKind.Int, Get = () => "x" },
+                new Field { Group = "H", Label = "badc", Kind = FieldKind.Colour, Get = () => "nope" },
                 new Field { Group = "H", Label = "after", Kind = FieldKind.Bool, Get = () => true, Set = v => { } },
+                new Field { Group = "H", Label = "oorc", Kind = FieldKind.Choice, Options = new[] { "a", "b" }, Get = () => 9, Set = v => { } },
+                new Field { Group = "H", Label = "oord", Kind = FieldKind.Dropdown, Options = new[] { "x", "y" }, Get = () => -1, Set = v => { } },
+                new Field { Group = "H", Label = "fl", Kind = FieldKind.Int, Min = 0, Max = 10, Get = () => 2.7f, Set = v => { } },
+                new Field { Group = "H", Label = "lg", Kind = FieldKind.Int, Min = 0, Max = 10, Get = () => 4L, Set = v => { } },
+                new Field { Group = "H", Label = "bs", Kind = FieldKind.Bool, Get = () => bs, Set = v => bsv = v },
+                new Field { Group = "H", Label = "b1", Kind = FieldKind.Bool, Get = () => 1, Set = v => b1v = v },
                 new Field { Owner = "FormA", Group = "H", Label = "Greeting", Kind = FieldKind.Bool, Get = () => true, Set = v => { } },
+                new Field { Owner = "NoSuchHost", Group = "H", Label = "Hello", Kind = FieldKind.Bool, Get = () => true, Set = v => { } },
             };
             var page = Ui.Box(w.Body);
             bool threw = false;
             try { Form.Build(page, fields); } catch (Exception e) { threw = true; Main.Log("form threw " + e); }
             Check(!threw, "Form.Build returns normally with bad getters");
-            yield return null; yield return null;
-            foreach (var n in new[] { "fb", "fi", "ff", "fc", "ft", "fa", "fcol", "fk", "fin", "fd", "fn", "after" })
+            yield return null; yield return null; yield return null;
+            foreach (var n in new[] { "fb", "fi", "ff", "fc", "ft", "fa", "fcol", "fcolc", "fcol8", "fk", "fin", "fd", "fn", "after", "oorc", "oord", "fl", "lg", "bs", "b1" })
                 Check(page.Q(n) != null, "a " + n + " row is built, found by its label");
-            Check(page.Query<Label>().ToList().Exists(l => l.text == "G") && page.Query<Label>().ToList().Exists(l => l.text == "H"), "consecutive groups become two sections");
-            Check(page.Q("fi-input") is SliderInt, "an Int field builds an IntSlider");
-            Check(page.Q("ft-input") is TextField, "a Text field builds a TextField");
+            var labels = page.Query<Label>().ToList();
+            Check(labels.Exists(l => l.text == "G") && labels.Exists(l => l.text == "H"), "consecutive groups become two sections");
+            Func<string, TextField> tfIn = n => page.Q(n)?.Q<TextField>();
+            Check(page.Q<SliderInt>("fi-input")?.value == 3, "an Int field shows its value on an IntSlider", page.Q<SliderInt>("fi-input")?.value.ToString());
+            Check(page.Q<SliderInt>("fl-input")?.value == 3, "an Int field converts a float getter (2.7 -> 3)");
+            Check(page.Q<SliderInt>("lg-input")?.value == 4, "an Int field converts a long getter");
+            Check(page.Q<TextField>("ft-input")?.value == "hi", "a Text field shows its value");
+            Check(tfIn("fn")?.value == "2", "a Number field shows its value", tfIn("fn")?.value);
+            Check(tfIn("ff")?.value == "0.5", "a Float field shows its value", tfIn("ff")?.value);
+            Check(page.Q<Button>("fk-input")?.text == "F1", "a Key field shows its key");
+            Check(page.Q<Button>("fd-input")?.text == "x", "a Dropdown shows its item");
+            Check(page.Q<Button>("oord-input")?.text == "", "a Dropdown index out of range shows blank and still builds");
+            Check(page.Q("oorc").enabledSelf && page.Q("oord").enabledSelf, "out-of-range Choice and Dropdown rows are enabled");
+            Check(page.Q("fin").Query<Label>().ToList().Exists(l => l.text == "info"), "an Info field shows its text");
+            Check(page.Q("fa").Q<Button>()?.text == "Go", "an Action field shows its ActionLabel");
+
             ClickEl(page.Q("fb-input")); yield return null; yield return null;
             Check(b, "toggling the Bool row writes through Field.Set");
+            ClickEl(page.Q("bs-input")); yield return null;
+            Check(bsv is bool && !(bool)bsv, "Bool from the string \"true\" is on, so a click writes false");
+            ClickEl(page.Q("b1-input")); yield return null;
+            Check(b1v is bool && !(bool)b1v, "Bool from 1 is on, so a click writes false");
             Submit(page.Q<Button>("fk-input")); yield return null; yield return null;
             Check(key == "F2", "a Key field captures through Field.Capture", key);
             Submit(page.Q("fa").Q<Button>()); yield return null;
             Check(acted, "an Action field runs Set when pressed");
-            // Unavailable rows: three reads fail by the end of the build.
-            yield return null;
+            Submit(page.Q("fc").Query<Button>().ToList()[0]); yield return null;
+            Check(sc.Count == 1 && sc[0] is int && (int)sc[0] == 0, "picking Choice item 0 writes the int 0", sc.Count == 1 ? sc[0].ToString() : sc.Count.ToString());
+            Submit(page.Q<Button>("fd-input")); yield return null; yield return null;
+            var yl = LiveLabel("y");
+            if (yl != null) using (var e = PointerUpEvent.GetPooled(new Event { type = EventType.MouseUp, button = 0 })) { e.target = yl.parent; yl.parent.SendEvent(e); }
+            yield return null; yield return null;
+            Check(sd.Count == 1 && sd[0] is int && (int)sd[0] == 1, "picking Dropdown item 1 writes the int 1", sd.Count == 1 ? sd[0].ToString() : sd.Count.ToString());
+            if (tfIn("fn") != null) { Type(tfIn("fn"), "3"); yield return null; }
+            Check(sn.Count == 1 && sn[0] is float && Mathf.Abs((float)sn[0] - 3f) < 1e-4f, "typing 3 in a Number row writes the float 3", sn.Count == 1 ? sn[0].ToString() : sn.Count.ToString());
+
+            // Colour writes back the form it read.
+            Action<string, string> hex = (row, text) => { var tf = page.Q(row)?.Q<TextField>(); if (tf != null) Type(tf, text); };
+            hex("fcol", "#112233"); hex("fcolc", "#112233"); hex("fcol8", "#11223344");
+            yield return null; yield return null;
+            Check(col == "#112233", "a string-typed Colour getter gets a string back after an edit", col);
+            Check(colObj is Color, "a Color-typed Colour getter gets a Color back after an edit", colObj?.GetType().Name);
+            Check(col8 is string && ((string)col8).Length == 9, "an 8-digit string Colour gets an 8-digit string back", col8?.ToString());
+
+            // Unavailable rows.
             Check(page.Q("badf") != null && !page.Q("badf").enabledSelf, "a Float field whose Get returns null is an unavailable row");
             Check(page.Q("badi") != null && !page.Q("badi").enabledSelf, "an Int field whose Get returns \"x\" is an unavailable row");
+            Check(page.Q("badc") != null && !page.Q("badc").enabledSelf, "a Colour field whose Get returns an unparseable string is an unavailable row");
             Check(page.Q("after") != null && page.Q("after").enabledSelf, "the rows after the bad ones still build");
-            var greet = page.Query<Label>().ToList().Find(l => l.text == "\uC548\uB155");
-            Check(greet != null, "a field owned by host FormA translates with FormA's table, not the surface's");
+            foreach (var bad in new[] { "badf", "badi", "badc" })
+            {
+                int n = logs.FindAll(m => m.Contains("'" + bad + "'")).Count;
+                Check(n == 1, "exactly one log line for failing field " + bad, n + ": " + string.Join(" | ", logs.FindAll(m => m.Contains("'" + bad + "'"))));
+            }
+            Check(labels.Exists(l => l.text == "안녕"), "a field owned by host FormA translates with FormA's table, not the surface's");
+            Check(!labels.Exists(l => l.text == "Greeting"), "...and not untranslated");
+            Check(labels.Exists(l => l.text == "PARENT"), "an unregistered owner falls back to the parent's host (its label translated by the parent)");
             surf.Dispose();
+
+            // A foreign-owner field in a Section of a short scrolling window keeps its row height.
+            var hs = Host.Create("FormShort", o => o.Log = m => Main.Log("[formshort] " + m));
+            var surf2 = new Surface(hs, "FacetFormShort", Layer.Window);
+            var w2 = new Window(surf2.Root, "formshort", "Short", new Rect(60, 60, 400, 160));
+            var many = new List<Field>();
+            for (int k = 0; k < 12; k++) many.Add(new Field { Owner = "FormA", Group = "S", Label = "own" + k, Kind = FieldKind.Bool, Get = () => true, Set = v => { } });
+            var nav2 = new Nav(w2.Body, new[] { new NavItem("Home", p => Form.Build(p, many)) });
+            yield return null; yield return null; yield return null;
+            float minH = 999f; int built = 0;
+            for (int k = 0; k < 12; k++) { var r = w2.Body.Q("own" + k); if (r != null) { built++; minH = Mathf.Min(minH, r.layout.height); } }
+            Check(built == 12 && minH >= Controls.RowHeight - 0.5f, "foreign-owner rows in a short scrolling window keep their row height", "built=" + built + " min=" + minH);
+            surf2.Dispose();
         }
 
         // Task 14: one lazy index per Nav, reveal through folded sections, owners, last leaf, VisibleWhen.

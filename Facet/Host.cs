@@ -44,14 +44,20 @@ namespace Facet {
             var o = new HostOptions();
             if (configure != null) configure(o);
             var h = new Host(name ?? "Host", o);
-            Named_[h.Name] = h;
+            if (h.Name == "Facet") { if (!_makingFallback) h.Log("host name 'Facet' is reserved for Host.Fallback; not registered"); }
+            else if (Named_.ContainsKey(h.Name)) h.Log("a host named '" + h.Name + "' already exists; Host.Named keeps the first");
+            else Named_[h.Name] = h;
             return h;
         }
 
         static readonly System.Collections.Generic.Dictionary<string, Host> Named_ = new System.Collections.Generic.Dictionary<string, Host>();
 
-        /// The host last created under `name`, else null.
+        static bool _makingFallback;
+
+        /// The first host created under `name` (later ones with the same name are not registered), else null.
+        /// "Facet" is Host.Fallback.
         public static Host Named(string name) {
+            if (name == "Facet") return Fallback;
             Host h;
             return name != null && Named_.TryGetValue(name, out h) ? h : null;
         }
@@ -61,7 +67,9 @@ namespace Facet {
         public static Host Fallback {
             get {
                 if (_fallback != null) return _fallback;
-                _fallback = Create("Facet", o => { o.Log = m => UnityEngine.Debug.Log("[Facet] " + m); o.Theme = Theme.Dark; });
+                _makingFallback = true;
+                try { _fallback = Create("Facet", o => { o.Log = m => UnityEngine.Debug.Log("[Facet] " + m); o.Theme = Theme.Dark; }); }
+                finally { _makingFallback = false; }
                 History.Log = _fallback._log;
                 return _fallback;
             }

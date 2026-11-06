@@ -57,8 +57,7 @@ namespace Facet
             if (owner != null && owner != Host.For(parent))
             {
                 // Host.For finds the nearest surface first, so the owner is attached to a wrapper the field builds into.
-                at = new VisualElement();
-                parent.Add(at);
+                at = Ui.Box(parent);
                 owner.Attach(at);
             }
             using (Host.Use(owner ?? Host.For(parent))) Make(at, f);
