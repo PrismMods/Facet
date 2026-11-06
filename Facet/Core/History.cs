@@ -160,7 +160,9 @@ namespace Facet
         private static void Fire()
         {
             var c = Changed;
-            if (c != null) { try { c(); } catch { } }
+            if (c == null) return;
+            // One guard per handler: a throwing window's refresh must not leave the others stale.
+            foreach (Action a in c.GetInvocationList()) Safe.Run("Facet", "History.Changed", a, Log);
         }
     }
 }

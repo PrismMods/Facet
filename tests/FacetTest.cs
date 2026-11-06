@@ -41,6 +41,17 @@ static class FacetTest {
         History.Undo();
         Check(ran == "ra", "an undo runs Facet's RefreshAll, then the consumer's AfterApply", ran);
         History.RefreshAll = null; History.AfterApply = null;
+        // Ruling R20: one throwing Changed handler leaves the handlers after it running, logged once.
+        var hl = new List<string>(); var oldLog = History.Log; History.Log = hl.Add;
+        int after = 0;
+        Action throwing = () => { throw new InvalidOperationException("changed"); }, count = () => after++;
+        History.Changed += throwing; History.Changed += count;
+        History.Record("y", "k2", () => { }, () => { });
+        History.Record("y", "k3", () => { }, () => { });
+        History.Changed -= throwing; History.Changed -= count; History.Log = oldLog;
+        Check(after == 2 && hl.Count == 1 && hl[0].Contains("History.Changed"), "a throwing History.Changed handler leaves the next one running, logged once per 10 s",
+            after + " runs, " + string.Join(" | ", hl));
+        History.Clear();
         var l1 = Shared.Get("t", () => new List<int>());
         Check(ReferenceEquals(l1, Shared.Get("t", () => new List<int>())), "Shared.Get returns the same instance twice");
         var dd = AppDomain.CurrentDomain.GetData("Facet.Shared") as Dictionary<string, object>;
