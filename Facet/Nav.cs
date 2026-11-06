@@ -224,10 +224,15 @@ namespace Facet
 
         private void ReportInset()
         {
+            // No captured locals here: the check runs on every drag move and must not allocate.
+            if (OnInsetChanged == null || (_railOpen ? _railWidth : 0f) + 7f == _lastInset) return;
+            NotifyInset();
+        }
+
+        private void NotifyInset()
+        {
             var f = OnInsetChanged;
             float inset = (_railOpen ? _railWidth : 0f) + 7f;
-            // Only on a change, so a drag's many moves at one width allocate no closure.
-            if (f == null || inset == _lastInset) return;
             _lastInset = inset;
             Safe.Run(Host.For(_host), "Nav.OnInsetChanged", () => f(inset));
         }
