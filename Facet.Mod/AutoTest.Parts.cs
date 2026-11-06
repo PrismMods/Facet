@@ -78,6 +78,53 @@ namespace Facet.Mod
             Check(threw, "Theme.Dark.Notify() throws InvalidOperationException");
         }
 
+
+        // Task 7: a slider fills up to its value; a dropdown is a compact box with an arrow.
+        IEnumerator SectionSliderBox()
+        {
+            Gallery.Model = new Model();
+            Gallery.Open(); yield return null; yield return null;
+            var fill = Root.Q("size-fill");
+            Check(fill != null && Mathf.Abs(fill.style.width.value.value - 33.3f) < 1f, "size-fill is 33.3% of 0.5-2 at 1",
+                fill == null ? "none" : fill.style.width.value.value.ToString());
+            Check(fill != null && fill.style.backgroundColor.value.a == 0f, "the fill has no background under Facet's default");
+            Root.Q<Slider>("size-input").value = 1f;   // the top of the slider: Set(2)
+            yield return null;
+            Check(fill != null && Mathf.Abs(fill.style.width.value.value - 100f) < 0.5f && Mathf.Abs(Gallery.Model.Size - 2f) < 1e-4f,
+                "after the slider reaches its top, size-fill is 100%", fill?.style.width.value.value.ToString());
+            var cnt = Root.Q("count-fill");
+            Check(cnt != null && Mathf.Abs(cnt.style.width.value.value - 30f) < 0.5f, "count-fill is 30% at 3 of 0-10",
+                cnt == null ? "none" : cnt.style.width.value.value.ToString());
+            var pick = Root.Q<Button>("pick-input");
+            var fieldBg = Gallery.Host.Theme[Role.Row];
+            Check(pick != null && Near(pick.style.backgroundColor.value, fieldBg), "pick-input is painted the Field background",
+                pick?.style.backgroundColor.value.ToString());
+            Check(pick != null && pick.resolvedStyle.width >= 120f - 0.5f, "pick-input is at least DropdownWidth wide", pick?.resolvedStyle.width.ToString());
+            var arrow = pick?.Q<Label>("pick-arrow");
+            Check(arrow != null && arrow.text == "\u25be" && arrow.pickingMode == PickingMode.Ignore, "pick-input holds a pick-arrow label that ignores picking");
+
+            if (pick != null)
+            {
+                Mouse<MouseEnterEvent>(pick); yield return null;
+                Check(Near(pick.resolvedStyle.backgroundColor, Gallery.Host.Theme[Role.RowHover]), "a hovered dropdown shows RowHover",
+                    pick.resolvedStyle.backgroundColor.ToString());
+                Mouse<MouseLeaveEvent>(pick);
+            }
+
+            var t = new Theme();
+            t.Looks.Fill = new Look { Bg = Role.Accent };
+            var h = Host.Create("SliderBox", o => { o.Log = m => Main.Log("[sliderbox] " + m); o.Theme = t; });
+            var s = new Surface(h, "FacetSliderBox", Layer.Window);
+            try
+            {
+                var w = Gallery.Build(s.Root, "sliderbox");
+                yield return null; yield return null;
+                var f2 = w.Root.Q("size-fill");
+                Check(f2 != null && Near(f2.style.backgroundColor.value, t[Role.Accent]), "a theme's Looks.Fill paints the fill", f2?.style.backgroundColor.value.ToString());
+            }
+            finally { s.Dispose(); }
+        }
+
         static float Px(StyleLength l) => l.value.value;
 
         // Review Focus 3, second half: a skin restyles every part on its own surface, and only there.
@@ -114,7 +161,7 @@ namespace Facet.Mod
                     Px(w.Root.style.borderTopLeftRadius) + " / " + w.Root.style.borderLeftWidth.value);
                 ClickEl(track);
                 var knob = track.hierarchy[0];
-                Check(Px(knob.style.left) == 50f - 20f - 2f && Px(knob.style.width) == 20f, "B: switched on, the knob (20 wide) sits at 50 - 20 - 2",
+                Check(Px(knob.style.left) == 50f - 20f - 2f - 2f && Px(knob.style.width) == 20f, "B: switched on, the knob (20 wide) sits at 50 - 20 - 2 - Line(2)",
                     Px(knob.style.width) + " at " + Px(knob.style.left));
 
                 // The default Gallery beside it keeps Facet's own sizes.

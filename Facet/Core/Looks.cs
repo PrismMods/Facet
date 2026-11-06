@@ -29,7 +29,7 @@ namespace Facet
         /// Its labels paint no role of their own (Paint.Inherit), so muted, hover and selected text reach them.
         public static Look RailItem => new Look { Text = Role.TextMuted, HoverBg = Role.Row, HoverText = Role.Text,
             SelectedBg = Role.RowHover, SelectedText = Role.Text };
-        public static Look Field => new Look { Bg = Role.Row, Text = Role.Text, Border = Role.PanelBorder, FocusBorder = Role.Focus };
+        public static Look Field => new Look { Bg = Role.Row, Text = Role.Text, Border = Role.PanelBorder, HoverBg = Role.RowHover, FocusBorder = Role.Focus };
         /// Only the focus ring: for a control that is not a button (a switch, a slider).
         public static Look Ring => new Look { FocusBorder = Role.Focus };
         public static Look Card => new Look { Bg = Role.Panel, Border = Role.PanelBorder };

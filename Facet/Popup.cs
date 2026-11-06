@@ -67,7 +67,7 @@ namespace Facet
                     var row = Ui.Row(content);
                     row.pickingMode = PickingMode.Position;
                     row.style.height = sz.ListRowHeight;
-                    row.style.paddingLeft = sz.Pad; row.style.paddingRight = sz.Pad;
+                    row.style.paddingLeft = sz.Gap; row.style.paddingRight = sz.Gap;
                     Ui.SetRadius(row, sz.Radius);
                     var label = Ui.Text(items[i], row, sz.Small, i == selected ? Role.Accent : Role.Text);
                     label.pickingMode = PickingMode.Ignore;

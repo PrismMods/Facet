@@ -105,7 +105,8 @@ namespace Facet
             var right = Controls.Row(parent, label);
             var s = new SliderInt(o.Min, o.Max);
             s.style.width = Theme.For(right).Sizes.SliderWidth;
-            Skin.When<SliderInt>(s, Skin.Slider);
+            VisualElement fill = null;
+            Skin.When<SliderInt>(s, x => { Skin.Slider(x); fill = Skin.AddFill(x, o.Id); });
             var field = NumberField(right, o.Id);
             right.Insert(0, s);
             Ring(s);   // once in the row, so it finds the row's theme
@@ -114,6 +115,7 @@ namespace Facet
             Action<int> show = v =>
             {
                 s.SetValueWithoutNotify(v);
+                Skin.SetFill(fill, s);
                 field.SetValueWithoutNotify(v.ToString(CultureInfo.CurrentCulture));
             };
             c = new Control<int>(right.parent, s, label, Tracked(parent, label, o, bind), show, o);
@@ -164,7 +166,17 @@ namespace Facet
             Control<int> c = null;
             Button b = null;
             b = Ui.Btn("", () => Popup.Menu(b, items, c.Value, i => c.Set(i), o.ItemFont), right);
-            b.style.minWidth = Theme.For(b).Sizes.DropdownWidth;
+            var t = Theme.For(b); var sz = t.Sizes;
+            Paint.Look(b, t.Looks.Field);
+            b.style.minWidth = sz.DropdownWidth;
+            b.style.unityTextAlign = TextAnchor.MiddleLeft;
+            b.style.paddingRight = sz.ControlPad + sz.Small + sz.Gap;   // room for the arrow
+            var arrow = Ui.Text("\u25be", b, sz.Small, Role.TextMuted, true);
+            arrow.name = o.Id != null ? o.Id + "-arrow" : "arrow";
+            arrow.pickingMode = PickingMode.Ignore;
+            arrow.style.position = Position.Absolute;
+            arrow.style.right = sz.ControlPad; arrow.style.top = 0f; arrow.style.bottom = 0f;
+            arrow.style.unityTextAlign = TextAnchor.MiddleCenter;
             // An item's English key, translated like any label; out of range shows blank.
             Action<int> show = v => Words.Label(b, v >= 0 && v < items.Count ? items[v] : "");
             c = new Control<int>(right.parent, b, label, Tracked(parent, label, o, bind), show, o);
@@ -365,12 +377,12 @@ namespace Facet
             track.focusable = true;
             track.pickingMode = PickingMode.Position;
 
-            // The knob sits 2 in from the track's edges; positions are worked out here, not in show,
+            // The knob sits 2 in from the track's outer edges (children start inside the border, so Line is taken off); positions are worked out here, not in show,
             // which the refresher calls.
-            float size = s.SwitchHeight - 4f, off = 2f, on = s.SwitchWidth - size - 2f;
+            float size = s.SwitchHeight - 4f, off = 2f - s.Line, on = s.SwitchWidth - size - 2f - s.Line;
             var knob = new VisualElement();
             knob.style.position = Position.Absolute;
-            knob.style.top = 2f;
+            knob.style.top = off;
             knob.style.width = size;
             knob.style.height = size;
             Ui.SetRadius(knob, s.KnobRadius);
@@ -397,11 +409,12 @@ namespace Facet
             var right = Controls.Row(parent, label);
             var field = NumberField(right, o.Id);
             Slider s = null;
+            VisualElement fill = null;
             if (withTrack)
             {
                 s = new Slider(0f, 1f);
                 s.style.width = Theme.For(right).Sizes.SliderWidth;
-                Skin.When<Slider>(s, Skin.Slider);
+                Skin.When<Slider>(s, x => { Skin.Slider(x); fill = Skin.AddFill(x, o.Id); });
                 right.Insert(0, s);
                 Ring(s);   // once in the row, so it finds the row's theme
             }
@@ -413,7 +426,7 @@ namespace Facet
 
             Action<float> show = v =>
             {
-                if (s != null) s.SetValueWithoutNotify(scale.ToT(v, min, max));
+                if (s != null) { s.SetValueWithoutNotify(scale.ToT(v, min, max)); Skin.SetFill(fill, s); }
                 field.SetValueWithoutNotify(text(v));
             };
             var c = new Control<float>(right.parent, s ?? (VisualElement)field, label, Tracked(parent, label, o, bind), show, o);

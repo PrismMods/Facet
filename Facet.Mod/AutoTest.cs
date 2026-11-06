@@ -108,6 +108,7 @@ namespace Facet.Mod
             yield return Run("SectionWheel", SectionWheel());
             yield return Run("SectionThemeShape", SectionThemeShape());
             yield return Run("SectionSkin", SectionSkin());
+            yield return Run("SectionSliderBox", SectionSliderBox());
             yield return Run("SectionClose", SectionClose());
             // Later tasks: yield return Run("Section...", Section...());
 
@@ -773,7 +774,7 @@ namespace Facet.Mod
 
             var surf = new Surface(hp, "FacetForm", Layer.Window);
             var w = new Window(surf.Root, "form", "Form", new Rect(60, 60, 600, 700));
-            bool b = false, b1 = true; int i = 3; float f = 0.5f; string t = "hi", key = "F1", col = "#336699"; object colObj = null, col8 = null;
+            bool b = false; int i = 3; float f = 0.5f; string t = "hi", key = "F1", col = "#336699"; object colObj = null, col8 = null;
             var sc = new List<object>(); var sd = new List<object>(); var sn = new List<object>();
             bool acted = false; object bsv = null, b1v = null; float fu = 2f;
             var fields = new[] {
@@ -1317,7 +1318,7 @@ namespace Facet.Mod
             Gallery.Open(); yield return null; yield return null;
             var pick = Root.Q<Button>("pick-input");
             Check(pick != null && pick.style.borderTopWidth.value >= 1f && pick.resolvedStyle.borderTopWidth > 0.3f, "a Dropdown button has a 1px border", pick == null ? "none" : pick.resolvedStyle.borderTopWidth.ToString());
-            Check(pick != null && pick.resolvedStyle.borderTopColor.a < 0.01f, "...clear while unfocused", pick?.resolvedStyle.borderTopColor.ToString());
+            Check(pick != null && pick.resolvedStyle.borderTopColor == Gallery.Host.Theme[Role.PanelBorder], "...the field border while unfocused", pick?.resolvedStyle.borderTopColor.ToString());
             pick.Focus(); yield return null; yield return null;
             Check(pick.resolvedStyle.borderTopColor == Gallery.Host.Theme[Role.Focus], "...Role.Focus once focused", pick.resolvedStyle.borderTopColor.ToString());
             var mode = Root.Q("mode-input")?.Q<Button>();

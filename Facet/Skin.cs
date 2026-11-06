@@ -58,6 +58,37 @@ namespace Facet
             if (label != null) label.style.display = DisplayStyle.None;   // the row already has one
         }
 
+        /* The filled part of a slider's track (Looks.Fill, none by default): inside the tracker, from the
+           left, as wide as the value. Read once here; the change callback only sets a width (ruling Q20). */
+        internal static VisualElement AddFill(VisualElement slider, string id)
+        {
+            var tracker = slider.Q(className: "unity-base-slider__tracker");
+            if (tracker == null) return null;
+            var t = Theme.For(slider);
+            var fill = new VisualElement { pickingMode = PickingMode.Ignore };
+            if (id != null) fill.name = id + "-fill";
+            Paint.Look(fill, t.Looks.Fill);
+            fill.style.position = Position.Absolute;
+            fill.style.left = 0f; fill.style.top = 0f; fill.style.bottom = 0f;
+            Ui.SetRadius(fill, t.Sizes.Track / 2f);
+            tracker.Add(fill);
+            SetFill(fill, slider);
+            Events.On<ChangeEvent<float>>(slider, _ => SetFill(fill, slider));
+            Events.On<ChangeEvent<int>>(slider, _ => SetFill(fill, slider));
+            return fill;
+        }
+
+        // Percent of the track up to the value: the float slider runs 0..1 already, the int one over its range.
+        internal static void SetFill(VisualElement fill, VisualElement slider)
+        {
+            if (fill == null) return;
+            float t = 0f;
+            var f = slider as Slider; var i = slider as SliderInt;
+            if (f != null) t = f.value;
+            else if (i != null && i.highValue > i.lowValue) t = (float)(i.value - i.lowValue) / (i.highValue - i.lowValue);
+            fill.style.width = Length.Percent(100f * Mathf.Clamp01(t));
+        }
+
         public static void Field(VisualElement field)
         {
             if (field == null) return;
