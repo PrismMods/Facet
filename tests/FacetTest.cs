@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Facet;
 
 static class FacetTest {
@@ -27,6 +28,10 @@ static class FacetTest {
         t = 6; History.Record("x", "k", () => { }, () => { });
         History.Undo();
         Check(History.CanUndo, "records 1 s apart (past CoalesceSeconds) stay separate");
+        var l1 = Shared.Get("t", () => new List<int>());
+        Check(ReferenceEquals(l1, Shared.Get("t", () => new List<int>())), "Shared.Get returns the same instance twice");
+        var dd = AppDomain.CurrentDomain.GetData("Facet.Shared") as Dictionary<string, object>;
+        Check(dd != null && ReferenceEquals(dd["t"], l1), "...and it is visible through AppDomain data");
         Console.WriteLine(_fail == 0 ? "ALL PASS" : _fail + " FAILED");
     }
 }

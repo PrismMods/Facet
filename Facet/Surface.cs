@@ -467,7 +467,12 @@ namespace Facet
 
         private static readonly float[] _bandBase = { 29000f, 30000f, 31000f, 31500f, 32000f };
         private static readonly float[] _bandSpan = { 1000f, 1000f, 500f, 500f, 500f };
-        private static readonly float[] _bandNext = { 29000f, 30000f, 31000f, 31500f, 32000f };
+        // Shared across loaded Facet versions so their windows stack in one order.
+        // ponytail: Renumber only knows this version's surfaces, so after a wrap another version's
+        // windows may share a number; fix by renumbering through Shared if bands ever wrap in practice.
+        private static readonly float[] _bandNext = Input.BandNext;
+
+        internal float Order => _settings != null ? _settings.sortingOrder : -1f;
 
         private static void Renumber(Layer layer)
         {

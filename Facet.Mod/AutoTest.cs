@@ -84,6 +84,7 @@ namespace Facet.Mod
             for (int i = 0; i < 5; i++) yield return null;
             Main.Log("AUTOTEST start screen " + Screen.width + "x" + Screen.height);
             yield return Run("SectionOpen", SectionOpen());
+            yield return Run("SharedEscape", SharedEscape());
             // Later tasks: yield return Run("Section...", Section...());
 
             Main.Log("AUTOTEST DONE pass=" + _pass + " fail=" + _fail);
@@ -107,6 +108,16 @@ namespace Facet.Mod
             }
         }
 
+
+        IEnumerator SharedEscape()
+        {
+            Gallery.Open(); yield return null;
+            Check(Input.AnyWindowOpen, "AnyWindowOpen is true with the Gallery open");
+            bool first = Input.HandleEscape(), second = Input.HandleEscape();
+            Check(first && !Input.AnyWindowOpen, "the first Escape hides the Gallery", "first=" + first);
+            Check(second, "a second Escape in the same frame returns the cached true");
+            Check(!Input.AnyWindowOpen, "AnyWindowOpen is false afterwards");
+        }
 
         IEnumerator SectionOpen()
         {

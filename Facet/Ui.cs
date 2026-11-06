@@ -32,146 +32,23 @@ namespace Facet
            editor it is free again. */
         public static int OpenWindows;
 
-        public static bool AnyWindowOpen => OpenWindows > 0;
+        public static bool AnyWindowOpen => Input.AnyWindowOpen;
 
-        /// A visible surface wants the keyboard and wheel to itself — see Input.
-        public static bool BlocksGameInput
-        {
-            get
-            {
-                for (int i = 0; i < Stack.Count; i++)
-                    if (Stack[i].Visible && Stack[i].BlocksGameInput) return true;
-                return false;
-            }
-        }
+        public static bool BlocksGameInput => Input.BlocksGameInput;
 
-        /* Is the pointer actually over one of our windows?
+        public static bool PointerOverWindow(Vector2 pointerScreen) => Input.PointerOverWindow(pointerScreen);
 
-           AnyWindowOpen was too blunt for the editor's scroll-zoom: with a panel open anywhere on
-           screen, the wheel stopped zooming even with the pointer out in the world. What the editor
-           needs to know is whether this scroll belongs to a menu, which is a question about
-           position, not about whether anything is open. */
-        public static bool PointerOverWindow(Vector2 pointerScreen)
-        {
-            for (int i = Stack.Count - 1; i >= 0; i--)
-            {
-                var surface = Stack[i];
-                if (!surface.Visible || surface.Root == null || surface.Root.panel == null) continue;
-                var point = RuntimePanelUtils.ScreenToPanel(
-                    surface.Root.panel, new Vector2(pointerScreen.x, Screen.height - pointerScreen.y));
-                foreach (var e in surface.Root.Children())
-                    if (e.worldBound.Contains(point)) return true;
-            }
-            return false;
-        }
+        public static bool TextFocused => Input.TextFocused;
 
-        /* Is the user typing into one of our windows?
-
-           The game's "user is editing a field" test asks the uGUI EventSystem, which has never heard
-           of a UI Toolkit TextField — so a letter typed into a search box or number field also
-           reached the editor and placed a tile. A mod ORs this into its own typing check; as with
-           the wheel, the input belongs to the game and only the mod can patch it.
-
-           Walks up from the focused element because the focus usually sits on the field's inner
-           text input, not on the field itself. Any TextInputBaseField<T> counts, so number fields
-           are covered too. */
-        public static bool TextFocused
-        {
-            get
-            {
-                for (int i = Stack.Count - 1; i >= 0; i--)
-                {
-                    var surface = Stack[i];
-                    if (!surface.Visible || surface.Root == null || surface.Root.panel == null) continue;
-                    var fc = surface.Root.panel.focusController;
-                    for (var e = fc != null ? fc.focusedElement as VisualElement : null; e != null; e = e.parent)
-                        if (IsTextInput(e.GetType())) return true;
-                }
-                return false;
-            }
-        }
-
-        private static bool IsTextInput(Type t)
-        {
-            for (; t != null && t != typeof(VisualElement); t = t.BaseType)
-                if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(TextInputBaseField<>)) return true;
-            return false;
-        }
-
-        /// Drive the wheel for every open window. The host calls this each frame with
-        /// Input.mousePosition and Input.mouseScrollDelta.y — see Skin.Wheel for why.
-        public static void TickWheel(Vector2 pointerScreen, float delta)
-        {
-            if (Mathf.Approximately(delta, 0f)) return;
-            /* Deliberately NOT standing down when a WheelEvent arrives.
-
-               A WheelEvent reaching the panel says only that: not that any ScrollView acted on it.
-               Standing down on that basis left the debug log unscrollable while reporting nothing
-               at all, because the polled path — the only thing that logs — never ran. Scrolling
-               twice as fast is a visible, tunable problem; scrolling not at all while the logs stay
-               silent is the one that has cost the most time here. Skin.Wheel skips a target that
-               already moved this frame, which is the honest version of the same check. */
-            // Topmost visible window only, so two open windows do not both scroll.
-            for (int i = Stack.Count - 1; i >= 0; i--)
-            {
-                if (!Stack[i].Visible) continue;
-                Skin.Wheel(Stack[i].Root, pointerScreen, delta);
-                return;
-            }
-        }
+        public static void TickWheel(Vector2 pointerScreen, float delta) => Input.TickWheel(pointerScreen, delta);
 
         /* Open surfaces, bottom first: by layer, then by raise order (Surface.BringToFront keeps it
-           so). "Which one is on top" and "which one does Escape close" both need an answer, and
-           neither can come from Unity: separate UIDocument panels are ordered by sortingOrder,
-           not by click. */
+           so). Per loaded Facet; Input coordinates across versions through Shared. */
         internal static readonly List<Surface> Stack = new List<Surface>();
 
-        /* Escape, answered in one place. Walks the layers top-down — a popup before a modal before
-           a window — and the first visible surface takes it: a focused text field gives up focus
-           first (the way any desktop app treats Escape in a field), then the surface's own handler
-           runs, else it hides. Returns false when nothing was open, so the caller lets the key
-           through to the game.
+        public static bool HandleEscape() => Input.HandleEscape();
 
-           At most once per frame. Every mod polls Escape in its own Update and calls this, so
-           with two mods installed one press used to close two windows. A mod that already spent
-           this frame's Escape — cancelling a keybind capture — says so with ConsumeEscape. */
-        public static bool HandleEscape()
-        {
-            if (_escapeFrame == Time.frameCount) return _escapeResult;
-            _escapeFrame = Time.frameCount;
-            _escapeResult = false;
-            for (int i = Stack.Count - 1; i >= 0; i--)
-            {
-                var s = Stack[i];
-                if (!s.Visible) continue;
-                var focused = s.Root != null && s.Root.panel != null && s.Root.panel.focusController != null
-                    ? s.Root.panel.focusController.focusedElement as VisualElement : null;
-                // The focus controller is the shared panel's, so only a field inside THIS surface counts.
-                if (focused != null && s.Root.Contains(focused))
-                    for (var e = focused; e != null; e = e.parent)
-                        if (IsTextInput(e.GetType())) { focused.Blur(); Log("Escape: blurred a field in " + s.Name); return _escapeResult = true; }
-                if (s.EscapeHandler != null)
-                {
-                    try { _escapeResult = s.EscapeHandler(); Log("Escape: " + s.Name + " handler -> " + _escapeResult); }
-                    catch (Exception e) { Log("Escape handler threw: " + e.Message); _escapeResult = true; }
-                    return _escapeResult;
-                }
-                s.Visible = false;
-                Log("Escape: hid " + s.Name);
-                return _escapeResult = true;
-            }
-            return false;
-        }
-
-        /// This frame's Escape is spent (a keybind capture took it) — HandleEscape will not act on it.
-        public static void ConsumeEscape()
-        {
-            _escapeFrame = Time.frameCount;
-            _escapeResult = true;
-        }
-
-        private static int _escapeFrame = -1;
-        private static bool _escapeResult;
+        public static void ConsumeEscape() => Input.ConsumeEscape();
 
         public static VisualElement Box(VisualElement parent = null)
         {
