@@ -3,7 +3,14 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using UnityEngine;
+#if ML
+using MelonLoader;
+
+[assembly: MelonInfo(typeof(Facet.Mod.FacetMelon), "Facet Gallery", "0.1.0", "PrismMods")]
+// No game named: MelonLoader loads a mod with no MelonGame attribute into every game.
+#else
 using UnityModManagerNet;
+#endif
 
 namespace Facet.Mod
 {
@@ -21,11 +28,22 @@ namespace Facet.Mod
             try { File.AppendAllText(_log, DateTime.Now.ToString("HH:mm:ss.fff") + " " + s + "\n"); } catch { }
         }
 
+#if !ML
         public static bool Load(UnityModManager.ModEntry e)
         {
-            _dir = e.Path;
-            _log = Path.Combine(_dir, "gallery.log");
-            _auto = File.Exists(Path.Combine(_dir, "autotest"));
+            Init(e.Path, e.Path, "gallery.log", "autotest");
+            e.OnUpdate = (m, dt) => Tick();
+            return true;
+        }
+#endif
+
+        // dir holds the Facet.*.dll fallback; data holds the log and the autotest trigger.
+        internal static void Init(string dir, string data, string logName, string triggerName)
+        {
+            _dir = dir;
+            Directory.CreateDirectory(data);
+            _log = Path.Combine(data, logName);
+            _auto = File.Exists(Path.Combine(data, triggerName));
             AppDomain.CurrentDomain.AssemblyResolve += (s, a) =>
             {
                 var n = new AssemblyName(a.Name).Name;
@@ -34,12 +52,10 @@ namespace Facet.Mod
                 var p = Path.Combine(_dir, n + ".dll");
                 return File.Exists(p) ? Assembly.LoadFrom(p) : null;
             };
-            e.OnUpdate = (m, dt) => Tick();
             Log("Facet.Mod loaded");
-            return true;
         }
 
-        static void Tick()
+        internal static void Tick()
         {
             if (_auto)
             {
@@ -63,4 +79,16 @@ namespace Facet.Mod
             if (Gallery.Surface != null && Gallery.Surface.Visible) Gallery.Close(); else Gallery.Open();
         }
     }
+#if ML
+    public class FacetMelon : MelonMod
+    {
+        public override void OnInitializeMelon()
+        {
+            // MelonLoader already loaded UserLibs/Facet.0.1.dll; the log and trigger live in UserData/Facet.
+            Main.Init(MelonLoader.Utils.MelonEnvironment.UserLibsDirectory, Path.Combine(MelonLoader.Utils.MelonEnvironment.UserDataDirectory, "Facet"), "gallery.log", "autotest");
+        }
+
+        public override void OnUpdate() => Main.Tick();
+    }
+#endif
 }
