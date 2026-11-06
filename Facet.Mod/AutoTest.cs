@@ -227,6 +227,17 @@ namespace Facet.Mod
             Check(b.resolvedStyle.opacity == 1f && b.enabledSelf, "...and is whole again after Paint.Enable(b, true)");
             b.RemoveFromHierarchy();
 
+            // Look presets are copies: restyling the one a mod was handed changes no one else's.
+            var pb = Ui.Btn("Preset", null, w.Body);
+            yield return null;
+            var mine = Look.Button; mine.Bg = Role.Accent;
+            bool fresh = Look.Button.Bg == Role.RowAlt;
+            Paint.Apply(w.Root);
+            Check(fresh && Near(pb.style.backgroundColor.value, t[Role.RowAlt]), "mutating the Look.Button you were handed changes neither the next Look.Button nor an existing button",
+                "next " + Look.Button.Bg + ", button " + pb.style.backgroundColor.value);
+            mine.Bg = Role.RowAlt;   // were it shared, put it back for the sections after this one
+            pb.RemoveFromHierarchy();
+
             // A throwing subscriber does not stop the surfaces after it; replacing and disposing unsubscribe.
             var tt = new Theme();
             tt.Changed += () => { throw new InvalidOperationException("subscriber"); };

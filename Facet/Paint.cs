@@ -6,30 +6,33 @@ namespace Facet
        runtime panel has no theme style sheet, so :hover and :disabled do nothing, and every widget
        used to hand-roll its own enter/leave colour lambdas; Paint tracks the states instead and a
        Look says what each draws. A null role leaves that channel unset: no background, inherited
-       text, no border colour. */
+       text, no border colour.
+
+       Each preset is a fresh copy, so a mod that restyles the one it was handed (`var l =
+       Look.Button; l.Bg = Role.Accent;`) restyles only its own elements. */
     public sealed class Look
     {
         public Role? Bg, Text, Border, HoverBg, PressedBg, SelectedBg, SelectedText, FocusBorder, HoverText;
         public float DisabledOpacity = 0.35f;
 
-        public static readonly Look Button = new Look { Bg = Role.RowAlt, Text = Role.Text, HoverBg = Role.RowHover,
+        public static Look Button => new Look { Bg = Role.RowAlt, Text = Role.Text, HoverBg = Role.RowHover,
             PressedBg = Role.Row, SelectedBg = Role.Accent, SelectedText = Role.AccentText, FocusBorder = Role.Focus };
         /// Part of the frame rather than a button sitting on it: no background, hover included.
-        public static readonly Look FlatButton = new Look { Text = Role.Text, FocusBorder = Role.Focus };
-        public static readonly Look AccentButton = new Look { Bg = Role.Accent, Text = Role.AccentText, FocusBorder = Role.Focus };
+        public static Look FlatButton => new Look { Text = Role.Text, FocusBorder = Role.Focus };
+        public static Look AccentButton => new Look { Bg = Role.Accent, Text = Role.AccentText, FocusBorder = Role.Focus };
         /// Selected is armed: the click that asks "Sure?".
-        public static readonly Look DangerButton = new Look { Bg = Role.RowAlt, Text = Role.Danger, HoverBg = Role.RowHover,
+        public static Look DangerButton => new Look { Bg = Role.RowAlt, Text = Role.Danger, HoverBg = Role.RowHover,
             PressedBg = Role.Row, SelectedBg = Role.Danger, SelectedText = Role.AccentText, FocusBorder = Role.Focus };
-        public static readonly Look Row = new Look { HoverBg = Role.Row };
+        public static Look Row => new Look { HoverBg = Role.Row };
         /// Its labels paint no role of their own (Paint.Inherit), so muted, hover and selected text reach them.
-        public static readonly Look RailItem = new Look { Text = Role.TextMuted, HoverBg = Role.Row, HoverText = Role.Text,
+        public static Look RailItem => new Look { Text = Role.TextMuted, HoverBg = Role.Row, HoverText = Role.Text,
             SelectedBg = Role.RowHover, SelectedText = Role.Text };
-        public static readonly Look Field = new Look { Bg = Role.Row, Text = Role.Text, Border = Role.PanelBorder, FocusBorder = Role.Focus };
+        public static Look Field => new Look { Bg = Role.Row, Text = Role.Text, Border = Role.PanelBorder, FocusBorder = Role.Focus };
         /// Only the focus ring: for a control that is not a button (a switch, a slider).
-        public static readonly Look Ring = new Look { FocusBorder = Role.Focus };
-        public static readonly Look Card = new Look { Bg = Role.Panel, Border = Role.PanelBorder };
+        public static Look Ring => new Look { FocusBorder = Role.Focus };
+        public static Look Card => new Look { Bg = Role.Panel, Border = Role.PanelBorder };
         /// Title bar and footer.
-        public static readonly Look Chrome = new Look { Bg = Role.TitleBar };
+        public static Look Chrome => new Look { Bg = Role.TitleBar };
     }
 
     /* Colours by role. Facet remembers which role each element's background, text and border use,
