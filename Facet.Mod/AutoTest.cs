@@ -90,6 +90,7 @@ namespace Facet.Mod
             yield return Run("SectionHost", SectionHost());
             yield return Run("SectionTheme", SectionTheme());
             yield return Run("SectionNoStale", SectionNoStale());
+            yield return Run("SectionScrollClear", SectionScrollClear());
             // Later tasks: yield return Run("Section...", Section...());
 
             Main.Log("AUTOTEST DONE pass=" + _pass + " fail=" + _fail);
@@ -331,6 +332,37 @@ namespace Facet.Mod
 
             if (menu != null) menu.Close();
             Check(Subscribers(t) == before, "closing a popup stops it listening", Subscribers(t) + " vs " + before);
+            s.Dispose();
+        }
+
+        // Skin.Scroll no longer writes Color.clear: every part but the dragger must still resolve transparent.
+        IEnumerator SectionScrollClear()
+        {
+            var t = new Theme();
+            var h = Host.Create("ScrollClear", o => { o.Log = m => Main.Log("[scrollclear] " + m); o.Theme = t; });
+            var s = new Surface(h, "FacetScrollClear", Layer.Window);
+            var sv = new ScrollView(ScrollViewMode.VerticalAndHorizontal);
+            sv.style.width = 300f; sv.style.height = 100f;
+            Skin.Scroll(sv);
+            s.Root.Add(sv);
+            for (int i = 0; i < 20; i++) { var l = new Label("row " + i); l.style.width = 500f; sv.Add(l); }
+            yield return null; yield return null; yield return null;
+            var bad = new List<string>();
+            Action<string, VisualElement> clear = (n, e) =>
+            {
+                if (e == null) bad.Add(n + " missing");
+                else if (e.resolvedStyle.backgroundColor.a != 0f) bad.Add(n + " " + e.resolvedStyle.backgroundColor);
+            };
+            clear("view", sv); clear("viewport", sv.contentViewport);
+            foreach (var sc in new[] { sv.verticalScroller, sv.horizontalScroller })
+            {
+                clear("scroller", sc);
+                var sl = sc?.slider;
+                clear("tracker", sl?.Q(className: "unity-base-slider__tracker"));
+                var d = sl?.Q(className: "unity-base-slider__dragger");
+                if (d == null || !Near(d.resolvedStyle.backgroundColor, t[Role.RowHover])) bad.Add("dragger " + d?.resolvedStyle.backgroundColor);
+            }
+            Check(bad.Count == 0, "a skinned ScrollView's parts resolve transparent, the dragger RowHover", string.Join(" | ", bad));
             s.Dispose();
         }
 
