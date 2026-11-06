@@ -15,9 +15,8 @@ namespace Facet
     {
         private static int _holdFrame = -1;
 
-        // [0] top visible sortingOrder (or -1), [1] take Escape, [2] open, [3] text focused,
-        // [4] blocks game input, [5] pointer over window (x, y)
-        private static readonly List<object[]> _entries = Shared.Get("Facet.Entries", () => new List<object[]>());
+        // Entry layout: see Coord.
+        internal static readonly List<object[]> Entries = Shared.Get("Facet.Entries", () => new List<object[]>());
         // [frame, result] of the last Escape, whichever version handled it
         private static readonly float[] _stamp = Shared.Get("Facet.EscapeStamp", () => new float[] { -1f, 0f });
         internal static readonly float[] BandNext = Shared.Get("Facet.BandNext",
@@ -25,34 +24,39 @@ namespace Facet
 
         static Input()
         {
-            lock (_entries)
-                _entries.Add(new object[]
-                {
-                    (Func<float>)LocalTop, (Func<bool>)TakeEscape, (Func<bool>)(() => Ui.OpenWindows > 0),
-                    (Func<bool>)LocalText, (Func<bool>)LocalBlocks, (Func<float, float, bool>)LocalPointer,
-                });
+            Coord.Register(Entries, new object[]
+            {
+                (Func<float>)LocalTop, (Func<bool>)TakeEscape, (Func<bool>)(() => Ui.OpenWindows > 0),
+                (Func<bool>)LocalText, (Func<bool>)LocalBlocks, (Func<float, float, bool>)LocalPointer,
+                typeof(Input).Assembly.FullName,
+                (Func<int, float[]>)LocalOrders, (Action<int, Func<float, float>>)LocalRemap,
+            });
+        }
+
+        private static float[] LocalOrders(int layer)
+        {
+            var r = new List<float>();
+            foreach (var s in Ui.Stack) if ((int)s.Layer == layer && s.Order >= 0f) r.Add(s.Order);
+            return r.ToArray();
+        }
+
+        private static void LocalRemap(int layer, Func<float, float> f)
+        {
+            foreach (var s in Ui.Stack) if ((int)s.Layer == layer && s.Order >= 0f) s.Order = f(s.Order);
         }
 
         public static void HoldThisFrame() => _holdFrame = Time.frameCount;
 
         public static bool HeldThisFrame => Time.frameCount == _holdFrame;
 
-        public static bool AnyWindowOpen { get { return Any(2); } }
-        public static bool TextFocused { get { return Any(3); } }
-        public static bool BlocksGameInput { get { return Any(4); } }
+        public static bool AnyWindowOpen { get { return Coord.Any(Entries, 2, Ui.Log); } }
+        public static bool TextFocused { get { return Coord.Any(Entries, 3, Ui.Log); } }
+        public static bool BlocksGameInput { get { return Coord.Any(Entries, 4, Ui.Log); } }
 
         public static bool PointerOverWindow(Vector2 screen)
         {
-            foreach (var e in Snapshot())
-                if (((Func<float, float, bool>)e[5])(screen.x, screen.y)) return true;
-            return false;
-        }
-
-        private static object[][] Snapshot() { lock (_entries) return _entries.ToArray(); }
-
-        private static bool Any(int i)
-        {
-            foreach (var e in Snapshot()) if (((Func<bool>)e[i])()) return true;
+            foreach (var e in Coord.Snapshot(Entries))
+                if (Coord.Pointer(e, screen.x, screen.y, Ui.Log)) return true;
             return false;
         }
 
@@ -64,13 +68,7 @@ namespace Facet
         {
             if (_stamp[0] == Time.frameCount) return _stamp[1] != 0f;
             _stamp[0] = Time.frameCount; _stamp[1] = 0f;
-            object[] best = null; float top = -1f;
-            foreach (var e in Snapshot())
-            {
-                var o = ((Func<float>)e[0])();
-                if (o > top) { top = o; best = e; }
-            }
-            if (best != null && ((Func<bool>)best[1])()) _stamp[1] = 1f;
+            if (Coord.TakeEscape(Entries, Ui.Log)) _stamp[1] = 1f;
             return _stamp[1] != 0f;
         }
 

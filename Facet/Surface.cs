@@ -461,26 +461,25 @@ namespace Facet
             Ui.Stack.Insert(at, this);
 
             int b = (int)Layer;
-            if (_bandNext[b] + 1f >= _bandBase[b] + _bandSpan[b]) Renumber(Layer);
-            else if (_settings != null) _settings.sortingOrder = ++_bandNext[b];
+            if (_bandNext[b] + 1f >= _bandBase[b] + _bandSpan[b])
+            {
+                // Park this surface above the band so the renumber (all versions) ranks it topmost.
+                Order = _bandBase[b] + _bandSpan[b];
+                _bandNext[b] = Coord.Renumber(Input.Entries, b, _bandBase[b], Ui.Log);
+            }
+            else if (_settings != null) _settings.sortingOrder = _bandNext[b] += 1f;
         }
 
         private static readonly float[] _bandBase = { 29000f, 30000f, 31000f, 31500f, 32000f };
         private static readonly float[] _bandSpan = { 1000f, 1000f, 500f, 500f, 500f };
         // Shared across loaded Facet versions so their windows stack in one order.
-        // ponytail: Renumber only knows this version's surfaces, so after a wrap another version's
-        // windows may share a number; fix by renumbering through Shared if bands ever wrap in practice.
+        // Shared across loaded Facet versions so their windows stack in one order.
         private static readonly float[] _bandNext = Input.BandNext;
 
-        internal float Order => _settings != null ? _settings.sortingOrder : -1f;
-
-        private static void Renumber(Layer layer)
+        internal float Order
         {
-            int b = (int)layer;
-            float n = _bandBase[b];
-            foreach (var s in Ui.Stack)
-                if (s.Layer == layer && s._settings != null) s._settings.sortingOrder = ++n;
-            _bandNext[b] = n;
+            get { return _settings != null ? _settings.sortingOrder : -1f; }
+            set { if (_settings != null) _settings.sortingOrder = value; }
         }
 
         public void Dispose()
