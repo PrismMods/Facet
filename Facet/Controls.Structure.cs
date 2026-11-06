@@ -72,18 +72,23 @@ namespace Facet
         internal sealed class CardRows { public int Rows; public string Title; }
 
         /* In a card, a row pads Sizes.Pad on both sides and every row after the first draws a
-           Sizes.Line rule above it in Role.Line. An Advanced body starts at one: its head comes first. */
-        internal static void Carded(VisualElement row, Sizes sz)
+           Sizes.Line rule above it in Looks.Rule's colour (its Bg), as the card's header rule is; an
+           invisible Rule (Dark) draws none. An Advanced body starts at one: its head comes first.
+           True when the row is in a card. */
+        internal static bool Carded(VisualElement row, Sizes sz)
         {
             CardRows c = null;   // the NEAREST card body above: a wrapper, a ToggleGroup body or a nested Section still counts
             for (var e = row.parent; e != null && c == null; e = e.parent) c = Data.Find<CardRows>(e);
-            if (c == null) return;
+            if (c == null) return false;
             row.style.paddingLeft = sz.Pad;
             row.style.paddingRight = sz.Pad;
             row.style.marginBottom = 0f;
-            if (c.Rows++ == 0) return;
+            if (c.Rows++ == 0) return true;
+            var rule = Theme.For(row).Looks.Rule;
+            if (rule == null || rule.Bg == null) return true;
             row.style.borderTopWidth = sz.Line;
-            Paint.Border(row, Role.Line);
+            Paint.Border(row, rule.Bg.Value);
+            return true;
         }
 
         /// Label on the left, whatever the caller adds on the right.

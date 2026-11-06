@@ -18,6 +18,9 @@ namespace Facet
         public float StackBelow { get; set; } = 560f;
     }
 
+    /// Id names the stage, and the pane around it Id-pane. VisibleWhen, EnabledWhen, Tooltip/TooltipText
+    /// and ContextMenu act on the pane; hiding it through VisibleWhen runs Hide and stops the tick.
+    /// Help is not shown.
     public sealed class PreviewOptions : ControlOptions
     {
         /// Stage width / height.
@@ -114,10 +117,11 @@ namespace Facet
         }
 
         /* A pane the consumer draws in: a caps label, a stage that keeps its aspect, a note and a link.
-           Returns the stage. It costs nothing while hidden: Show/Tick/Hide follow "stage on a panel
-           and its surface visible", re-evaluated on attach, detach, and the surface's Shown/Hidden.
-           ponytail: an ancestor hidden by display:none inside a visible page still counts as shown;
-           upgrade path is checking resolvedStyle.display up the tree in the tick. */
+           Returns the stage. It costs nothing while hidden: Show/Tick/Hide follow "stage on a panel,
+           the pane not hidden by its VisibleWhen, and its surface visible", re-evaluated on attach,
+           detach, the pane's VisibleWhen flipping, and the surface's Shown/Hidden.
+           ponytail: an ancestor hidden by display:none inside a visible page (a VisibleWhen-hidden card)
+           still counts as shown; upgrade path is checking resolvedStyle.display up the tree in the tick. */
         public static VisualElement Preview(VisualElement parent, string label, Action<PreviewOptions> configure = null)
         {
             var o = ControlOptions.Make(parent, label, configure);
@@ -127,7 +131,6 @@ namespace Facet
             root.style.marginBottom = sz.Gap;
             Ui.Caps(label, root).style.marginBottom = sz.Gap / 2f;
             var stage = Ui.Box(root);
-            stage.name = o.Id;
             Paint.Look(stage, t.Looks.Stage);
             Ui.SetBorderWidth(stage, sz.Line);
             Ui.SetRadius(stage, sz.Radius);
@@ -169,7 +172,7 @@ namespace Facet
             };
             Action eval = () =>
             {
-                bool want = stage.panel != null && (owner == null || owner.Visible);
+                bool want = stage.panel != null && root.style.display != DisplayStyle.None && (owner == null || owner.Visible);
                 if (want == shown) return;
                 shown = want;
                 if (want)
@@ -198,6 +201,9 @@ namespace Facet
                 if (owner != null) { owner.Shown -= changed; owner.Hidden -= changed; owner = null; }
                 if (shown) { shown = false; if (item != null) item.Pause(); Safe.Run(host, hideSite, callHide); }
             });
+            // The pane is a Control like a card: its VisibleWhen (already applied here) feeds eval from now on.
+            Hook(root, null, label, o).OnVisible = _ => eval();
+            if (o.Id != null) { root.name = o.Id + "-pane"; stage.name = o.Id; }
             if (stage.panel != null) { owner = Popup.OwnerOf(stage); if (owner != null) { owner.Shown += changed; owner.Hidden += changed; } eval(); }
             return stage;
         }

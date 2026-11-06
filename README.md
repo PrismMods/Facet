@@ -52,7 +52,8 @@ Colours re-theme open windows: set roles and call `Notify()`, or `Recolour(accen
 when a part builds, so a change shows on the next build. `Theme.Dark` is shared by every mod and frozen:
 its `Sizes` and `Looks` hand back a fresh copy on each read, so writing to them changes nothing.
 `Looks.Card` is the window shell and popups, `Looks.Group` a card of rows on a page, `Looks.Stage` a
-preview's stage. Dark keeps 0.1's look, so its `Looks.Rule` is invisible; a skin gives it a colour.
+preview's stage. Dark keeps 0.1's look, so `Looks.Rule` is invisible by default; a skin gives it a colour, and
+every rule takes it: a card's header and rows, the nav's groups, a tab row.
 
 ## Shared across versions
 
@@ -72,15 +73,16 @@ loaded wins.
 |---|---|
 | Animation | `Anim.Speed` (shared); `Anim.Hover` |
 | Wheel | `Input.TickWheel`, once per frame |
-| Fonts | `Fonts.Has`, `Fonts.Drawer`; zh and ja |
+| Fonts | `Fonts.Has`; zh and ja |
 | Theme | `Role.Rail/Line/Off`; `Theme.Sizes`, `Theme.Looks`, `Theme.Notify()`; `Sizes` (with `ControlPad`, `FieldPad`, `ItemHeight`); `Looks` (with `Group`, `Stage`); `Look.SelectedBorder`, `Look.Copy()` |
 | Primitives | `Ui.Caps`; `Window.TitleBarLeft`; `Facet.Tokens` removed |
-| Cards | `ControlOptions.Help`; `Controls.Card`/`CardOptions`; `Controls.Advanced`; `Form.Build(…, FormOptions)`; `Field.Help`/`Advanced` |
-| Page layout | `Controls.PageHeader`/`HeaderOptions`; `Controls.Columns`/`ColumnsOptions` (with `StackBelow`) |
-| Preview | `Controls.Preview`/`PreviewOptions`: `Show`, `Tick`, `Hide` run only while its page and window show |
-| Tiles | `Controls.Tiles`/`TilesOptions`; `Controls.Tile`/`TileOptions` |
+| Cards | `ControlOptions.Help`; `Controls.Card`/`CardOptions` (`Actions`; `Note`, an English key, or `NoteText`, re-read and untranslated); `Controls.Advanced`; `Form.Build(…, FormOptions)`; `Field.Help`/`Advanced` |
+| Page layout | `Controls.PageHeader`/`PageHeaderOptions`; `Controls.Columns`/`ColumnsOptions` (with `StackBelow`) |
+| Preview | `Controls.Preview`/`PreviewOptions`: `Show`, `Tick`, `Hide` run only while its page, its window and its own `VisibleWhen` show it; `Id` names the stage, `Id-pane` the pane, which takes `VisibleWhen`, `EnabledWhen`, the tooltips and `ContextMenu` (not `Help`) |
+| Tiles | `Controls.Tiles`/`TilesOptions` (`Id`, `VisibleWhen`, `EnabledWhen`, the tooltips and `ContextMenu` act on the grid; in a `Card` it is a padded card row); `Controls.Tile`/`TileOptions` (no `Help`: use `Tooltip`) |
+| Switches | every switch (`Toggle`, `PageHeader`, `Tile`) flips on Submit (Enter/Space) as on a click |
 | Tabs | `Tabs.Pages`, `Tabs.Content`; `SearchIndex.Hit.Tab` |
-| Search | `Nav.AddSearchSource` with `SearchIndex.Entry` (`Label`, `Where`, `Open`, `Tip`) for pages Facet did not build; `NavItem.OnHit` |
+| Search | `Nav.AddSearchSource` with `SearchIndex.Entry` (`Label`, `Where`, `Open`, `Tip`; `Label` and `Where` are English keys, translated) for pages Facet did not build; `NavItem.OnHit` |
 | Sidebar | Nav draws a rule between groups; a skin gives `Looks.Rule` a colour (on Theme.Dark it is invisible) |
 
 ## Coexistence

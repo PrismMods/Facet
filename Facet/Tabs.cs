@@ -49,11 +49,39 @@ namespace Facet
         /// On the row's element, so Nav's search reveal can find the tab rows on a page.
         internal sealed class Ref { public Tabs Tabs; }
 
+        /// Marks what a row's index counts within: a Nav's page and each Pages row's Content.
+        internal sealed class Page { }
+
+        /* The row's index among the Pages rows on its page (else the top of its tree), in tree order and
+           not counting rows inside another row's tab pages: a row's remembered tab is its own, with two
+           rows on one page or rows outside a Nav. */
+        private static int IndexOnPage(VisualElement bar)
+        {
+            var page = bar.parent;
+            while (page != null && page.parent != null && Data.Find<Page>(page) == null) page = page.parent;
+            int n = 0;
+            if (page != null) Before(page, bar, ref n);
+            return n;
+        }
+
+        private static bool Before(VisualElement e, VisualElement bar, ref int n)
+        {
+            for (int i = 0; i < e.childCount; i++)
+            {
+                var c = e[i];
+                if (c == bar) return true;
+                if (Data.Find<Ref>(c) != null) n++;
+                else if (Data.Find<Page>(c) == null && Before(c, bar, ref n)) return true;
+            }
+            return false;
+        }
+
         /* One tab per NavItem: its Title, Tooltip and Build, and its VisibleWhen, asked here only.
            Only the selected page is built, into Content, fresh on every select like a Nav page; the
            page it replaces is removed from the tree, not hidden, so anything it runs (a preview)
            stops. `selected` and onSelect's index are into `pages`; -1 picks the tab last selected
-           on this page, kept through the host under "tab.<page>", else the first visible one.
+           on this page, kept through the host under "tab.<page>#<n>" (n: the row's index among the
+           Pages rows on the page), else the first visible one.
            A page builds inside the Nav that was building when the row was made (Nav.InTab), so
            SubPage rows work, fold and undo keys are per tab, and unnamed controls count from
            1000 * (index + 1). While a search index builds, every visible page is built for it. */
@@ -62,8 +90,9 @@ namespace Facet
             var t = new Tabs(parent, onSelect);
             t._pages = pages == null ? new List<NavItem>() : new List<NavItem>(pages);   // a copy: the caller's list may change under us
             t._nav = Nav.Active;
-            t._key = "tab." + (t._nav != null ? t._nav.PageTitle : "");
+            t._key = "tab." + (t._nav != null ? t._nav.PageTitle : "") + "#" + IndexOnPage(t._bar);
             t.Content = Ui.Box(parent);
+            Data.Get<Page>(t.Content);
             Data.Get<Ref>(t._bar).Tabs = t;
             var host = Host.For(t._bar);
             var names = new List<string>();

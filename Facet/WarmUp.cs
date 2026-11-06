@@ -60,7 +60,7 @@ namespace Facet
             var left = Controls.Columns(page, out var right);
             var card = Controls.Card(left, upper, o =>
             {
-                o.Note = () => lower;
+                o.NoteText = () => lower;
                 o.Actions = new List<KeyValuePair<string, Action>> { new KeyValuePair<string, Action>(rest, () => { }) };
             });
             Controls.Toggle(card, lower, Bind.Value(true), o => o.Help = rest);

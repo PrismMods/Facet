@@ -121,9 +121,10 @@ namespace Facet
                 label.pickingMode = PickingMode.Ignore;
 
                 // Where it lives, so the result teaches the menu rather than bypassing it.
-                // Each part through the host's table, then joined: the joined string is no key. An entry's Where is the consumer's own text, shown as given.
+                // Each part through the host's table, then joined: the joined string is no key. An entry's
+                // Where is a key too; text the table does not know comes back as given.
                 var host = Host.For(_host);
-                string at = h.Open != null ? h.Page : host.Translate(h.Page);
+                string at = host.Translate(h.Page);
                 if (h.Open == null && !string.IsNullOrEmpty(h.Tab)) at += " · " + host.Translate(h.Tab);
                 if (h.Open == null && !string.IsNullOrEmpty(h.Section)) at += " · " + host.Translate(h.Section);
                 var where = Ui.Text(at, row, sz.Small, Role.TextMuted, true);
@@ -426,6 +427,7 @@ namespace Facet
             Skin.When<ScrollView>(contentScroll, Skin.Scroll);
             right.Add(contentScroll);
             _content = contentScroll.contentContainer;
+            Data.Get<Tabs.Page>(_content);   // a Pages row's remembered tab is keyed by its index on the page
             _contentScroll = contentScroll;
 
             /* Siblings draw in the order they were added, so the scrolling pane was painting over

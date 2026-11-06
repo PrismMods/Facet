@@ -59,8 +59,9 @@ namespace Facet
         public Look Tile = new Look { Bg = Role.Row, Border = Role.Line, Text = Role.TextMuted, HoverBg = Role.RowHover,
             SelectedText = Role.Text, FocusBorder = Role.Focus };
         public Look Link = new Look { Text = Role.Accent, HoverText = Role.Text, FocusBorder = Role.Focus };
-        /// A hairline rule, and an upper-case header (Ui.Caps).
-        public Look Rule = new Look { Bg = Role.Line }, Caps = new Look { Text = Role.TextMuted };
+        /// A hairline rule (a card's header and rows, a nav group, a tab row), invisible by default
+        /// because 0.1 drew none: a skin gives it a colour. And an upper-case header (Ui.Caps).
+        public Look Rule = new Look(), Caps = new Look { Text = Role.TextMuted };
 
         /// A deep copy: every Look is copied, so the two never share one.
         public Looks Copy()

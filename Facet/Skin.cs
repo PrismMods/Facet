@@ -41,7 +41,7 @@ namespace Facet
                 Paint.Look(dragger, k.Thumb);
                 dragger.style.width = sz.ThumbWidth;
                 dragger.style.height = sz.ThumbHeight;
-                // KnobRadius, at most a round end (ruling Q3's ThumbHeight/2): Dark gives 0.1's 6.
+                // KnobRadius, at most a round end (ThumbHeight/2): Dark gives 0.1's 6.
                 Ui.SetRadius(dragger, Mathf.Min(sz.KnobRadius, sz.ThumbHeight / 2f));
                 Ui.SetBorderWidth(dragger, 0f);
                 /* Centre it on the track. Both the tracker and the dragger are laid out by the
@@ -59,7 +59,7 @@ namespace Facet
         }
 
         /* The filled part of a slider's track (Looks.Fill, none by default): inside the tracker, from the
-           left, as wide as the value. Read once here; the change callback only sets a width (ruling Q20). */
+           left, as wide as the value. Read once here; the change callback only sets a width. */
         internal static VisualElement AddFill(VisualElement slider, string id)
         {
             var tracker = slider.Q(className: "unity-base-slider__tracker");

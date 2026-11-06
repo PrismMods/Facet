@@ -4,11 +4,13 @@ using UnityEngine.UIElements;
 
 namespace Facet
 {
+    /// Id, VisibleWhen, EnabledWhen, Tooltip/TooltipText and ContextMenu act on the whole grid. Help is not shown.
     public sealed class TilesOptions : ControlOptions
     {
         public int Columns { get; set; } = 5;
     }
 
+    /// Help is not shown: a tile is one fixed-height line that would clip it. Use Tooltip.
     public sealed class TileOptions : Options<bool>
     {
         /// The consumer's data colour (a judgement colour): a coloured left edge, and a tint when on.
@@ -26,24 +28,29 @@ namespace Facet
     {
         private sealed class GridWidth { public float W; }
 
-        /* The grid. Each tile is (width - Columns * Gap) / Columns of the grid's own width, which is the
-           parent's plus one Gap (a negative right margin) because each tile carries a Gap to its right. */
+        /* The grid. Each tile is (width - Columns * Gap) / Columns of the grid's own content width, which
+           is the parent's plus one Gap (a negative right margin) because each tile carries a Gap to its
+           right. In a card body the grid is a card row: Sizes.Pad at the sides, Gap above the first line
+           (the tiles' own bottom Gap closes it), and the row after it takes its rule. */
         public static VisualElement Tiles(VisualElement parent, Action<TilesOptions> configure = null)
         {
             var o = ControlOptions.Make(parent, "Tiles", configure);
             var grid = Ui.Box(parent);
-            float gap = Theme.For(grid).Sizes.Gap;
+            var sz = Theme.For(grid).Sizes;
+            float gap = sz.Gap;
             int cols = Math.Max(1, o.Columns);
             grid.style.flexDirection = FlexDirection.Row;
             grid.style.flexWrap = Wrap.Wrap;
             grid.style.marginRight = -gap;
+            if (Carded(grid, sz)) grid.style.paddingTop = gap;
             Events.On<GeometryChangedEvent>(grid, e =>
             {
-                float w = Mathf.Floor((grid.layout.width - cols * gap) / cols * 100f) / 100f;
+                float w = Mathf.Floor((grid.contentRect.width - cols * gap) / cols * 100f) / 100f;
                 if (float.IsNaN(w) || w <= 0f) return;
                 Data.Get<GridWidth>(grid).W = w;
                 for (int i = 0; i < grid.childCount; i++) grid[i].style.width = w;
             });
+            Hook(grid, null, "Tiles", o);
             return grid;
         }
 
@@ -96,9 +103,10 @@ namespace Facet
 
             Action<bool> sw = null;
             VisualElement track = null;
+            Control<bool> ctl = null;
             if (o.Switch)
             {
-                track = Switch(tile, out sw);
+                track = Switch(tile, out sw, () => ctl.Set(!ctl.Value));
                 track.focusable = false;   // one tab stop per tile: the tile answers Enter/Space
                 track.style.flexShrink = 0f;
                 track.style.marginLeft = sz.Gap;
@@ -112,8 +120,8 @@ namespace Facet
                 if (sw != null) sw(v);
             };
             var host = Host.For(tile);
-            var ctl = new Control<bool>(tile, track, label, Tracked(grid, label, o, on), show, o);
-            if (track != null) Events.On<ClickEvent>(track, e => { ctl.Set(!ctl.Value); e.StopPropagation(); });
+            o.Help = null;   // a fixed-height, overflow-hidden tile would clip a help line (TileOptions says so)
+            ctl = new Control<bool>(tile, track, label, Tracked(grid, label, o, on), show, o);
             Action activate = () =>
             {
                 if (o.Switch && o.Open != null) Safe.Run(host, "Open '" + label + "'", o.Open);

@@ -29,7 +29,7 @@ namespace Facet.Mod
             return l != null && l.Count == 1 ? l[0].value * (l[0].unit == TimeUnit.Second ? 1000f : 1f) : -1f;
         }
 
-        /* Task 14, the budgets for a suite page. Run right after SectionWarmUp/SectionOpen (Ruling Q8),
+        /* Task 14, the budgets for a suite page. Run right after SectionWarmUp/SectionOpen,
            so a part the warm-up missed shows as a cold first open; on its own host, so the re-theme
            leaks into no later section. The first must also be within 15 ms of the second open (the warm figure). */
         IEnumerator SectionPartsPerf()
@@ -279,6 +279,7 @@ namespace Facet.Mod
                 foreach (var l in Root.Query<Label>().ToList()) if (l.text == "Size") size = l;
                 Check(size != null, "the Size row's label reads Size before the CJK languages");
                 var drawer = new Dictionary<string, string>();
+                var drawerFn = typeof(Fonts).GetMethod("Drawer", BindingFlags.NonPublic | BindingFlags.Static);
                 foreach (var c in new[] { new[] { "zh", "大小" }, new[] { "ja", "サイズ" }, new[] { "ko", "\uD06C\uAE30" } })
                 {
                     Gallery.Lang = c[0];
@@ -289,7 +290,7 @@ namespace Facet.Mod
                     Check(Fonts.Has(face, c[1]), c[0] + ": the regular face draws " + c[1], face?.name);
                     var bold = Fonts.BoldFace(face);
                     Check(bold == null || Fonts.Has(bold, c[1]), c[0] + ": the bold face draws " + c[1], bold?.name);
-                    drawer[c[0]] = Fonts.Drawer(face, c[1][0]).name;
+                    drawer[c[0]] = ((UnityEngine.Object)drawerFn.Invoke(null, new object[] { face, c[1][0] })).name;   // internal: by reflection, like Paint.Flash
                 }
                 /* Documented limit (Han unification, see Fonts.ForLanguage): the fallback table is shared,
                    so after ko (SectionWords) and zh the ja host's first Han character draws through the SAME face as zh's, not
@@ -378,7 +379,7 @@ namespace Facet.Mod
                 Check(FadeMs(b) == 0f, "at speed 0, the next hover fades over 0 ms", FadeMs(b).ToString());
                 Anim.Speed = 1f; Mouse<MouseLeaveEvent>(b); Mouse<MouseEnterEvent>(b);
 
-                // Ruling Q6: the flash back to 60 ms runs on a hooked row (an unhooked one asserts nothing).
+                // the flash back to 60 ms runs on a hooked row (an unhooked one asserts nothing).
                 var flash = typeof(Paint).GetMethod("Flash", BindingFlags.NonPublic | BindingFlags.Static);
                 flash.Invoke(null, new object[] { b, Role.Accent, 100 });
                 Check(FadeMs(b) == 0f, "a running Flash switches the row's fade off", FadeMs(b).ToString());
@@ -431,6 +432,13 @@ namespace Facet.Mod
                 Check(m.Feature, "clicking head-input flips the model");
                 History.Undo(); yield return null;
                 Check(!m.Feature, "History.Undo puts the header switch back");
+                // Final review I1: the switch is a tab stop, so Enter/Space (Submit) must flip it as a click does.
+                Check(sw != null && sw.focusable, "the header switch is focusable");
+                if (sw != null) using (var se = NavigationSubmitEvent.GetPooled()) { se.target = sw; sw.SendEvent(se); }
+                yield return null;
+                Check(m.Feature, "Submit on head-input flips the model");
+                History.Undo(); yield return null;
+                Check(!m.Feature, "...and History.Undo puts it back");
                 var off = sw.style.backgroundColor.value;
                 m.Feature = true;
                 yield return Until(() => !Near(sw.style.backgroundColor.value, off), ms, 400);
@@ -534,6 +542,31 @@ namespace Facet.Mod
                 Check(eq && line && w0 > 20f, "the first five tiles are equal width +-1 on one line", w0 + "");
                 Check(tile(5).worldBound.yMin > tile(0).worldBound.yMax - 1f, "the 6th wraps", tile(5).worldBound.ToString());
 
+                // Final review I2: in a card the grid is a card row, Sizes.Pad inside the borders and Gap under the header.
+                var ms = new double[1];
+                var tsz = th.Sizes;
+                var tcard = win.Body.Q("tiles-card"); var cgrid = win.Body.Q("card-tiles");
+                var q0 = win.Body.Q("quick0"); var q2 = win.Body.Q("quick2"); var after = win.Body.Q("after-tiles");
+                if (tcard != null && cgrid != null && q0 != null && q2 != null && after != null)
+                {
+                    float inset = tsz.Line + tsz.Pad;
+                    Check(Mathf.Abs(q0.worldBound.xMin - tcard.worldBound.xMin - inset) <= 1f && Mathf.Abs(tcard.worldBound.xMax - q2.worldBound.xMax - inset) <= 1f,
+                        "tiles in a card sit Sizes.Pad inside its borders on both sides", q0.worldBound.xMin + "/" + q2.worldBound.xMax + " in " + tcard.worldBound);
+                    Check(Mathf.Abs(q0.worldBound.yMin - cgrid.worldBound.yMin - tsz.Gap) <= 1f, "...and Sizes.Gap below the card's header", q0.worldBound.yMin + " vs " + cgrid.worldBound.yMin);
+                    Check(Mathf.Abs(q0.worldBound.width - q2.worldBound.width) <= 1f && Mathf.Abs(q0.worldBound.yMin - q2.worldBound.yMin) <= 1f && q0.worldBound.width > 20f,
+                        "...three equal tiles on one line", q0.worldBound + " / " + q2.worldBound);
+                    // The rule itself is checked on a ruled theme (SectionCards): on Dark Looks.Rule is invisible.
+                    Check(after.resolvedStyle.borderTopWidth == 0f && Px(after.style.paddingLeft) == tsz.Pad, "on Dark the row after the grid is a card row with no rule", after.resolvedStyle.borderTopWidth.ToString());
+                    // Final review I3: TilesOptions' Id names the grid and its VisibleWhen hides it.
+                    m.HideQuick = true;
+                    yield return Until(() => cgrid.resolvedStyle.display == DisplayStyle.None, ms, 400);
+                    Check(ms[0] >= 0 && ms[0] <= 150, "a grid whose VisibleWhen turns false hides within 150 ms", Ms(ms));
+                    m.HideQuick = false;
+                    yield return Until(() => cgrid.resolvedStyle.display == DisplayStyle.Flex, ms, 400);
+                    Check(ms[0] >= 0, "...and shows again when it turns true");
+                }
+                else Check(false, "the Tiles page has its card of tiles (card-tiles is the grid's Id)");
+
                 m.Opens = 0; History.Clear();
                 var sw = win.Body.Q("tile0-input");
                 Check(sw != null, "a feature tile has its switch, tile0-input");
@@ -546,7 +579,6 @@ namespace Facet.Mod
                 if (lab0 != null) ClickEl(lab0);
                 yield return null;
                 Check(!m.Tile[0] && m.Opens == 1, "a click on the label runs Open once and does not flip the model", m.Opens.ToString());
-                var ms = new double[1];
                 var sel = Gallery.Host.Theme.Looks.Tile.SelectedBg;
                 var selBg = sel.HasValue ? th[sel.Value] : th[Role.Row];
                 var lab3 = tile(3).Query<Label>().ToList()[0];
@@ -661,13 +693,30 @@ namespace Facet.Mod
                 GalleryParts.Nav.Go(GalleryParts.FeatureItem); yield return null; yield return null; yield return null;
                 Check(m.Shows == 2, "coming back calls Show again", m.Shows.ToString());
 
+                // Final review I3: the pane is a Control (Id-pane); its VisibleWhen hides it, runs Hide and stops the tick.
+                var ms = new double[1];
+                var pane = win.Body.Q("feat-preview-pane");
+                Check(pane != null && pane.Q("feat-preview") != null && pane.Q("feat-preview") != pane, "the pane is Id-pane and holds the stage, named Id");
+                m.HidePreview = true;
+                yield return Until(() => m.Hides == 2, ms, 400);
+                Check(ms[0] >= 0 && pane?.style.display == DisplayStyle.None, "a pane whose VisibleWhen turns false hides and runs Hide", m.Hides.ToString());
+                t0 = m.Ticks;
+                for (int i = 0; i < 10; i++) yield return null;
+                Check(m.Ticks == t0, "...and does not tick while hidden", (m.Ticks - t0).ToString());
+                m.HidePreview = false;
+                yield return Until(() => m.Shows == 3, ms, 400);
+                Check(ms[0] >= 0 && pane?.style.display == DisplayStyle.Flex, "turning it true shows the pane and runs Show", m.Shows.ToString());
+                t0 = m.Ticks;
+                for (int i = 0; i < 10; i++) yield return null;
+                Check(m.Ticks > t0 && m.Hides == 2, "...and it ticks again", (m.Ticks - t0).ToString());
+
                 GalleryParts.Surface.Visible = false; yield return null;
-                Check(m.Hides == 2, "hiding the surface calls Hide", m.Hides.ToString());
+                Check(m.Hides == 3, "hiding the surface calls Hide", m.Hides.ToString());
                 t0 = m.Ticks;
                 for (int i = 0; i < 10; i++) yield return null;
                 Check(m.Ticks == t0, "a hidden surface's preview does not tick", (m.Ticks - t0).ToString());
                 GalleryParts.Surface.Visible = true; yield return null; yield return null;
-                Check(m.Shows == 3, "showing the surface calls Show", m.Shows.ToString());
+                Check(m.Shows == 4, "showing the surface calls Show", m.Shows.ToString());
             }
             finally { GalleryParts.Close(); GalleryParts.Model = new PartsModel(); }
 
@@ -754,8 +803,9 @@ namespace Facet.Mod
 
                 var r1 = win.Body.Q("look-glow"); var r2 = win.Body.Q("look-size"); var r3 = win.Body.Q("look-style");
                 Check(r1 != null && r1.resolvedStyle.borderTopWidth == 0f, "row 1 has no top border", r1?.resolvedStyle.borderTopWidth.ToString());
-                Check(r2 != null && r3 != null && r2.style.borderTopWidth.value == sz.Line && r3.style.borderTopWidth.value == sz.Line
-                      && Near(r2.style.borderTopColor.value, th[Role.Line]), "rows 2 and 3 have a Sizes.Line top border in Role.Line");
+                // Final review: row rules go through Looks.Rule, invisible on Dark; the ruled case is on the CardGroup theme below.
+                Check(r2 != null && r3 != null && r2.resolvedStyle.borderTopWidth == 0f && r3.resolvedStyle.borderTopWidth == 0f,
+                    "on Dark rows 2 and 3 draw no rule: Looks.Rule is invisible", r2?.resolvedStyle.borderTopWidth + " / " + r3?.resolvedStyle.borderTopWidth);
                 Check(r1 != null && Px(r1.style.paddingLeft) == sz.Pad && Px(r1.style.paddingRight) == sz.Pad, "a card row pads Sizes.Pad on both sides");
                 var help = r1?.Q<Label>("help");
                 Check(help != null && help.text == "Adds a soft halo" && help.style.fontSize.value.value == sz.Small && Near(help.style.color.value, th[Role.TextMuted]),
@@ -779,10 +829,12 @@ namespace Facet.Mod
                 Check(ms[0] >= 0 && ms[0] <= 150, "hiding Depth through VisibleWhen reads (1) within 150 ms", Ms(ms) + " " + fh?.text);
                 m.HideDepth = false;
                 yield return Until(() => fh?.text == "▾ Advanced (2)", ms);
+                Check(lab("Tint") != null, "a card's Note key shows in the header (Other: Tint)");
                 try
                 {
                     Gallery.Lang = "ko"; GalleryParts.Surface.Relabel();
                     Check(fh?.text == "▾ 고급 (2)", "in Korean the head reads Facet's own 고급", fh?.text);
+                    Check(lab("\uD2F4\uD2B8") != null && lab("Tint") == null, "...and the Note key relabels through the host's table (틴트)");
                 }
                 finally { Gallery.Lang = "en"; GalleryParts.Surface.Relabel(); }
                 if (fh != null) ClickEl(fh);   // fold again for the search reveal
@@ -829,23 +881,51 @@ namespace Facet.Mod
             }
             finally { Gallery.Lang = "en"; GalleryParts.Close(); GalleryParts.Model = new PartsModel(); }
 
-            // Ruling Q16: a card body wears Looks.Group, its own fill, not the window shell's Looks.Card.
+            // a card body wears Looks.Group, its own fill, not the window shell's Looks.Card.
+            // Final review: a skin's Looks.Rule colours the card's header rule AND its row rules; a tile grid counts as a row.
             var gt = new Theme();
             gt.Looks.Group = new Look { Bg = Role.RowAlt, Border = Role.Line };
+            gt.Looks.Rule = new Look { Bg = Role.Danger };   // not Line: the rows must take the Rule's colour
             var gs = new Surface(Host.Create("CardGroup", o => { o.Log = l => Main.Log("[cardgroup] " + l); o.Theme = gt; }), "FacetCardGroup", Layer.Window);
             try
             {
-                var gw = new Window(gs.Root, "cardgroup", "Group", new Rect(60, 60, 300, 200));
+                var gw = new Window(gs.Root, "cardgroup", "Group", new Rect(60, 60, 400, 400));
                 var gb = Controls.Card(gw.Body, "Own fill", o => o.Id = "own-fill");
-                yield return null;
+                for (int i = 0; i < 3; i++) Controls.Toggle(gb, "Ruled " + i, Bind.To(() => false, v => { }), o => o.Id = "ruled" + i);
+                var gg = Controls.Tiles(gb, o => o.Id = "ruled-tiles");
+                Controls.Tile(gg, "Ruled tile", Bind.To(() => false, v => { }));
+                Controls.Toggle(gb, "Ruled after", Bind.To(() => false, v => { }), o => o.Id = "ruled-after");
+                yield return null; yield return null;
                 var gc = gw.Body.Q("own-fill");
                 Check(gc != null && Near(gc.style.backgroundColor.value, gt[Role.RowAlt]) && !Near(gw.Root.style.backgroundColor.value, gt[Role.RowAlt]),
                     "a theme's Looks.Group fills the card and not the window", gc?.style.backgroundColor.value.ToString());
+                var gsz = gt.Sizes; var danger = gt[Role.Danger];
+                Func<string, bool> ruled = id => { var e = gw.Body.Q(id); return e != null && e.style.borderTopWidth.value == gsz.Line && Near(e.style.borderTopColor.value, danger); };
+                var headRule = gc?[1];
+                Check(headRule != null && Near(headRule.style.backgroundColor.value, danger), "the header rule is the Rule's colour", headRule?.style.backgroundColor.value.ToString());
+                Check(gw.Body.Q("ruled0")?.resolvedStyle.borderTopWidth == 0f && ruled("ruled1") && ruled("ruled2"),
+                    "row 1 has no rule; rows 2 and 3 a Sizes.Line rule in Looks.Rule's colour", gw.Body.Q("ruled1")?.style.borderTopColor.value.ToString());
+                Check(ruled("ruled-tiles") && ruled("ruled-after"), "a tile grid in the card takes a rule like a row, and so does the row after it");
             }
             finally { gs.Dispose(); }
 
+            // Final review: a null-titled card has no header for Actions/Note; it drops them and says so once per host and page.
+            var ulogs = new List<string>();
+            var us = new Surface(Host.Create("CardUntitled", o => o.Log = l => ulogs.Add(l)), "FacetCardUntitled", Layer.Window);
+            try
+            {
+                var uw = new Window(us.Root, "carduntitled", "Untitled", new Rect(60, 60, 300, 200));
+                for (int i = 0; i < 2; i++) Controls.Card(uw.Body, null, o => { o.NoteText = () => "n"; o.Id = "untitled" + i; });
+                Controls.Card(uw.Body, null);
+                Check(ulogs.FindAll(l => l.Contains("need a title")).Count == 1 && uw.Body.Q("untitled0").Query<Label>().ToList().Count == 0,
+                    "a null-titled card with a Note draws no header and logs once per host and page", string.Join(" | ", ulogs));
+            }
+            finally { us.Dispose(); }
+
             // Form.Build with Cards: groups A, A, B; A has an Advanced field and a Help field.
-            var fs = new Surface(Gallery.Host, "FacetFormCards", Layer.Window);
+            var ft = new Theme();
+            ft.Looks.Rule = new Look { Bg = Role.Line };   // a skin's rule: Dark draws none
+            var fs = new Surface(Host.Create("FormCards", o => { o.Log = l => Main.Log("[formcards] " + l); o.Theme = ft; }), "FacetFormCards", Layer.Window);
             try
             {
                 var fw = new Window(fs.Root, "formcards", "Form cards", new Rect(60, 60, 500, 500));
@@ -872,7 +952,7 @@ namespace Facet.Mod
                 Check(hp?.Q<Label>("help")?.text == "Says hello", "the Help field shows its help line", hp?.Q<Label>("help")?.text);
 
                 // Review I1: the card rules reach rows wrapped for a foreign owner, in a ToggleGroup and under a nested Section.
-                var fsz = Gallery.Host.Theme.Sizes;
+                var fsz = ft.Sizes;
                 var fown = fp.Q("fown");
                 Check(fown != null && fown.style.borderTopWidth.value == fsz.Line && Px(fown.style.paddingRight) == fsz.Pad,
                     "a foreign-owner Form field in a card has a Sizes.Line top border and card padding", fown?.style.borderTopWidth.value.ToString());
@@ -946,7 +1026,7 @@ namespace Facet.Mod
             finally { bs.Dispose(); }
 
             GalleryParts.Model = new PartsModel();
-            Gallery.Store.Remove("tab.Tabs");
+            Gallery.Store.Remove("tab.Tabs#0");
             var win = GalleryParts.Open(); yield return null; yield return null;
             var clock = History.Clock;
             try
@@ -977,10 +1057,10 @@ namespace Facet.Mod
                 Check(m.TabShows == 2, "...and its preview shows again", m.TabShows.ToString());
 
                 Submit(tab("Combo")); yield return null;
-                string kept; Gallery.Store.TryGetValue("tab.Tabs", out kept);
+                string kept; Gallery.Store.TryGetValue("tab.Tabs#0", out kept);
                 nav.Rebuild(); yield return null;
                 Check(GalleryParts.TabsRow != rowT && GalleryParts.TabsRow.SelectedName == "Combo" && builds() == "2,3,0" && kept == "Combo",
-                    "rebuilding the page with selected = -1 reopens Combo (the host holds tab.Tabs = Combo)", builds() + " " + kept);
+                    "rebuilding the page with selected = -1 reopens Combo (the host holds tab.Tabs#0 = Combo)", builds() + " " + kept);
 
                 // Two flips with a reselect between them are one undo step only if the key stayed the same.
                 History.Clock = () => 1000.0; History.Clear();
@@ -1029,7 +1109,7 @@ namespace Facet.Mod
             }
             finally { History.Clock = clock; GalleryParts.Close(); GalleryParts.Model = new PartsModel(); }
 
-            // Ruling Q22: a consumer's own search entries, and a callback when a hit lands on an item.
+            // a consumer's own search entries, and a callback when a hit lands on an item.
             var logs = new List<string>();
             var qs = new Surface(Host.Create("TabHooks", o => o.Log = l => { logs.Add(l); Main.Log("[tabhooks] " + l); }), "FacetTabHooks", Layer.Window);
             try
@@ -1115,16 +1195,19 @@ namespace Facet.Mod
             finally { qs.Dispose(); }
 
             // The where line translates each part with the host's table, then joins.
-            var tmap = new Dictionary<string, string> { { "Key page", "Seite" }, { "Key tab", "Reiter" }, { "Key section", "Bereich" } };
+            var tmap = new Dictionary<string, string> { { "Key page", "Seite" }, { "Key tab", "Reiter" }, { "Key section", "Bereich" }, { "Key menu", "Menü" } };
             var ts = new Surface(Host.Create("TabWhere", o => { o.Log = l => Main.Log("[tabwhere] " + l); o.Translate = k => tmap.TryGetValue(k, out var v) ? v : k; }), "FacetTabWhere", Layer.Window);
             try
             {
                 var tw = new Window(ts.Root, "tabwhere", "Where", new Rect(60, 60, 600, 300));
                 var kp = new NavItem("Key page", p => Tabs.Pages(p, new List<NavItem> { new NavItem("Key tab", q => { Controls.Section(q, "Key section"); Controls.Info(q, "Needle row", () => "n"); }) }));
                 var tn = new Nav(tw.Body, new[] { kp });
+                tn.AddSearchSource(() => new[] { new SearchIndex.Entry { Label = "Needle entry", Where = "Key menu", Open = () => { } } });
                 yield return null; yield return null;
-                tn.Filter("needle row"); yield return null;
+                tn.Filter("needle"); yield return null;
                 Check(tw.Body.Query<Label>().ToList().Exists(l => l.text == "Seite · Reiter · Bereich"), "the where line shows the translated page, tab and section",
+                    string.Join(" | ", tw.Body.Query<Label>().ToList().ConvertAll(l => l.text)));
+                Check(tw.Body.Query<Label>().ToList().Exists(l => l.text == "Menü"), "...and an entry's Where through the host's table (final review)",
                     string.Join(" | ", tw.Body.Query<Label>().ToList().ConvertAll(l => l.text)));
             }
             finally { ts.Dispose(); }
@@ -1141,8 +1224,19 @@ namespace Facet.Mod
                 g.Select(2);
                 Check(g.Element.Query<Button>().ToList().Count == 3 && g.Selected == 0, "Rebuild(names) on a Pages row is ignored, and Select ignores a tab VisibleWhen hid, and the list was copied", g.Selected.ToString());
                 g.Select(1);
+                gw.Body.Clear();   // a rebuild: the old row goes and the new one takes its place
                 var g2 = Tabs.Pages(gw.Body, new List<NavItem> { new NavItem("G1", q => { }), new NavItem("G2", q => { }) });
                 Check(g2.SelectedName == "G2", "with no host Read/Write a rebuild keeps the tab the user picked", g2.SelectedName);
+
+                // Final review: two Pages rows on one page (here outside a Nav) with the same tab names keep their own picked tab.
+                gw.Body.Clear();
+                Func<Tabs> pair = () => Tabs.Pages(gw.Body, new List<NavItem> { new NavItem("One", q => { }), new NavItem("Two", q => { }) });
+                var pa = pair(); pair();
+                pa.Select(1);
+                gw.Body.Clear();
+                var pa2 = pair(); var pb2 = pair();
+                Check(pa2.SelectedName == "Two" && pb2.SelectedName == "One", "two rows on one page remember their own tab (the key carries the row's index)",
+                    pa2.SelectedName + " / " + pb2.SelectedName);
             }
             finally { gs.Dispose(); }
         }
@@ -1152,7 +1246,7 @@ namespace Facet.Mod
         {
             var st = new Theme();
             st.Looks.Indicator = new Look { SelectedBg = Role.Accent };
-            st.Looks.Rule = new Look { Bg = Role.Line };   // Dark draws no rule (Q25); a skin gives it a colour
+            st.Looks.Rule = new Look { Bg = Role.Line };   // Dark draws no rule; a skin gives it a colour
             st[Role.Rail] = new Color(0.2f, 0.1f, 0.3f, 1f);
             bool ko = false;
             var ss = new Surface(Host.Create("Sidebar", o => { o.Log = l => Main.Log("[sidebar] " + l); o.Theme = st; o.Translate = k => ko && k == "Tint" ? "틴트" : k; }), "FacetSidebar", Layer.Window);

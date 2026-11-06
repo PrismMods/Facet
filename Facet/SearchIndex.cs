@@ -42,7 +42,8 @@ namespace Facet
         {
             /// The English key, translated by the Nav's host like a row's label.
             public string Label;
-            /// Where it lives, shown beside it and searched like a page name.
+            /// Where it lives: an English key, translated by the Nav's host like a page name (text its
+            /// table does not know shows as given), shown beside it and searched in English and as shown.
             public string Where;
             /// What choosing it does.
             public Action Open;

@@ -89,7 +89,7 @@ namespace Facet.Mod
             Main.Log("AUTOTEST start screen " + Screen.width + "x" + Screen.height);
             yield return Run("SectionWarmUp", SectionWarmUp());   // first: it needs the session's first surface
             yield return Run("SectionOpen", SectionOpen());
-            yield return Run("SectionPartsPerf", SectionPartsPerf());   // Ruling Q8: before any section warms the parts
+            yield return Run("SectionPartsPerf", SectionPartsPerf());   // before any section warms the parts
             yield return Run("SharedEscape", SharedEscape());
             yield return Run("SectionHost", SectionHost());
             yield return Run("SectionTheme", SectionTheme());

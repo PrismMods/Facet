@@ -3,7 +3,7 @@ using System;
 namespace Facet
 {
     /// Which OS font files can draw Korean, Chinese or Japanese, by script. Paths only; Fonts loads them.
-    public static class Cjk
+    internal static class Cjk
     {
         /// "ko", "zh" or "ja" from the first two letters of a host language ("zh-CN", "ja_JP", any case); else null.
         public static string Script(string language)

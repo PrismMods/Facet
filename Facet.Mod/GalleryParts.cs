@@ -21,13 +21,16 @@ namespace Facet.Mod
         /// The Feature page's header switch and its second header's description.
         public bool Feature;
         public string Desc = "one";
-        /// The Feature page's preview: how often each callback ran.
+        /// The Feature page's preview: how often each callback ran, and its pane's VisibleWhen.
         public int Shows, Hides, Ticks, Links;
+        public bool HidePreview;
         /// The Tiles page: seven feature tiles (0..6), one judgement tile, how often Open ran, and which tiles VisibleWhen hides.
         public bool[] Tile = new bool[7];
         public bool Judge;
         public int Opens;
         public bool HideTiles;
+        /// VisibleWhen of the card's tile grid.
+        public bool HideQuick;
         /// The Tabs page: builds per tab (General, Combo, Judgement), General's throw switch, Combo's flag, and General's preview.
         public int[] TabBuilds = new int[3];
         public bool BreakGeneral, ComboFlag;
@@ -75,7 +78,7 @@ namespace Facet.Mod
                     new KeyValuePair<string, Action>("All", () => { Model.AllRuns++; Model.On = 3; }),
                     new KeyValuePair<string, Action>("None", () => Model.On = 0),
                 };
-                o.Note = () => Model.On + " / 3";
+                o.NoteText = () => Model.On + " / 3";
                 o.VisibleWhen = () => !Model.HideCard;
             });
             Controls.Toggle(card, "Glow", Bind.To(() => Model.Glow, v => Model.Glow = v), o => { o.Id = "look-glow"; o.Help = "Adds a soft halo"; });
@@ -86,7 +89,7 @@ namespace Facet.Mod
             Controls.Slider(adv, "Depth", Bind.To(() => Model.Depth, v => Model.Depth = v), o => { o.Id = "look-depth"; o.VisibleWhen = () => !Model.HideDepth; });
             // Review I2: a second card sharing the label "Size", far enough down that only a right reveal shows it.
             Ui.Box(p).style.height = 900f;
-            var other = Controls.Card(p, "Other");
+            var other = Controls.Card(p, "Other", o => o.Note = "Tint");   // a Note key the Gallery host translates
             Controls.Slider(other, "Size", Bind.To(() => Model.Size, v => Model.Size = v), o => { o.Id = "other-size"; o.Min = 0.5f; o.Max = 2f; });
         }
 
@@ -114,6 +117,7 @@ namespace Facet.Mod
                 o.Show = st => { Model.Shows++; st.Add(tick); };
                 o.Tick = st => { Model.Ticks++; tick.text = Model.Ticks.ToString(); };
                 o.Hide = () => Model.Hides++;
+                o.VisibleWhen = () => !Model.HidePreview;
             });
             var box = Ui.Box(right);
             box.name = "feat-box";
@@ -139,6 +143,11 @@ namespace Facet.Mod
             }
             var j = Controls.Tiles(p, o => o.Columns = 4);
             Controls.Tile(j, "Perfect", Bind.To(() => Model.Judge, v => Model.Judge = v), o => { o.Id = "judge"; o.Switch = false; o.Colour = new Color(1f, 0f, 0f); });
+            // Final review I2: a card holding tiles (plan 10's Home and Features pages), then a row the grid's rule counts for.
+            var card = Controls.Card(p, "Quick switches", o => o.Id = "tiles-card");
+            var cg = Controls.Tiles(card, o => { o.Id = "card-tiles"; o.Columns = 3; o.VisibleWhen = () => !Model.HideQuick; });
+            for (int i = 0; i < 3; i++) Controls.Tile(cg, "Quick " + i, Bind.To(() => false, v => { }), o => o.Id = "quick" + i);
+            Controls.Toggle(card, "After tiles", Bind.To(() => false, v => { }), o => o.Id = "after-tiles");
         }
 
         // Task 12: tab pages. General holds a preview, Combo an unnamed toggle and a subpage, Judgement a row far down.

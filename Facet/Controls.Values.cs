@@ -77,10 +77,9 @@ namespace Facet
             var o = ControlOptions.Make(parent, label, configure);
             var right = Controls.Row(parent, label);
             Action<bool> show;
-            var track = Switch(right, out show);
-            var c = new Control<bool>(right.parent, track, label, Tracked(parent, label, o, bind), show, o);
-            Events.On<ClickEvent>(track, e => { c.Set(!c.Value); e.StopPropagation(); });
-            Events.On<NavigationSubmitEvent>(track, e => { c.Set(!c.Value); e.StopPropagation(); });
+            Control<bool> c = null;
+            var track = Switch(right, out show, () => c.Set(!c.Value));
+            c = new Control<bool>(right.parent, track, label, Tracked(parent, label, o, bind), show, o);
             return c;
         }
 
@@ -362,17 +361,18 @@ namespace Facet
 
         // A button row (or a card) has no value, but takes the same options: a Control over a constant gives
         // it the Id naming, tooltips, EnabledWhen, VisibleWhen and ContextMenu the others have.
-        private static void Hook(VisualElement row, VisualElement b, string label, ControlOptions o)
+        private static Control<string> Hook(VisualElement row, VisualElement b, string label, ControlOptions o)
         {
             o.NoRead = true;
-            new Control<string>(row, b, label, Bind.To<string>(() => null, null), null, o);
+            return new Control<string>(row, b, label, Bind.To<string>(() => null, null), null, o);
         }
 
         /// A switch, not a checkbox: UI Toolkit's Toggle is a tick box whose styling lives in the
         /// theme style sheet we do not have, so it would come out unstyled. Drawn from two elements
         /// instead — a track and a knob — which also lets it animate. Focusable, with the focus ring
-        /// in its look (Looks.Switch); on is Paint.Select.
-        internal static VisualElement Switch(VisualElement host, out Action<bool> show)
+        /// in its look (Looks.Switch); on is Paint.Select. A click or Submit on the track runs `toggle`
+        /// and goes no further, so every switch answers the keyboard as well as the pointer.
+        internal static VisualElement Switch(VisualElement host, out Action<bool> show, Action toggle)
         {
             var t = Theme.For(host); var s = t.Sizes; var k = t.Looks;
             var track = new VisualElement();
@@ -397,6 +397,8 @@ namespace Facet
             host.Add(track);
             Paint.Look(track, k.Switch);
             Paint.Look(knob, k.Knob);
+            Events.On<ClickEvent>(track, e => { toggle(); e.StopPropagation(); });
+            Events.On<NavigationSubmitEvent>(track, e => { toggle(); e.StopPropagation(); });
 
             // Before the first layout `left` resolves to NaN and Anim.Move starts at the target: a new switch does not slide in.
             show = v =>

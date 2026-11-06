@@ -143,7 +143,7 @@ static class FacetTest {
         Check(sz.Radius == 3f && sz.Body == 15f && sz.RowHeight == 32f && sz.SwitchRadius == 9f, "Sizes default to Facet 0.1's look");
         Check(sc.Radius == 2f && sz.Radius == 3f, "a copy of Sizes is independent");
         Check(sz.ControlPad == 5f && sz.FieldPad == 4f && sz.ItemHeight == 38f, "ControlPad, FieldPad and ItemHeight keep 0.1's 5, 4 and 38");
-        // Ruling Q19: every Sizes field, the new ones included, is copied and the copy is its own.
+        // every Sizes field, the new ones included, is copied and the copy is its own.
         bool everySize = true;
         var sd = new Sizes(); var sdc = sd.Copy();
         foreach (var f in typeof(Sizes).GetFields())
@@ -160,12 +160,13 @@ static class FacetTest {
             everyLook &= f.GetValue(lc) is Look && !ReferenceEquals(f.GetValue(lc), f.GetValue(lk));
         Check(everyLook, "Looks.Copy gives every Look field its own copy");
         Check(lk.Switch.Bg == Role.Off && lk.Switch.SelectedBg == Role.Accent && lk.Fill.Bg == null && lk.Indicator.SelectedBg == null, "the new looks keep 0.1's look");
+        Check(lk.Rule.Bg == null && lk.Rule.Border == null, "Looks.Rule is invisible by default, as on Dark (0.1 drew no rules)");
         Check(lk.Tab.Bg == Role.RowAlt && lk.Tile.Border == Role.Line && lk.Group.Bg == Role.Panel && lk.Group.Border == Role.PanelBorder
               && lk.Stage.Bg == Role.Panel, "Tab is the Button preset; Group and Stage start as Card");
         var lb = Look.Button; var lb2 = lb.Copy(); lb2.SelectedBorder = Role.Focus; lb2.DisabledOpacity = .5f;
         Check(lb.SelectedBorder == null && lb.DisabledOpacity == .35f && lb2.Bg == Role.RowAlt, "Look.Copy is independent of its source");
         var pb = Palette.FromAccent(.2f, .4f, 1f, 1f);
-        // Ruling Q7: Off matches RowAlt in alpha too.
+        // Off matches RowAlt in alpha too.
         Check(Near(pb[(int)Role.Off], pb[(int)Role.RowAlt][0], pb[(int)Role.RowAlt][1], pb[(int)Role.RowAlt][2]) && pb[(int)Role.Off][3] == pb[(int)Role.RowAlt][3]
               && pb[(int)Role.Rail][3] == 0f && pb[(int)Role.Line][3] == pb[(int)Role.PanelBorder][3], "Off, Rail and Line derive from today's roles");
         var aCalls = new List<string>();

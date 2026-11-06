@@ -48,7 +48,6 @@ namespace Facet
             Array.Copy(c, _c, Math.Min(c.Length, _c.Length));
             _sizes = new Sizes();
             _looks = new Looks();
-            _looks.Rule = new Look();   // 0.1 drew no rules; a skin gives Looks.Rule a colour
         }
 
         /// A copy of Dark, to adjust: its colours, sizes and looks.

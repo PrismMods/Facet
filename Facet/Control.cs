@@ -36,6 +36,9 @@ namespace Facet
         /// Called whenever the row shows a value (build, set, refresh): lets a group follow its switch.
         internal Action<T> OnShown;
 
+        /// Called when VisibleWhen shows or hides the row: lets a preview pane stop and start with it.
+        internal Action<bool> OnVisible;
+
         private const int FailLimit = 3;
 
         private readonly Bind<T> _bind;
@@ -168,7 +171,12 @@ namespace Facet
             if (_o.VisibleWhen != null)
             {
                 bool v = Safe.Get(_host, _visibleSite ?? (_visibleSite = "VisibleWhen '" + _name + "'"), _o.VisibleWhen, true);
-                if (v != _visible) { _visible = v; Root.style.display = v ? DisplayStyle.Flex : DisplayStyle.None; }
+                if (v != _visible)
+                {
+                    _visible = v;
+                    Root.style.display = v ? DisplayStyle.Flex : DisplayStyle.None;
+                    if (OnVisible != null) OnVisible(v);
+                }
             }
             if (_o.EnabledWhen != null)
             {

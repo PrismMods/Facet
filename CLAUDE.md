@@ -136,8 +136,9 @@ it bubbling. Three causes hid behind "scrolling is broken", all found by logging
 - **The first re-theme of a session is cold** (about 7-10 ms, within the 16 ms budget, not warmed); later ones take about 0.5 ms.
 - **`Looks.Card` is the window shell and popups, `Looks.Group` a `Controls.Card` body, `Looks.Stage` a
   preview's stage**, so a skin can put cards on a fill of their own. Dark keeps 0.1's look (within 1px):
-  its `Looks.Rule` is invisible because 0.1 drew no rules, so Dark shows no card header rule and no nav
-  group rule; a skin gives Rule a colour.
+  `Looks.Rule` is invisible by default (`new Look()`) because 0.1 drew no rules, so Dark shows no card
+  rules (header or rows), no nav group rule and no tab row rule; a skin gives Rule a colour (its `Bg`; a
+  card row's rule is a `Sizes.Line` top border in it, and none at all while Rule has no `Bg`).
 - **`Look` presets are copies.** `Look.Button` and the rest return a fresh `Look` on every read, so a
   mod restyling the one it was handed restyles nothing else. A part never paints a preset: it takes
   the theme's `Looks`, or a skin could not restyle it.
@@ -160,19 +161,31 @@ it bubbling. Three causes hid behind "scrolling is broken", all found by logging
 
 ## Parts (0.2)
 
+- **Options are named after their part** (`PageHeaderOptions`, `CardOptions`, `ColumnsOptions`,
+  `PreviewOptions`, `TilesOptions`, `TileOptions`, `FormOptions`; Ruling Q26), and text options come in
+  pairs: an English key (`Note`, `Description`, `Tooltip`) that is translated and relabels, and a `…Text`
+  func re-read on refresh and shown as returned, which wins over the key.
 - **`Anim.Speed` is shared by every Facet from 0.2 on** (`Facet.AnimSpeed`; 0.1 keeps its own field), so
   one suite setting moves every window. The next fold, tab switch and hover use the new speed; 0 leaves
   the end state in the same call.
 - **Tab pages build fresh.** `Tabs.Pages` builds only the selected page, anew on every select like a Nav
   page, and REMOVES the page it replaces (not `display:none`), so what it ran (a preview) stops. While a
   search index builds, every visible tab page is built for it, and a hit carries its tab (`Hit.Tab`).
-- **A preview costs nothing while hidden.** `Show` runs when its stage is on a panel and its surface is
-  visible, `Tick` while that holds (every frame at `EveryMs` 0, allocation-free), `Hide` once when either
-  stops, the surface is disposed included. All under `Safe`; three `Tick` throws in a row pause it until
-  the next `Show`. Known gap: a `display:none` ancestor inside a shown page (a `VisibleWhen`-hidden card,
-  a folded Section) still counts as shown.
+  The picked tab is kept under `tab.<page>#<n>`, n the row's index among the Pages rows on its page (not
+  counting rows inside another row's tabs), so two rows on a page, or rows outside a Nav, never share one.
+- **A preview costs nothing while hidden.** `Show` runs when its stage is on a panel, its pane is not
+  hidden by its own `VisibleWhen` (the pane, `Id-pane`, is a Control like a card; the stage is `Id`) and
+  its surface is visible, `Tick` while that holds (every frame at `EveryMs` 0, allocation-free), `Hide`
+  once when any of them stops, the surface is disposed included. All under `Safe`; three `Tick` throws in
+  a row pause it until the next `Show`. Known gap: a `display:none` ANCESTOR inside a shown page (a
+  `VisibleWhen`-hidden card, a folded Section) still counts as shown.
+- **A tile grid in a card is a card row** (`Sizes.Pad` at the sides, `Gap` on top, the next row ruled);
+  tile widths come from the grid's `contentRect`. `Help` is dropped on a tile (fixed height, clipped).
+- **`Controls.Switch` takes the toggle action** and answers both `ClickEvent` and `NavigationSubmitEvent`,
+  so every switch built on it is keyboard-operable; a tile's track is not focusable (the tile is the stop).
 - **Search reaches pages Facet did not build.** `Nav.AddSearchSource` returns `SearchIndex.Entry`s
-  (`Label`, `Where`, `Open`, `Tip`), asked each time the index builds; choosing one runs `Open`.
+  (`Label`, `Where`, `Open`, `Tip`), asked each time the index builds; choosing one runs `Open`. `Label`
+  and `Where` are English keys, shown through the host's table (unknown text shows as given).
   `NavItem.OnHit` runs once a hit lands on that page or tab.
 
 ## Layers, popups, Escape

@@ -115,7 +115,7 @@ namespace Facet
         public static bool HasHangul(FontAsset fa) { return Has(fa, Cjk.Sample("ko")); }
 
         /// The first face in `fa`'s fallback table that itself draws `c` (not through its own fallbacks); `fa` when none does.
-        public static FontAsset Drawer(FontAsset fa, char c)
+        internal static FontAsset Drawer(FontAsset fa, char c)
         {
             var t = fa.fallbackFontAssetTable;
             if (t != null) foreach (var f in t) if (f != null && f.HasCharacter(c, false, true)) return f;
