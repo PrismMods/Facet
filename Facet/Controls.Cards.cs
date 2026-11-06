@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using UnityEngine;
 using UnityEngine.UIElements;
 
 namespace Facet
@@ -11,6 +12,15 @@ namespace Facet
 
         /// Muted header text before the actions, re-read on every refresh (e.g. "8 / 8"); shown untranslated.
         public Func<string> Note { get; set; }
+    }
+
+    public sealed class HeaderOptions : Options<bool>
+    {
+        /// An English key: the one-line description under the title.
+        public string Description { get; set; }
+
+        /// Re-read on every refresh and shown as returned (untranslated); wins over Description.
+        public Func<string> DescriptionText { get; set; }
     }
 
     /* Cards: a titled group of rows, split by rules, with an optional Advanced fold at the bottom. */
@@ -73,6 +83,39 @@ namespace Facet
             Data.Get<CardRows>(body).Title = title;
             Hook(root, null, title, o);
             return body;
+        }
+
+        /* A page's head: the title (Sizes.Title, bold) with a one-line description under it, and on the
+           right the feature's on/off switch, which is the Control's Input (a Toggle that records undo).
+           With `on` null the Control is over a constant false and there is no switch. It replaces the
+           old first row, "Use this feature". The title is noted for search. */
+        public static Control<bool> PageHeader(VisualElement parent, string title, Bind<bool> on, Action<HeaderOptions> configure = null)
+        {
+            var o = ControlOptions.Make(parent, title, configure);
+            var root = Ui.Row(parent);
+            var t = Theme.For(root); var sz = t.Sizes;
+            root.style.minHeight = sz.RowHeight;
+            root.style.marginBottom = sz.Pad;
+            Noted(root, title);
+            var col = Ui.Box(root);
+            col.style.flexGrow = 1f;
+            col.style.flexShrink = 1f;
+            col.style.minWidth = 0f;
+            var head = Ui.Text(title, col, sz.Title);
+            head.style.unityFontStyleAndWeight = FontStyle.Bold;
+            if (o.DescriptionText != null)
+            {
+                var d = Ui.Text("", col, sz.Small, Role.TextMuted);
+                new Control<string>(d, null, title + " description", Bind.To(o.DescriptionText, null), s => d.text = s ?? "", new ControlOptions());
+            }
+            else if (!string.IsNullOrEmpty(o.Description)) Ui.Muted(o.Description, col);
+
+            Action<bool> show = v => { };
+            VisualElement track = null;
+            if (on != null) track = Switch(root, out show);
+            var c = new Control<bool>(root, track, title, on != null ? Tracked(parent, title, o, on) : Bind.To(() => false, null), show, o);
+            if (track != null) Events.On<ClickEvent>(track, e => { c.Set(!c.Value); e.StopPropagation(); });
+            return c;
         }
 
         /* The fold at the bottom of a card, for the rows its writer marks advanced: call it after the

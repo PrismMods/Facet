@@ -339,6 +339,113 @@ namespace Facet.Mod
             b.RemoveFromHierarchy();
         }
 
+        // Task 9: the page header's switch and the two-column page with its sticky right pane.
+        IEnumerator SectionHeaderColumns()
+        {
+            GalleryParts.Model = new PartsModel();
+            var win = GalleryParts.Open(); yield return null; yield return null;
+            try
+            {
+                var m = GalleryParts.Model; var sz = Gallery.Host.Theme.Sizes;
+                GalleryParts.Nav.Go(GalleryParts.FeatureItem); yield return null; yield return null; yield return null;
+                var ms = new double[1];
+                var head = win.Body.Q("head");
+                var title = head?.Query<Label>().ToList().Find(l => l.text == "Judgement counter");
+                Check(title != null && title.style.fontSize.value.value == sz.Title && title.style.unityFontStyleAndWeight.value == FontStyle.Bold,
+                    "the header title is Sizes.Title and bold", title?.style.fontSize.value.value.ToString());
+                var desc = head?.Query<Label>().ToList().Find(l => l.text == "Counts each judgement");
+                Check(desc != null && desc.style.fontSize.value.value == sz.Small && Near(desc.style.color.value, Gallery.Host.Theme[Role.TextMuted]),
+                    "the description is Sizes.Small and muted");
+                History.Clear();
+                var sw = win.Body.Q("head-input");
+                Check(sw != null, "the header has its switch, head-input");
+                if (sw != null) ClickEl(sw);
+                yield return null;
+                Check(m.Feature, "clicking head-input flips the model");
+                History.Undo(); yield return null;
+                Check(!m.Feature, "History.Undo puts the header switch back");
+                var off = sw.style.backgroundColor.value;
+                m.Feature = true;
+                yield return Until(() => !Near(sw.style.backgroundColor.value, off), ms, 400);
+                Check(ms[0] >= 0 && ms[0] <= 150, "a flip behind the UI shows within 150 ms", Ms(ms));
+                m.Feature = false;
+
+                var head2 = win.Body.Q("head2");
+                Check(head2 != null && head2.Q("head2-input") == null, "a header with no binding has no switch");
+                Func<Label> d2 = () => win.Body.Q("head2")?.Query<Label>().ToList().Find(l => l.text == "one" || l.text == "two");
+                Check(d2()?.text == "one", "DescriptionText shows as returned", d2()?.text);
+                m.Desc = "two";
+                yield return Until(() => d2()?.text == "two", ms);
+                Check(ms[0] >= 0 && ms[0] <= 150, "a changed DescriptionText shows within 150 ms", Ms(ms));
+                GalleryParts.Nav.Filter("judgement counter"); yield return null; yield return null;
+                Func<string, Label> find = t => win.Body.Query<Label>().ToList().Find(l => l.text == t);
+                var hitL = find("Judgement counter");
+                var whereL = hitL?.parent?.Query<Label>().ToList().Find(l => l.text.StartsWith("Feature"));
+                Check(hitL != null && whereL != null, "Filter(judgement counter) lists a result row for the title with a Feature breadcrumb", whereL?.text);
+                Check(win.Body.Query<Label>().ToList().Exists(l => l.text.StartsWith("Results for")), "...under the results heading");
+                if (hitL != null) ClickEl(hitL.parent);
+                yield return null; yield return null; yield return null;
+                var hd = win.Body.Q("head");
+                var hsv = hd?.GetFirstAncestorOfType<ScrollView>();
+                Check(hd != null && hsv != null && hd.worldBound.yMin >= hsv.contentViewport.worldBound.yMin - 1f && hd.worldBound.yMax <= hsv.contentViewport.worldBound.yMax + 1f,
+                    "clicking the hit brings the header back into view", hd?.worldBound.ToString());
+                GalleryParts.Nav.Go(GalleryParts.FeatureItem); yield return null; yield return null;
+
+                var left = win.Body.Q("feat-left"); var right = win.Body.Q("feat-right"); var box = win.Body.Q("feat-box");
+                Check(left != null && right != null && left.contentRect.width > 0f && Mathf.Abs(left.contentRect.width / right.contentRect.width - 1.25f) < 0.0625f,
+                    "left / right width = 1.25 +- 5%", left == null ? "none" : left.contentRect.width + " / " + right.contentRect.width);
+                var sv = left?.GetFirstAncestorOfType<ScrollView>();
+                if (sv != null && box != null)
+                {
+                    sv.scrollOffset = new Vector2(0f, 300f);
+                    yield return Until(() => Mathf.Abs(box.worldBound.yMin - sv.contentViewport.worldBound.yMin) < 2f, ms);
+                    Check(ms[0] >= 0, "scrolled down 300, the right box sits at the viewport top", box.worldBound.yMin + " vs " + sv.contentViewport.worldBound.yMin);
+                    sv.scrollOffset = new Vector2(0f, 100000f);
+                    yield return null; yield return null; yield return null;
+                    Check(box.worldBound.yMax <= left.parent.worldBound.yMax + 1f, "scrolled to the end, the box stays inside the columns", box.worldBound.yMax + " vs " + left.parent.worldBound.yMax);
+                    sv.scrollOffset = Vector2.zero;
+                    yield return Until(() => right.resolvedStyle.translate.y == 0f, ms);
+                    Check(ms[0] >= 0, "scrolled back to 0, the translate is 0", right.resolvedStyle.translate.y.ToString());
+
+                    // Narrow window: below the threshold the right column stacks under the left.
+                    var cols = left.parent;
+                    cols.style.width = 300f;
+                    yield return Until(() => right.worldBound.yMin >= left.worldBound.yMax - 1f, ms);
+                    Check(ms[0] >= 0 && Mathf.Abs(right.layout.width - left.layout.width) < 2f && right.layout.width > 250f,
+                        "a narrow page stacks the right column under the left, each full width", right.layout.width + " / " + left.layout.width);
+                    cols.style.width = StyleKeyword.Null;
+                    yield return Until(() => right.worldBound.yMin < left.worldBound.yMax - 1f, ms);
+                    Check(ms[0] >= 0, "widened again, the columns sit side by side");
+                }
+                else Check(false, "the Feature page has a ScrollView and a right box");
+
+                // Review I1: a pane taller than the viewport scrolls with the page instead of pinning its bottom off screen.
+                if (sv != null && box != null)
+                {
+                    box.style.height = 2000f;
+                    yield return null; yield return null;
+                    sv.scrollOffset = new Vector2(0f, 300f);
+                    yield return null; yield return null; yield return null;
+                    Check(right.resolvedStyle.translate.y == 0f, "a pane taller than the viewport is not translated", right.resolvedStyle.translate.y.ToString());
+                    sv.scrollOffset = new Vector2(0f, 100000f);
+                    yield return null; yield return null; yield return null;
+                    Check(box.worldBound.yMax <= sv.contentViewport.worldBound.yMax + 1f, "...and its bottom reaches the viewport at the end", box.worldBound.yMax + " vs " + sv.contentViewport.worldBound.yMax);
+                    box.style.height = 200f;
+                }
+
+                // Review I3: in a parent that shrink-wraps, the mode must not flip between frames.
+                var wrap = Ui.Box(win.Body);
+                wrap.style.alignItems = Align.FlexStart;
+                var wl = Controls.Columns(wrap, out var wr);
+                Controls.Info(wl, "In", () => "left"); Controls.Info(wr, "In", () => "right");
+                var seen = new List<bool>();
+                for (int i = 0; i < 5; i++) { yield return null; if (i >= 2) seen.Add(wr.worldBound.yMin >= wl.worldBound.yMax - 1f); }
+                Check(seen.TrueForAll(x => x == seen[0]), "Columns in a shrink-wrapping parent holds one mode across frames", string.Join(",", seen));
+                wrap.RemoveFromHierarchy();
+            }
+            finally { GalleryParts.Close(); GalleryParts.Model = new PartsModel(); }
+        }
+
         // Task 8: a card of rows split by rules, a help line, the Advanced fold, and forms built into cards.
         IEnumerator SectionCards()
         {

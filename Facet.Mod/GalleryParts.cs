@@ -18,6 +18,9 @@ namespace Facet.Mod
         public int AllRuns;
         /// VisibleWhen of the Depth row and of the whole Look card.
         public bool HideDepth, HideCard;
+        /// The Feature page's header switch and its second header's description.
+        public bool Feature;
+        public string Desc = "one";
     }
 
     // The parts window: one Nav page per part this plan adds, on the Gallery's host.
@@ -28,14 +31,16 @@ namespace Facet.Mod
         /// Replaced wholesale by the autotest, like Gallery.Model.
         public static PartsModel Model { get; set; } = new PartsModel();
         static Window _win;
+        /// The Feature page, for the autotest to go to.
+        public static NavItem FeatureItem { get; private set; }
 
         public static Window Open()
         {
             if (Surface != null) { Surface.Visible = true; return _win; }
             Surface = new Surface(Gallery.Host, "FacetGalleryParts", Layer.Window);
-            _win = new Window(Surface.Root, "parts", "Facet Parts", new Rect(160, 60, 760, 600));
+            _win = new Window(Surface.Root, "parts", "Facet Parts", new Rect(100, 60, 960, 600));
             _win.CloseRequested += _ => Close();
-            Nav = new Nav(_win.Body, new[] { new NavItem("Cards", Cards) });
+            Nav = new Nav(_win.Body, new[] { new NavItem("Cards", Cards), FeatureItem = new NavItem("Feature", Feature) });
             return _win;
         }
 
@@ -62,6 +67,20 @@ namespace Facet.Mod
             Ui.Box(p).style.height = 900f;
             var other = Controls.Card(p, "Other");
             Controls.Slider(other, "Size", Bind.To(() => Model.Size, v => Model.Size = v), o => { o.Id = "other-size"; o.Min = 0.5f; o.Max = 2f; });
+        }
+
+        // Task 9: a page header with the feature's switch, then two columns with a sticky right pane.
+        static void Feature(VisualElement p)
+        {
+            Controls.PageHeader(p, "Judgement counter", Bind.To(() => Model.Feature, v => Model.Feature = v), o => { o.Id = "head"; o.Description = "Counts each judgement"; });
+            Controls.PageHeader(p, "Other feature", null, o => { o.Id = "head2"; o.DescriptionText = () => Model.Desc; });
+            var left = Controls.Columns(p, out var right);
+            left.name = "feat-left"; right.name = "feat-right";
+            var card = Controls.Card(left, "Rows");
+            for (int i = 0; i < 30; i++) Controls.Toggle(card, "Row " + i, Bind.To(() => false, v => { }));
+            var box = Ui.Box(right);
+            box.name = "feat-box";
+            box.style.height = 200f;
         }
 
         public static void Close()
