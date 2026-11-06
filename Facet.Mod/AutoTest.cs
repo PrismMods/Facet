@@ -170,6 +170,14 @@ namespace Facet.Mod
             return Mathf.Abs(a.r - b.r) < 2e-3f && Mathf.Abs(a.g - b.g) < 2e-3f && Mathf.Abs(a.b - b.b) < 2e-3f && Mathf.Abs(a.a - b.a) < 2e-3f;
         }
 
+        // Paint's private per-element hover flag.
+        static bool PaintHover(VisualElement e)
+        {
+            var state = typeof(Paint).GetNestedType("State", BindingFlags.NonPublic);
+            var s = typeof(Data).GetMethod("Find").MakeGenericMethod(state).Invoke(null, new object[] { e });
+            return s != null && (bool)state.GetField("Hover").GetValue(s);
+        }
+
         static int Subscribers(Theme t)
         {
             var d = typeof(Theme).GetField("Changed", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(t) as Delegate;
@@ -233,9 +241,13 @@ namespace Facet.Mod
             yield return null;
             var mine = Look.Button; mine.Bg = Role.Accent;
             bool fresh = Look.Button.Bg == Role.RowAlt;
+            // pb sits where the probe above was pressed, so the panel may have hovered it (HoverBg wins over Bg).
+            // Read its resting background: leave, then redraw and read in this frame.
+            bool hovered = PaintHover(pb);
+            using (var e = MouseLeaveEvent.GetPooled()) { e.target = pb; pb.SendEvent(e); }
             Paint.Apply(w.Root);
             Check(fresh && Near(pb.style.backgroundColor.value, t[Role.RowAlt]), "mutating the Look.Button you were handed changes neither the next Look.Button nor an existing button",
-                "next " + Look.Button.Bg + ", button " + pb.style.backgroundColor.value);
+                "next " + Look.Button.Bg + ", button " + pb.style.backgroundColor.value + ", hovered before leave " + hovered);
             mine.Bg = Role.RowAlt;   // were it shared, put it back for the sections after this one
             pb.RemoveFromHierarchy();
 
