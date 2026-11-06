@@ -641,7 +641,7 @@ namespace Facet.Mod
             Check(head != null, "the section has a head row");
             if (head == null) { surf.Dispose(); yield break; }
             VisualElement SecBody() { var hd = lab("Fold me").parent; return hd.parent[hd.parent.IndexOf(hd) + 1]; }
-            Check(SecBody().resolvedStyle.display != DisplayStyle.None || SecBody().style.display != DisplayStyle.None, "the section starts open");
+            Check(SecBody().style.display != DisplayStyle.None, "the section starts open");
             ClickEl(head); yield return null; yield return null;
             string fold; store.TryGetValue("fold.Home/Fold me", out fold);
             Check(fold == "0", "folding a section writes fold.Home/Fold me=0 to the host", fold);
@@ -667,6 +667,18 @@ namespace Facet.Mod
             ClickEl(lab("Sub toggle").parent); yield return null; yield return null;
             Check(lab("Deeper2") != null, "clicking the rest of the row opens its page");
             surf.Dispose();
+
+            // A host with no Read/Write: the fold still survives a rebuild.
+            var h2 = Host.Create("StructureBare");
+            var s2 = new Surface(h2, "FacetStructureBare", Layer.Window);
+            var w2 = new Window(s2.Root, "structurebare", "Bare", new Rect(60, 60, 400, 300));
+            var nav2 = new Nav(w2.Body, new[] { new NavItem("Home", p => { var b = Controls.Section(p, "Bare fold"); Controls.Info(b, "In", () => "v"); }) });
+            yield return null; yield return null;
+            Func<VisualElement> bare = () => { var hd = w2.Body.Query<Label>().ToList().Find(l => l.text == "Bare fold").parent; return hd.parent[hd.parent.IndexOf(hd) + 1]; };
+            ClickEl(w2.Body.Query<Label>().ToList().Find(l => l.text == "Bare fold").parent); yield return null;
+            nav2.Refresh(); yield return null; yield return null;
+            Check(bare().style.display == DisplayStyle.None, "with a host that has no Read/Write, a folded section stays folded after a rebuild");
+            s2.Dispose();
         }
 
         static Label LiveLabel(string text)

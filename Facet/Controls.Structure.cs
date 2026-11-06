@@ -69,13 +69,18 @@ namespace Facet
 
         /* A section that folds away. The state is kept through the host under
            "fold.<page>/<title>" as "0"/"1", so a page does not refold on every rebuild or restart. */
+        private static readonly System.Collections.Generic.Dictionary<string, bool> _folds = new System.Collections.Generic.Dictionary<string, bool>();
+
         public static VisualElement Section(VisualElement parent, string title, bool defaultOpen = true)
         {
             SearchIndex.CurrentGroup = title;
             var nav = Nav.Active;
             string key = "fold." + (nav != null ? nav.PageTitle : "") + "/" + title;
-            string saved = Host.For(parent).Read(key);
-            bool open = saved == "1" ? true : saved == "0" ? false : defaultOpen;
+            var host = Host.For(parent);
+            string saved = host.Read(key);
+            // A host with no Read/Write still keeps folds for the session.
+            string mem = host.Name + "|" + key;
+            bool open = saved == "1" ? true : saved == "0" ? false : _folds.TryGetValue(mem, out var m) ? m : defaultOpen;
 
             var head = Ui.Row(parent);
             head.style.marginTop = Tokens.Pad;
@@ -95,6 +100,7 @@ namespace Facet
             Events.On<ClickEvent>(head, _ =>
             {
                 open = !open;
+                _folds[mem] = open;
                 Host.For(head).Write(key, open ? "1" : "0");
                 arrow.text = open ? "▾" : "▸";
                 if (open) Anim.SlideIn(body, -6f, Anim.Fast);
