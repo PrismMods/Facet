@@ -31,7 +31,6 @@ namespace Facet.Mod
             o.Log = m => Main.Log("[ui] " + m);
             o.Read = k => Store.TryGetValue(k, out var v) ? v : null;
             o.Write = (k, v) => Store[k] = v;
-            o.Theme = new Theme();   // its own copy, so recolouring it leaves Theme.Dark alone
         });
 
         public static Window Open()

@@ -15,7 +15,8 @@ namespace Facet
        is already on screen: each surface wearing the scheme re-applies on Changed. */
     public sealed class Theme
     {
-        /// Facet's own dark scheme, and what a host without one draws in.
+        /// Facet's own dark scheme. Frozen: every mod on this Facet shares it, so a host without a
+        /// theme gets its own copy (Host.Theme) and only Host.Fallback wears Dark itself.
         public static readonly Theme Dark = new Theme(new[] {
             new Color(0.102f, 0.102f, 0.122f, 0.98f),  // Panel
             new Color(1f, 1f, 1f, 0.10f),              // PanelBorder
@@ -42,7 +43,7 @@ namespace Facet
         public Color this[Role r]
         {
             get { return _c[(int)r]; }
-            set { _c[(int)r] = value; }
+            set { Writable(); _c[(int)r] = value; }
         }
 
         /// Raised once by Recolour. Each surface wearing this scheme re-applies its roles.
@@ -59,11 +60,18 @@ namespace Facet
         /// Re-derive every role from `accent` (Palette), in place, and redraw whatever wears it.
         public void Recolour(Color accent, float tint = 1f)
         {
+            Writable();
             Derive(accent, tint);
             var h = Changed;
             if (h == null) return;
             // One subscriber's throw must not keep the rest from re-theming.
             foreach (Action a in h.GetInvocationList()) Safe.Run(Host.Fallback, "Theme.Changed", a);
+        }
+
+        private void Writable()
+        {
+            if (ReferenceEquals(this, Dark))
+                throw new InvalidOperationException("Theme.Dark is shared by every mod; give your host its own: o.Theme = new Theme()");
         }
 
         private void Derive(Color accent, float tint)

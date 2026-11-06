@@ -164,7 +164,9 @@ namespace Facet.Mod
         IEnumerator SectionTheme()
         {
             var w = Gallery.Open(); yield return null; yield return null;
-            var t = Gallery.Surface.Theme;
+            var t = Gallery.Surface.Theme;   // Gallery's host sets no theme: this is the host's own copy of Dark
+            var dark = new Color[Enum.GetValues(typeof(Role)).Length];
+            for (int i = 0; i < dark.Length; i++) dark[i] = Theme.Dark[(Role)i];
             // Body paints no role (the window's background is Root's Panel), so it must stay as it was.
             var body = w.Body.resolvedStyle.backgroundColor;
             var panel = w.Root.resolvedStyle.backgroundColor;
@@ -179,6 +181,13 @@ namespace Facet.Mod
                 panel + " -> " + w.Root.resolvedStyle.backgroundColor);
             Check(Near(w.Body.resolvedStyle.backgroundColor, body), "the body, which paints no role, is left alone");
             Check(ms <= 16.0, "re-theming the open Gallery takes <= 16 ms", ms.ToString("0.0") + " ms");
+            bool same = !ReferenceEquals(t, Theme.Dark);
+            for (int i = 0; i < dark.Length; i++) same &= Theme.Dark[(Role)i] == dark[i];
+            Check(same, "recolouring a theme-less host's surface leaves Theme.Dark's roles unchanged");
+            bool threw = false, threwSet = false;
+            try { Theme.Dark.Recolour(Color.green); } catch (InvalidOperationException) { threw = true; }
+            try { Theme.Dark[Role.Accent] = Color.green; } catch (InvalidOperationException) { threwSet = true; }
+            Check(threw && threwSet && Theme.Dark[Role.Accent] == dark[(int)Role.Accent], "Theme.Dark refuses Recolour and role writes");
 
             var bs = w.TitleBarRight.Query<Button>().ToList();
             var close = bs[bs.Count - 1];

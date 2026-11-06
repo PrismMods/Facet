@@ -23,16 +23,19 @@ namespace Facet {
 
         readonly HostOptions _o;
         readonly Action<string> _log;
+        readonly Theme _theme;
 
         public string Name { get; }
         public int RefreshMs => _o.RefreshMs;
         public string[][] SansFonts => _o.SansFonts;
         public string[][] MonoFonts => _o.MonoFonts;
-        /// The consumer's scheme, or Theme.Dark.
-        public Theme Theme => _o.Theme ?? Theme.Dark;
+        /// The consumer's scheme, else this host's own copy of Dark, so recolouring it never
+        /// re-themes another mod's windows. Only Fallback wears the frozen Theme.Dark.
+        public Theme Theme => _theme;
 
         Host(string name, HostOptions o) {
             Name = name; _o = o;
+            _theme = o.Theme ?? new Theme();
             // Allocated once: Safe takes this on every guarded call, some of them per frame.
             _log = m => { try { if (_o.Log != null) _o.Log(m); } catch { } };
         }
@@ -48,7 +51,7 @@ namespace Facet {
         public static Host Fallback {
             get {
                 if (_fallback != null) return _fallback;
-                _fallback = Create("Facet", o => o.Log = m => UnityEngine.Debug.Log("[Facet] " + m));
+                _fallback = Create("Facet", o => { o.Log = m => UnityEngine.Debug.Log("[Facet] " + m); o.Theme = Theme.Dark; });
                 History.Log = Words.Log = _fallback._log;
                 return _fallback;
             }

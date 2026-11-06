@@ -113,7 +113,8 @@ it bubbling. Three causes hid behind "scrolling is broken", all found by logging
   it draws with (`Paint.Bg/Fg/Border/Look`), never a `Color`, so `Theme.Recolour` re-themes open
   windows: each surface wearing the theme re-applies (`Paint.Apply`) inside `Safe`. `Theme.For`
   is the nearest themed ancestor (a Surface, a popup card that took its anchor's), else the
-  `Theme.Use` scope, else the host's theme, else `Theme.Dark`. An element painted before it joins
+  `Theme.Use` scope, else the host's theme. `Theme.Dark` is frozen (shared by every mod): a host
+  without a theme gets its own copy, and only `Host.Fallback` wears Dark itself. An element painted before it joins
   the tree is repainted on `AttachToPanelEvent`.
 - **There is no `:hover` at runtime; `Paint` tracks hover, pressed and focus.** A `Button`'s
   clickable stops the mouse's `PointerDownEvent` before any bubbling callback, so Paint registers
