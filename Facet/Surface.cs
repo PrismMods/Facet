@@ -36,11 +36,7 @@ namespace Facet
         /// The consumer this surface was made for; everything under Root finds it with Host.For.
         public Host Host { get; }
 
-        /* The host of the surface being made, for the static font code that logs while it runs.
-           ponytail: fonts are shared across hosts, so a line may go to the host that happened to
-           build last; per-host font caches if that ever matters. */
-        private static Host _ctx;
-        private static void L(string m) { (_ctx ?? Host.Fallback).Log(m); }
+        private void L(string m) { Host.Log(m); }
 
         public string Name { get; }
 
@@ -90,8 +86,7 @@ namespace Facet
         public Surface(Host host, string name, Layer layer, UnityEngine.TextCore.Text.FontAsset font = null)
         {
             Host = host ?? Host.Fallback;
-            _ctx = Host;
-            Layer = layer;
+                        Layer = layer;
             Name = name;
             L("Surface '" + name + "': creating UI Toolkit panel");
             _settings = ScriptableObject.CreateInstance<PanelSettings>();
@@ -103,7 +98,7 @@ namespace Facet
             _settings.referenceResolution = new Vector2Int(1920, 1080);
             _settings.screenMatchMode = PanelScreenMatchMode.MatchWidthOrHeight;
             _settings.match = 0.5f;
-            _settings.textSettings = TextSettings(font);
+            _settings.textSettings = Fonts.TextSettings(Host, font);
 
             // Starts visible (as the GameObject does), so it counts as open until hidden — the
             // count used to start one short, and the first hide took OpenWindows negative.
@@ -135,11 +130,11 @@ namespace Facet
                 Skin.WatchWheel(Root);
                 if (font != null)
                 {
-                    Root.style.unityFontDefinition = FontDefinition.FromSDFFont(font);
+                    Fonts.Apply(Root, font);
                     L("Surface '" + name + "': SDF font " + font.name);
                 }
                 else SetFont(null);   // never leave a panel fontless; see Fallback
-                if (!FontsInherit) Root.schedule.Execute(() => HandDownFonts(Root, default(StyleFontDefinition))).Every(200);
+                Fonts.ForLanguage(Host);
                 if (!WarmUpStarted)
                 {
                     WarmUpStarted = true;   // before scheduling: the warm-up window is a surface too
@@ -148,6 +143,9 @@ namespace Facet
                 }
             }
         }
+
+        /// Re-translates every keyed text under Root (labels, buttons, tooltips, the title) in place.
+        public void Relabel() { if (Root != null) Words.Relabel(Root); }
 
         /// Set by the first surface, which schedules WarmUp.Run.
         internal static bool WarmUpStarted;
@@ -162,271 +160,14 @@ namespace Facet
             if (font != null)
             {
                 Root.style.unityFontDefinition = FontDefinition.FromFont(font);
+                Fonts.KeepHanded(Root);
                 L("Surface: font " + font.name);
                 return;
             }
-            var fa = Fallback();
+            var fa = Fonts.Regular(Host);
             if (fa == null) { L("Surface: NO FONT AVAILABLE — labels will be blank"); return; }
-            Root.style.unityFontDefinition = FontDefinition.FromSDFFont(fa);
+            Fonts.Apply(Root, fa);
             L("Surface: font " + fa.name + " (OS fallback)");
-        }
-
-        /* Before Unity 6 (a Unity 2022 game) a font set on an element does not reach its
-           descendants: in game every label under the root resolved no font and laid out 0px tall,
-           so no text drew at all; set on the label itself, it draws. There each surface hands its
-           font down by hand on a short schedule — list rows are recycled and popups add elements
-           later — giving every text element the nearest font set above it, as inheritance would.
-           Stamped elements are marked so a later font change above them still reaches them. */
-        private static readonly bool FontsInherit = UnityMajor() >= 6000;
-        private const string Stamped = "facet-font-handed-down";
-
-        private static int UnityMajor()
-        {
-            int n = 0;
-            foreach (char c in Application.unityVersion) { if (!char.IsDigit(c)) break; n = n * 10 + (c - '0'); }
-            return n;
-        }
-
-        private static void HandDownFonts(VisualElement e, StyleFontDefinition inherited)
-        {
-            var own = e.style.unityFontDefinition;
-            if (own.keyword == StyleKeyword.Undefined && !e.ClassListContains(Stamped)) inherited = own;
-            else if (e is UnityEngine.UIElements.TextElement && inherited.keyword == StyleKeyword.Undefined)
-            {
-                e.style.unityFontDefinition = inherited;
-                e.AddToClassList(Stamped);
-            }
-            for (int i = 0; i < e.hierarchy.childCount; i++) HandDownFonts(e.hierarchy[i], inherited);
-        }
-
-        private static FontAsset _fallback, _mono;
-        /* Glyphs are sampled well above the size they are drawn at. Masters of 14–16px, magnified by the
-           panel scale (1.4 on a 1440p screen) and again by a Retina backing scale, drew every edge soft —
-           the "blurry text" in every window. Padding about a tenth of it, like TMP's 90/9: at 9px on
-           a 16px master the distance field was spread over half the glyph. */
-        private const int SamplePx = 64, PadPx = 6;
-        private static PanelTextSettings _textSettings;
-
-        /* Every panel's text settings, with OUR face as the default. Left null, UI Toolkit falls
-           back to a built-in default that names an OS "DejaVu Sans" / "Regular" — which the Steam
-           runtime cannot resolve — and retries it for every label on every frame: ~10,000 "Unable
-           to load font face" lines a second, blank labels, and (once a real font was supplied)
-           every label drawing the same string. One shared instance; the fallback list is emptied
-           so nothing reaches for an OS font behind our back. */
-        private static PanelTextSettings TextSettings(FontAsset preferred)
-        {
-            if (_textSettings != null) return _textSettings;
-            _textSettings = ScriptableObject.CreateInstance<PanelTextSettings>();
-            _textSettings.name = "FacetPanelTextSettings";
-            _textSettings.defaultFontAsset = preferred ?? Fallback();
-            _textSettings.fallbackFontAssets = new System.Collections.Generic.List<FontAsset>();
-            L("Surface: panel text settings, default font "
-                   + (_textSettings.defaultFontAsset != null ? _textSettings.defaultFontAsset.name : "NONE"));
-            return _textSettings;
-        }
-
-        /* Regular, in that order, because a name match alone is not enough — see OsFontAsset. */
-        private static readonly string[] _styles = { "Regular", "Book", "Normal", "Medium", "" };
-
-        /* A monospace face for anything columnar. A log is the case that matters: timestamps and
-           level tags only line up in a fixed pitch, and the game's own display font — which is what
-           a mod's TMP asset is built from — is the worst possible choice for reading one. */
-        public static FontAsset Mono()
-        {
-            if (_mono != null) return _mono;
-            return MonoOnly() ?? Fallback();
-        }
-
-        private static FontAsset MonoOnly()
-        {
-            if (_mono != null) return _mono;
-            _mono = FileFontAsset((_ctx != null ? _ctx.MonoFonts : null) ?? _monoFiles, SamplePx)
-                 ?? (_osSdf == null ? FileFontAsset(_macMonoFiles, SamplePx) : null)
-                 ?? OsFontAsset(new[] { "Menlo", "SF Mono", "Consolas", "DejaVu Sans Mono", "Noto Sans Mono", "Courier New", "monospace" }, SamplePx);
-            return _mono;
-        }
-
-        /* Font FILES, tried before any family-name lookup. A family+style asset only works while
-           TextCore can find that family again: it reloads the face by name whenever it adds glyphs,
-           and on Steam Linux Runtime that reload asks for style "Regular" — which fontconfig's
-           "Book"-tagged DejaVu does not answer to. The asset was created fine and then every
-           frame logged "Unable to load font face" and drew nothing (232k lines in one session).
-           A path-built asset reloads by path, which cannot miss.
-
-           Pairs of regular + bold: the bold file becomes the asset's real 700 weight (see
-           AttachBold). Inside the runtime container the game sees its own DejaVu under
-           /usr/share/fonts and the host's fonts under /run/host. */
-        private static readonly string[][] _sansFiles =
-        {
-            new[] { "/run/host/usr/share/fonts/noto/NotoSans-Regular.ttf", "/run/host/usr/share/fonts/noto/NotoSans-Bold.ttf" },
-            new[] { "/usr/share/fonts/noto/NotoSans-Regular.ttf", "/usr/share/fonts/noto/NotoSans-Bold.ttf" },
-            new[] { "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf", "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf" },
-            new[] { "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" },
-            new[] { "/usr/share/fonts/TTF/DejaVuSans.ttf", "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf" },
-            new[] { "/run/host/usr/share/fonts/TTF/DejaVuSans.ttf", "/run/host/usr/share/fonts/TTF/DejaVuSans-Bold.ttf" },
-            new[] { @"C:\Windows\Fonts\segoeui.ttf", @"C:\Windows\Fonts\segoeuib.ttf" },
-            new[] { @"C:\Windows\Fonts\arial.ttf", @"C:\Windows\Fonts\arialbd.ttf" },
-        };
-
-        private static readonly string[][] _monoFiles =
-        {
-            new[] { "/run/host/usr/share/fonts/noto/NotoSansMono-Regular.ttf", "/run/host/usr/share/fonts/noto/NotoSansMono-Bold.ttf" },
-            new[] { "/usr/share/fonts/noto/NotoSansMono-Regular.ttf", "/usr/share/fonts/noto/NotoSansMono-Bold.ttf" },
-            new[] { "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf" },
-            new[] { "/usr/share/fonts/TTF/DejaVuSansMono.ttf", "/usr/share/fonts/TTF/DejaVuSansMono-Bold.ttf" },
-            new[] { "/run/host/usr/share/fonts/TTF/DejaVuSansMono.ttf", "/run/host/usr/share/fonts/TTF/DejaVuSansMono-Bold.ttf" },
-            new[] { @"C:\Windows\Fonts\consola.ttf", @"C:\Windows\Fonts\consolab.ttf" },
-        };
-
-        /* macOS's own files, used FIRST only where there is no SDF family lookup (Unity 2022): there the family path builds a raster atlas and every label drew nothing.
-           On Unity 6 the family lookup keeps Helvetica Neue / Menlo, so 3.x looks unchanged.
-           Menlo.ttc's face 0 is its regular weight. */
-        private static readonly string[][] _macSansFiles =
-        {
-            new[] { "/System/Library/Fonts/Supplemental/Arial.ttf", "/System/Library/Fonts/Supplemental/Arial Bold.ttf" },
-            new[] { "/Library/Fonts/Arial.ttf", "/Library/Fonts/Arial Bold.ttf" },
-        };
-
-        private static readonly string[][] _macMonoFiles =
-        {
-            new[] { "/System/Library/Fonts/Menlo.ttc" },
-            new[] { "/System/Library/Fonts/Supplemental/Courier New.ttf", "/System/Library/Fonts/Supplemental/Courier New Bold.ttf" },
-        };
-
-        // Printable ASCII plus the symbols the panels draw (arrows, ×, ✕, ▾, ↶ ↷, …, •).
-        private static readonly string _preload = BuildPreload();
-
-        private static string BuildPreload()
-        {
-            var sb = new System.Text.StringBuilder();
-            for (char c = ' '; c <= '~'; c++) sb.Append(c);
-            sb.Append("×✕▾▸◂▴←→↑↓↶↷…•—–·°");
-            return sb.ToString();
-        }
-
-        private static FontAsset FileFontAsset(string[][] candidates, int pointSize)
-        {
-            foreach (var pair in candidates)
-            {
-                if (!System.IO.File.Exists(pair[0])) continue;
-                var fa = FromFile(pair[0], pointSize);
-                if (fa == null) continue;
-                L("Surface: font file " + pair[0]);
-                if (pair.Length > 1 && System.IO.File.Exists(pair[1])) AttachBold(fa, FromFile(pair[1], pointSize), pair[1]);
-                return fa;
-            }
-            return null;
-        }
-
-        /* The 5-arg overload that asks for SDF is Unity 6 only; Unity 2022 has just the
-           3-arg one (a raster atlas — see OsFontAsset for what that costs bold text). Found by
-           reflection: naming it would bind the dll to Unity 6. */
-        private static readonly System.Reflection.MethodInfo _osSdf = typeof(FontAsset).GetMethod("CreateFontAsset",
-            new[] { typeof(string), typeof(string), typeof(int), typeof(int), typeof(UnityEngine.TextCore.LowLevel.GlyphRenderMode) });
-
-        private static FontAsset OsFont(string family, string style, int pointSize)
-        {
-            if (_osSdf != null)
-                return (FontAsset)_osSdf.Invoke(null, new object[] { family, style, pointSize, PadPx, UnityEngine.TextCore.LowLevel.GlyphRenderMode.SDFAA });
-            return FontAsset.CreateFontAsset(family, style, pointSize);
-        }
-
-        private static FontAsset FromFile(string path, int pointSize)
-        {
-            try
-            {
-                var fa = FontAsset.CreateFontAsset(path, 0, pointSize, PadPx,
-                    UnityEngine.TextCore.LowLevel.GlyphRenderMode.SDFAA, 1024, 1024);
-                if (fa != null)
-                {
-                    fa.name = System.IO.Path.GetFileNameWithoutExtension(path);
-                    string missing;
-                    bool all = fa.TryAddCharacters(_preload, out missing);
-                    L("Surface: preloaded " + fa.name + (all ? "" : " (missing: " + missing + ")"));
-                }
-                return fa;
-            }
-            catch (Exception e) { L("Surface: font file '" + path + "' failed: " + e.Message); return null; }
-        }
-
-        /* A real bold face for FontStyle.Bold. Without one UI Toolkit fakes bold by dilating the
-           regular glyphs' SDF edge, which at panel sizes comes out smeared and blurry — every header
-           and title. Weight 700 is slot 7 of the weight table; the text generator uses a typeface
-           found there instead of faking it. */
-        private static void AttachBold(FontAsset regular, FontAsset bold, string what)
-        {
-            if (regular == null || bold == null) return;
-            var table = regular.fontWeightTable;
-            if (table == null || table.Length < 8) { L("Surface: no weight table — bold stays synthesised"); return; }
-            table[7].regularTypeface = bold;
-            L("Surface: bold face " + what);
-        }
-
-        /* An OS font, built once. Cheap insurance: every mod has a different font pipeline and any
-           of them can hand over null, but a debug window that renders nothing is worse than one in
-           the wrong typeface. Not safe during the loader's static-ctor window (Time.frameCount 0),
-           which is why it is built on demand rather than at load.
-
-           Goes through FontAsset.CreateFontAsset(family, style, size) rather than
-           Font.CreateDynamicFontFromOSFont: the legacy call matches a family NAME against the OS
-           list and hands back a non-null Font even when nothing can actually be rendered with it,
-           deferring the failure to glyph generation — which runs every frame a label is on screen.
-           Measured on Steam Linux Runtime: only "DejaVu Sans" was visible to the sandboxed process
-           at all, and fontconfig tags its regular weight style "Book", not "Regular" — a mismatch
-           CreateDynamicFontFromOSFont never surfaces, so the panel opened with every frame logging
-           "Unable to load font face" and not one visible character. CreateFontAsset checks the
-           family+style pair up front and returns null on a miss, so trying several style strings
-           per family here actually finds a working one instead of silently failing per frame. */
-        private static FontAsset Fallback()
-        {
-            if (_fallback != null) return _fallback;
-            _fallback = FileFontAsset((_ctx != null ? _ctx.SansFonts : null) ?? _sansFiles, SamplePx)
-                     ?? (_osSdf == null ? FileFontAsset(_macSansFiles, SamplePx) : null)
-                     ?? OsFontAsset(new[] { "Helvetica Neue", "Helvetica", "Arial", "Segoe UI", "Noto Sans", "DejaVu Sans", "Liberation Sans", "Cantarell", "FreeSans" }, SamplePx);
-            /* The monospace face as the sans face's fallback: Arial (macOS on 2.9) lacks the panel
-               icons (✕ ▾ ▸ ◂ ▴ ↶ ↷) and drew boxes; Menlo preloads every one of them. */
-            var mono = MonoOnly();
-            if (_fallback != null && mono != null && mono != _fallback)
-            {
-                if (_fallback.fallbackFontAssetTable == null) _fallback.fallbackFontAssetTable = new System.Collections.Generic.List<FontAsset>();
-                if (!_fallback.fallbackFontAssetTable.Contains(mono)) _fallback.fallbackFontAssetTable.Add(mono);
-            }
-            return _fallback;
-        }
-
-        private static FontAsset OsFontAsset(string[] families, int pointSize)
-        {
-            foreach (string family in families)
-                foreach (string style in _styles)
-                {
-                    FontAsset fa;
-                    try
-                    {
-                        /* The 3-arg CreateFontAsset(family, style, size) passes GlyphRenderMode
-                           .DEFAULT (a raster atlas, not SDF) — confirmed by disassembling
-                           UnityEngine.TextCoreTextEngineModule.dll. UI Toolkit's faux-bold
-                           (FontStyle.Bold on a face with no real bold weight, which is all this
-                           fallback ever has) works by dilating the SDF glyph edge; on a raster
-                           atlas that dilation has nothing to act on and instead doubles and
-                           offsets the glyph. Headers and titles (the only bold text) rendered as
-                           a garbled double-strike while plain-weight labels were fine — request
-                           SDF explicitly so faux-bold has an edge to dilate. */
-                        fa = OsFont(family, style, pointSize);
-                    }
-                    catch (Exception e) { L("Surface: OS font '" + family + "' (" + style + ") failed: " + e.Message); continue; }
-                    if (fa != null)
-                    {
-                        L("Surface: OS font asset '" + family + "' style '" + style + "'");
-                        // The family's own bold, where the OS has one (macOS's Helvetica Neue does).
-                        FontAsset bold = null;
-                        try { bold = OsFont(family, "Bold", pointSize); }
-                        catch { }
-                        AttachBold(fa, bold, family + " Bold");
-                        return fa;
-                    }
-                }
-            L("Surface: no OS font asset matched any candidate");
-            return null;
         }
 
         /* Shown and hidden with display, NOT by deactivating the GameObject.
@@ -473,7 +214,7 @@ namespace Facet
             cb = _ =>
             {
                 var r = e.worldBound;
-                L(label + ": laid out at " + Mathf.RoundToInt(r.x) + "," + Mathf.RoundToInt(r.y)
+                Host.Fallback.Log(label + ": laid out at " + Mathf.RoundToInt(r.x) + "," + Mathf.RoundToInt(r.y)
                        + " size " + Mathf.RoundToInt(r.width) + "x" + Mathf.RoundToInt(r.height)
                        + " (screen " + Screen.width + "x" + Screen.height + ")");
                 Events.Off(e, cb);

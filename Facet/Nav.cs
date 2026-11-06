@@ -89,7 +89,7 @@ namespace Facet
 
             _content.Clear();
             var hits = SearchIndex.Find(_filter);
-            if (hits.Count == 0) { Ui.Muted(Words.Own("Nothing matches."), _content); return; }
+            if (hits.Count == 0) { Ui.Muted("Nothing matches.", _content, true); return; }
 
             foreach (var hit in hits)
             {
@@ -362,7 +362,8 @@ namespace Facet
                 if (item.IsBranch) { IndexInto(item.Children); continue; }
                 if (item.Build == null) continue;
                 SearchIndex.BeginPage(item, item.Title);
-                Safe.Run(Host.For(_host), "Nav.build '" + item.Title + "'", () => item.Build(new VisualElement()));
+                using (Host.Use(Host.For(_host)))   // the throwaway has no surface to name its host
+                    Safe.Run(Host.For(_host), "Nav.build '" + item.Title + "'", () => item.Build(new VisualElement()));
                 SearchIndex.EndPage();
             }
         }
@@ -560,7 +561,7 @@ namespace Facet
             Active = this;
             bool ok = Safe.Run(Host.For(_host), "Nav.build '" + what + "'", () => build(_content));
             Active = was;
-            if (!ok) Ui.Muted(Words.Own("This page failed to build — see the log."), _content);
+            if (!ok) Ui.Muted("This page failed to build — see the log.", _content, true);
         }
 
         /* Drill-down pages.

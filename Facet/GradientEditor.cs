@@ -198,14 +198,19 @@ namespace Facet
         private void RebuildEditor()
         {
             _editor.Clear();
+            using (Words.OwnScope()) BuildEditor();   // every word here is Facet's own
+        }
+
+        private void BuildEditor()
+        {
             if (_selected == null)
             {
-                Ui.Muted(Words.Own("Click the strip to add a stop."), _editor);
+                Ui.Muted("Click the strip to add a stop.", _editor, true);
                 return;
             }
 
             var sel = _selected;
-            new ColourPicker(_editor, Words.Own("Stop colour"), sel.Colour, _hasAlpha, c =>
+            new ColourPicker(_editor, "Stop colour", sel.Colour, _hasAlpha, c =>
             {
                 sel.Colour = c;
                 Bake();
@@ -213,7 +218,7 @@ namespace Facet
                 Notify();
             });
 
-            Widgets.Slider(_editor, Words.Own("Position"), sel.Position, 0f, 1f, v =>
+            Widgets.Slider(_editor, "Position", sel.Position, 0f, 1f, v =>
             {
                 sel.Position = v;
                 Bake();
@@ -222,7 +227,7 @@ namespace Facet
             }, null, "0.00");
 
             var row = Ui.Row(_editor);
-            Ui.Btn(Words.Own("Add stop"), () =>
+            Ui.Btn("Add stop", () =>
             {
                 float t = Mathf.Clamp01(sel.Position + 0.1f);
                 var stop = new GradientStop { Position = t, Colour = Evaluate(t) };
@@ -235,7 +240,7 @@ namespace Facet
             // The last stop stays: a gradient with none evaluates to white and the strip vanishes,
             // which reads as a bug rather than as an empty state.
             if (_stops.Count > 1)
-                Ui.Btn(Words.Own("Remove stop"), () =>
+                Ui.Btn("Remove stop", () =>
                 {
                     _stops.Remove(sel);
                     _selected = _stops.Count > 0 ? _stops[0] : null;

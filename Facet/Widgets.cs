@@ -41,17 +41,17 @@ namespace Facet
         /// Label on the left, whatever the caller adds on the right.
         public static VisualElement Row(VisualElement parent, string label, string tooltip = null)
         {
-            label = Words.T(label);       // before Note, so a search in the player's language finds it
-            tooltip = Words.T(tooltip);
             var row = Ui.Row(parent);
+            // Translated before Note, so a search in the player's language finds it.
+            string shown = Words.Show(label, Host.For(row), false);
             row.style.minHeight = RowHeight;
             row.style.marginBottom = 2f;
-            row.userData = label;          // how a search result finds this row again
-            SearchIndex.Note(label);
+            row.userData = shown;          // how a search result finds this row again
+            SearchIndex.Note(shown);
             row.style.justifyContent = Justify.SpaceBetween;
             row.style.paddingLeft = 4f;
             row.style.paddingRight = 4f;
-            if (!string.IsNullOrEmpty(tooltip)) row.tooltip = tooltip;
+            Words.Tip(row, tooltip);
 
             var l = Ui.Text(label, row);
             l.style.flexGrow = 1f;
@@ -308,13 +308,13 @@ namespace Facet
                 if (!armed)
                 {
                     armed = true;
-                    b.text = Words.Own("Sure?");
+                    Words.Label(b, "Sure?", true);
                     Paint.Select(b, true);
                     Anim.Pop(b);
                     return;
                 }
                 armed = false;
-                b.text = buttonText;
+                Words.Label(b, buttonText);
                 Paint.Select(b, false);
                 Safe.Run(Host.For(b), "Danger handler", () => { if (onConfirm != null) onConfirm(); });
             }, host);
@@ -345,18 +345,18 @@ namespace Facet
         {
             var host = Row(parent, label, tooltip);
             Button b = null;
-            b = Ui.Btn(string.IsNullOrEmpty(current) ? Words.Own("unbound") : current, () =>
+            b = Ui.Btn(string.IsNullOrEmpty(current) ? "unbound" : current, () =>
             {
-                b.text = Words.Own("press a key…");
+                Words.Label(b, "press a key…", true);
                 Paint.Select(b, true);
                 bool ok = Safe.Run(Host.For(b), "Key capture", () => beginCapture(name =>
                 {
-                    b.text = string.IsNullOrEmpty(name) ? Words.Own("unbound") : name;
+                    if (string.IsNullOrEmpty(name)) Words.Label(b, "unbound", true); else b.text = name;
                     Paint.Select(b, false);
                     Anim.Pop(b);
                 }));
                 if (!ok) { b.text = current; Paint.Select(b, false); }
-            }, host);
+            }, host, string.IsNullOrEmpty(current));
             b.style.minWidth = 110f;
             return b;
         }
@@ -431,9 +431,9 @@ namespace Facet
         /// Marks a list entry as the active one, the way a profile list shows which is loaded.
         public static void MarkActive(VisualElement actions, string label = null)
         {
-            var tag = Ui.Text(label ?? Words.Own("Active"), null, Tokens.FontSizeSmall, Role.Accent);
+            var tag = Ui.Text(label ?? "Active", actions, Tokens.FontSizeSmall, Role.Accent, label == null);
             tag.style.marginRight = Tokens.Gap;
-            actions.Insert(0, tag);
+            tag.SendToBack();
         }
 
         /* A destructive button that is its own label. "All positions [Reset]" reads as a setting
@@ -441,21 +441,19 @@ namespace Facet
         public static Button DangerButton(VisualElement parent, string text, Action onConfirm,
                                           string tooltip = null)
         {
-            text = Words.T(text);
-            tooltip = Words.T(tooltip);
             var row = Ui.Row(parent);
             row.style.minHeight = RowHeight;
             row.style.marginBottom = 2f;
-            if (!string.IsNullOrEmpty(tooltip)) row.tooltip = tooltip;
-            SearchIndex.Note(text);
+            Words.Tip(row, tooltip);
+            SearchIndex.Note(Words.Show(text, Host.For(row), false));
 
             Button b = null;
             bool armed = false;
             b = Ui.Btn(text, () =>
             {
-                if (!armed) { armed = true; b.text = Words.Own("Sure?"); Paint.Select(b, true); Anim.Pop(b); return; }
+                if (!armed) { armed = true; Words.Label(b, "Sure?", true); Paint.Select(b, true); Anim.Pop(b); return; }
                 armed = false;
-                b.text = text;
+                Words.Label(b, text);
                 Paint.Select(b, false);
                 Safe.Run(Host.For(b), "Danger handler", () => { if (onConfirm != null) onConfirm(); });
             }, row);

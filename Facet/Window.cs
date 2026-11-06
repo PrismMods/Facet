@@ -52,7 +52,8 @@ namespace Facet
             _searchBox.style.display = DisplayStyle.Flex;
             // Unity 6 only; Unity 2022 has no placeholder, so it is set by name.
             var ph = typeof(ITextEdition).GetProperty("placeholder");
-            if (ph != null) ph.SetValue(Search.textEdition, Words.T(placeholder), null);
+            Action set = () => ph.SetValue(Search.textEdition, Words.T(placeholder, _host), null);
+            if (ph != null) { set(); Words.OnRelabel(Search, set); }
             Events.On<ChangeEvent<string>>(Search, e =>
             {
                 _searchClear.style.display = string.IsNullOrEmpty(e.newValue)
@@ -200,15 +201,17 @@ namespace Facet
             /* Undo and redo in the header, where they apply to whatever the window is showing.
                Text rather than ↶ ↷: the panel draws in an OS font chosen at runtime and there is
                no guarantee it carries those glyphs, whereas a missing glyph is a blank button. */
-            var undo = Glyph(TitleBarRight, "\u21B6", Words.Own("Undo"), () => History.Undo());
-            var redo = Glyph(TitleBarRight, "\u21B7", Words.Own("Redo"), () => History.Redo());
+            var undo = Glyph(TitleBarRight, "\u21B6", () => History.Undo());
+            var redo = Glyph(TitleBarRight, "\u21B7", () => History.Redo());
             Action refreshHistory = () =>
             {
-                Enable(undo, History.CanUndo, History.NextUndo == null ? Words.Own("Undo") : Words.OwnF("Undo {0}", Words.T(History.NextUndo)));
-                Enable(redo, History.CanRedo, History.NextRedo == null ? Words.Own("Redo") : Words.OwnF("Redo {0}", Words.T(History.NextRedo)));
+                string lang = _host.Language;
+                Enable(undo, History.CanUndo, History.NextUndo == null ? Words.Own("Undo", lang) : Words.OwnF("Undo {0}", lang, Words.T(History.NextUndo, _host)));
+                Enable(redo, History.CanRedo, History.NextRedo == null ? Words.Own("Redo", lang) : Words.OwnF("Redo {0}", lang, Words.T(History.NextRedo, _host)));
             };
             History.Changed += refreshHistory;
             refreshHistory();
+            Words.OnRelabel(undo, refreshHistory);   // the tooltips are built from parts, so a language switch redoes them
 
             /* × rather than a "Close" button, matching the mods' own panels. Sized as a square so
                it reads as a window control instead of as another toolbar button. */
@@ -264,7 +267,7 @@ namespace Facet
 
         /* ↶ and ↷. These live in Arrows, which every OS UI font carries — unlike the pictographic
            blocks, where a miss is a blank button rather than a wrong-looking one. */
-        private static Button Glyph(VisualElement parent, string glyph, string tip, Action onClick)
+        private static Button Glyph(VisualElement parent, string glyph, Action onClick)
         {
             var b = Ui.Btn(glyph, onClick, parent);
             b.style.width = 30f;
@@ -272,7 +275,6 @@ namespace Facet
             b.style.fontSize = Tokens.FontSize + 2f;
             Ui.SetPadding(b, 0f);
             b.style.unityTextAlign = TextAnchor.MiddleCenter;
-            b.tooltip = Words.T(tip);
             return b;
         }
 

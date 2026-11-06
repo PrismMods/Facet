@@ -87,6 +87,18 @@ static class FacetTest {
         var grey = Palette.FromAccent(.2f, .4f, 1f, 0f)[(int)Role.Panel];
         Check(grey[0] == grey[1] && grey[1] == grey[2], "tint 0 gives a pure grey Panel", Show(grey));
         Check(Near(blue[(int)Role.Focus], .2f, .4f, 1f) && Near(blue[(int)Role.AccentText], .06f, .06f, .08f), "Focus is the accent; AccentText is near-black");
+        var aCalls = new List<string>();
+        Func<string, string> trA = s => { aCalls.Add(s); return s == "Undo" ? "A-undo" : null; };
+        Func<string, string> trB = s => s == "Undo" ? "B-undo" : null;
+        Check(Words.T("Undo", trA) == "A-undo" && aCalls.Count == 1, "a translator answers its own host's strings");
+        aCalls.Clear();
+        Check(Words.T("Undo", trB) == "B-undo" && aCalls.Count == 0, "host A's translator is never consulted when translating for B");
+        Check(Words.T("Undo", (Func<string, string>)null) == "Undo" && Words.T("Nope", trB) == "Nope", "no translator or no entry shows English");
+        Check(Words.T("Undo", s => { throw new Exception("x"); }) == "Undo", "a throwing translator falls back to English");
+        Check(Words.Own("Undo", "ko") == "\uC2E4\uD589 \uCDE8\uC18C" && Words.Own("Undo", "en") == "Undo" && Words.Own("Undo", null) == "Undo", "Own answers Korean from Facet's table for ko only, whatever any consumer maps Undo to");
+        Check(Words.Own("Not ours", "ko") == "Not ours", "Own falls back to English for a key not in Facet's table");
+        Check(Words.OwnF("Undo {0}", "ko", "x") == "\uC2E4\uD589 \uCDE8\uC18C: x", "OwnF fills the translated pattern");
+
         Console.WriteLine(_fail == 0 ? "ALL PASS" : _fail + " FAILED");
     }
 }

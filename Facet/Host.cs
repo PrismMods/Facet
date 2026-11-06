@@ -52,7 +52,7 @@ namespace Facet {
             get {
                 if (_fallback != null) return _fallback;
                 _fallback = Create("Facet", o => { o.Log = m => UnityEngine.Debug.Log("[Facet] " + m); o.Theme = Theme.Dark; });
-                History.Log = Words.Log = _fallback._log;
+                History.Log = _fallback._log;
                 return _fallback;
             }
         }

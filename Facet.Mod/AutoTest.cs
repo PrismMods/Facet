@@ -91,6 +91,7 @@ namespace Facet.Mod
             yield return Run("SectionTheme", SectionTheme());
             yield return Run("SectionNoStale", SectionNoStale());
             yield return Run("SectionScrollClear", SectionScrollClear());
+            yield return Run("SectionWords", SectionWords());
             // Later tasks: yield return Run("Section...", Section...());
 
             Main.Log("AUTOTEST DONE pass=" + _pass + " fail=" + _fail);
@@ -364,6 +365,31 @@ namespace Facet.Mod
             }
             Check(bad.Count == 0, "a skinned ScrollView's parts resolve transparent, the dragger RowHover", string.Join(" | ", bad));
             s.Dispose();
+        }
+
+        IEnumerator SectionWords()
+        {
+            Gallery.Lang = "en";
+            Gallery.Open(); yield return null; yield return null;
+            Gallery.Surface.Relabel();
+            Label size = null;
+            foreach (var l in Root.Query<Label>().ToList()) if (l.text == "Size") size = l;
+            Check(size != null, "the Size row's label reads Size in English");
+            Gallery.Lang = "ko";
+            Gallery.Surface.Relabel();
+            yield return null; yield return null; yield return null;
+            string korean = "\uD06C\uAE30";
+            Check(size != null && size.text == korean, "after Relabel the same Label instance reads \uD06C\uAE30 with no rebuild", size?.text);
+            Check(size != null && size.layout.width > 0f, "...and the Korean label laid out wide", size?.layout.width.ToString());
+            var face = Fonts.Regular(Gallery.Host);
+            Check(Fonts.HasHangul(face), "the face the label draws with (with its fallbacks) has the glyphs \uD06C and \uAE30", face?.name);
+            var used = Root.style.unityFontDefinition.value.fontAsset;
+            Check(used != null && Fonts.HasHangul(used), "the font set on the panel root has Hangul", used?.name);
+            Check(Words.Own("Sure?", Gallery.Host) == "\uC815\uB9D0\uC694?", "Facet's own words follow the host language through Own");
+            Gallery.Lang = "en";
+            Gallery.Surface.Relabel();
+            Check(size != null && size.text == "Size", "switching back relabels to English again", size?.text);
+            Gallery.Close();
         }
 
         IEnumerator SharedEscape()

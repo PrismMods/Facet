@@ -80,25 +80,26 @@ namespace Facet
             return e;
         }
 
-        public static Label Text(string text, VisualElement parent = null, float? size = null, Role role = Role.Text)
+        public static Label Text(string text, VisualElement parent = null, float? size = null, Role role = Role.Text, bool own = false)
         {
-            var l = new Label(Words.T(text ?? ""));
+            var l = new Label();
             l.style.fontSize = size ?? Tokens.FontSize;
             l.style.whiteSpace = WhiteSpace.NoWrap;
             l.style.textOverflow = TextOverflow.Ellipsis;
             l.style.overflow = Overflow.Hidden;
             parent?.Add(l);
+            Words.Label(l, text, own);   // after Add: the parent says which host's table answers
             Paint.Fg(l, role);
             return l;
         }
 
-        public static Label Muted(string text, VisualElement parent = null)
-            => Text(text, parent, Tokens.FontSizeSmall, Role.TextMuted);
+        public static Label Muted(string text, VisualElement parent = null, bool own = false)
+            => Text(text, parent, Tokens.FontSizeSmall, Role.TextMuted, own);
 
         /// Look.Button: hover, pressed and selected (Paint.Select) are Paint's, not the caller's.
-        public static Button Btn(string text, Action onClick, VisualElement parent = null)
+        public static Button Btn(string text, Action onClick, VisualElement parent = null, bool own = false)
         {
-            var b = new Button { text = Words.T(text ?? "") };
+            var b = new Button();
             if (onClick != null) b.clicked += () => Safe.Run(Host.For(b), "Button '" + b.text + "'", onClick);
             b.style.fontSize = Tokens.FontSizeSmall;
             SetBorderWidth(b, 0f);
@@ -107,6 +108,7 @@ namespace Facet
             b.style.marginLeft = 0f; b.style.marginRight = Tokens.Gap;
             b.style.marginTop = 0f; b.style.marginBottom = 0f;
             parent?.Add(b);
+            Words.Label(b, text, own);
             Paint.Look(b, Look.Button);
             return b;
         }

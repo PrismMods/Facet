@@ -26,8 +26,13 @@ namespace Facet.Mod
         /// What the Gallery's host was asked to persist, by key.
         public static readonly Dictionary<string, string> Store = new Dictionary<string, string>();
 
+        /// The Gallery host's language; the autotest flips it to prove a window relabels in place.
+        public static string Lang = "en";
+
         public static readonly Host Host = Host.Create("Gallery", o =>
         {
+            o.Language = () => Lang;
+            o.Translate = s => Lang == "ko" && s == "Size" ? "\uD06C\uAE30" : null;
             o.Log = m => Main.Log("[ui] " + m);
             o.Read = k => Store.TryGetValue(k, out var v) ? v : null;
             o.Write = (k, v) => Store[k] = v;
@@ -45,7 +50,7 @@ namespace Facet.Mod
             var p = scroll.contentContainer;
             var m = Model;
             Widgets.Toggle(p, "Toggle", m.Flag, v => m.Flag = v);
-            Widgets.Slider(p, "Slider", m.Size, 0.5f, 2f, v => m.Size = v);
+            Widgets.Slider(p, "Size", m.Size, 0.5f, 2f, v => m.Size = v);
             Widgets.IntSlider(p, "Int slider", m.Count, 0, 10, v => m.Count = v);
             Widgets.Choice(p, "Choice", new[] { "One", "Two", "Three" }, m.Pick, v => m.Pick = v);
             Widgets.Text(p, "Text", m.Name, v => m.Name = v);

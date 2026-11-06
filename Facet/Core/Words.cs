@@ -4,93 +4,43 @@ using System.Collections.Generic;
 namespace Facet
 {
     /* Text in the player's language. English is the key, as in the mods' own Loc tables, so
-       anything untranslated shows in English. Ui.Text and Ui.Btn look every string up, so page code
-       never has to — the convention the mods' uGUI builders already follow.
+       anything untranslated shows in English.
 
        A string is translated only by the table of whoever wrote it. English keys carry no context,
        so a lookup in someone else's table finds the same word in another sense: CamDisplay's
-       "Undo" (remove the camera patch) came out as the editor's 실행 취소. So:
-       - Facet's own table (below) answers only Own(), which Facet's code calls for its own
-         words, and the rows Facet registers itself (owner "Facet").
-       - A settings row is built with Owner set to its mod's name; then only that mod's
-         translators answer, and a mod with no table shows English.
-       - Elsewhere (a mod's own menu) every registered translator answers, in order. */
-    public static class Words
+       "Undo" (remove the camera patch) came out as the editor's 실행 취소. So the rules here take
+       ONE translator at a time, never a list:
+       - T(english, translator): the translator of the host whose string it is.
+       - Own(english, language): Facet's own table, for Facet's own words, whatever any host maps.
+       The Unity-typed halves (a Host, a TextElement) are in the other part of this class. */
+    public static partial class Words
     {
-        /// "ko" for Korean; anything else (or null) is English. The host points this at its own
-        /// language setting.
-        public static Func<string> Language;
-
-        /// Where a throwing translator is reported; Host points it at the fallback host's log.
-        public static Action<string> Log;
-
-        private static readonly List<Func<string, string>> _translators = new List<Func<string, string>>();
-        private static readonly List<string> _assemblies = new List<string>();
-
-        /// Whose strings are being built: a settings row's mod (its name), or null.
-        internal static string Owner;
-
-        internal const string Self = "Facet";
-
-        /// A mod's own table: return the translation, or null when it has none.
-        public static void AddTranslator(Func<string, string> t)
+        public static string T(string english, Func<string, string> translator)
         {
-            if (t == null) return;
-            _translators.Add(t);
-            _assemblies.Add(AssemblyOf(t));
+            if (string.IsNullOrEmpty(english) || translator == null) return english;
+            string s;
+            try { s = translator(english); } catch { return english; }
+            return string.IsNullOrEmpty(s) ? english : s;
         }
 
-        public static string T(string english)
-        {
-            if (string.IsNullOrEmpty(english)) return english;
-            string owner = Owner;
-            if (owner == Self) return Own(english);
-            for (int i = 0; i < _translators.Count; i++)
-            {
-                if (owner != null && !Owns(_assemblies[i], owner)) continue;
-                var tr = _translators[i];
-                string s = Safe.Get(Self, "Words.translator", () => tr(english), null, Log);
-                if (!string.IsNullOrEmpty(s) && s != english) return s;
-            }
-            return english;
-        }
-
-        /// T for a sentence with a value in it: translate the pattern, then fill it.
-        public static string F(string englishFormat, params object[] args)
-        {
-            try { return string.Format(T(englishFormat), args); }
-            catch (FormatException) { return string.Format(englishFormat, args); }
-        }
-
-        /// Facet's own words, from its own table only.
-        internal static string Own(string english)
+        /// Facet's own words, from its own table only: Korean for "ko", else English.
+        public static string Own(string english, string language)
         {
             string ko;
-            return !string.IsNullOrEmpty(english) && IsKorean() && Korean.TryGetValue(english, out ko) ? ko : english;
+            return !string.IsNullOrEmpty(english) && language == "ko" && Korean.TryGetValue(english, out ko) ? ko : english;
         }
 
-        internal static string OwnF(string englishFormat, params object[] args)
-        {
-            try { return string.Format(Own(englishFormat), args); }
-            catch (FormatException) { return string.Format(englishFormat, args); }
-        }
+        /// A sentence with a value in it: the translated pattern, then filled.
+        public static string F(string englishFormat, Func<string, string> translator, params object[] args)
+            => Fill(T(englishFormat, translator), englishFormat, args);
 
-        /* A translator belongs to the mod whose code it is: a mod registers a lambda over
-           its own Loc table, compiled into the mod's assembly, and the mod's assembly is named
-           after the mod. This works with mods already released, which register with no owner.
-           ponytail: name match; an AddTranslator(owner, t) overload if a mod's assembly is ever
-           named otherwise. */
-        private static string AssemblyOf(Func<string, string> t)
-        {
-            try { return t.Method.DeclaringType.Assembly.GetName().Name; } catch { return null; }
-        }
+        public static string OwnF(string englishFormat, string language, params object[] args)
+            => Fill(Own(englishFormat, language), englishFormat, args);
 
-        private static bool Owns(string assembly, string owner)
-            => assembly != null && assembly.StartsWith(owner, StringComparison.OrdinalIgnoreCase);
-
-        private static bool IsKorean()
+        private static string Fill(string pattern, string english, object[] args)
         {
-            try { return Language != null && Language() == "ko"; } catch { return false; }
+            try { return string.Format(pattern, args); }
+            catch (FormatException) { return string.Format(english, args); }
         }
 
         // Facet's own words, read through Own(). Terms: 스톱 for a gradient stop, 실행 취소, 사용 중.
