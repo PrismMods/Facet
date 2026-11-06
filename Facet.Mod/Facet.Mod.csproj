@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <RootNamespace>Facet.Mod</RootNamespace>
+    <AssemblyName>Facet.Mod</AssemblyName>
+    <LoaderTarget Condition="'$(LoaderTarget)' == ''">UMM</LoaderTarget>
+    <GamePath Condition="'$(GamePath)' == ''">$(HOME)/Library/Application Support/Steam/steamapps/common/A Dance of Fire and Ice</GamePath>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="UnityEngine.Modules" Version="2022.3.0" IncludeAssets="compile" PrivateAssets="all" />
+    <ProjectReference Include="../Facet/Facet.csproj" />
+    <Reference Include="UnityModManager" Condition="'$(LoaderTarget)' == 'UMM'">
+      <HintPath>$(GamePath)/UserLibs/UnityModManager.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>
