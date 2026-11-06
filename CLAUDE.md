@@ -14,8 +14,8 @@ theme values are code tokens.
 - **Never show/hide a panel with `SetActive`.** `UIDocument` rebuilds its visual tree in `OnEnable`,
   so the second show hands back a different `rootVisualElement` and everything built into the old
   one is orphaned: the panel comes back empty with no error. Use `display`.
-- **Before Unity 6 a font does not inherit** (ADOFAI 2.9 runs Unity 2022). A font definition set on
-  the root never reached the labels: each resolved no font and laid out 0px tall, so the window drew
+- **Before Unity 6 a font does not inherit.** This is Unity 2022 behaviour as PrismLib.UI met it,
+  unverified in any game Facet has run on. A font definition set on the root never reached the labels: each resolved no font and laid out 0px tall, so the window drew
   shapes and no text. Set per element, both the SDF asset and a legacy Font draw.
   `Surface.HandDownFonts` stamps the nearest ancestor's font onto every text element on a 200ms
   schedule there (rows recycle, popups add elements later). Unity 2022 also has no 5-arg SDF family
@@ -104,8 +104,8 @@ it bubbling. Three causes hid behind "scrolling is broken", all found by logging
   becomes inescapable. Consecutive changes to the same key within `CoalesceSeconds` merge, keeping
   the FIRST undo and the LAST redo, so a slider drag is one step. `History.AfterApply` is how a
   panel re-reads what it shows. `History.Clock` is injectable so the offline tests set their own.
-- **Window geometry** persists through `Window.Read`/`Window.Write`, host-supplied delegates (Facet
-  cannot own a file). Hosts flush at most once a second because a drag writes every frame, and keep
+- **Window geometry** persists through the Host's `Read`/`Write` (`HostOptions.Read`/`Write`,
+  host-supplied delegates: Facet cannot own a file). Hosts flush at most once a second because a drag writes every frame, and keep
   it out of the real settings file: a mid-write crash must not corrupt settings.
 - **Keybind capture is polled by the HOST, not read from a UI event.** Tab, the arrows and Escape are
   all worth binding and all get eaten as navigation inside a panel.
@@ -116,17 +116,22 @@ it bubbling. Three causes hid behind "scrolling is broken", all found by logging
   `Theme.Use` scope, else the host's theme. `Theme.Dark` is frozen (shared by every mod): a host
   without a theme gets its own copy, and only `Host.Fallback` wears Dark itself. An element painted before it joins
   the tree is repainted on `AttachToPanelEvent`.
+- **`Look` presets are copies.** `Look.Button` and the rest return a fresh `Look` on every read, so a
+  mod restyling the one it was handed restyles nothing else.
+- **`Paint.Forget(e)` is the opt-out.** Paint re-applies recorded roles on attach, hover, focus and
+  re-theme, so a literal colour set on a Facet-built element is reverted; after `Paint.Forget` it sticks.
 - **There is no `:hover` at runtime; `Paint` tracks hover, pressed and focus.** A `Button`'s
   clickable stops the mouse's `PointerDownEvent` before any bubbling callback, so Paint registers
   pointer down/up with `TrickleDown`, which Unity 6 runs first (verified 2026-11-06). In a synthetic
   test, read a pressed colour in the same frame: the panel sends a `MouseLeaveEvent` next frame
   because the real pointer is elsewhere, and leave clears pressed.
-- **Text goes through `Words.T`** (`Ui.Text`, `Ui.Btn`, row labels), so page code never calls it.
-  English is the key. **A string is translated only by the table of whoever wrote it**: English keys
-  carry no context, so one mod's "Undo" (remove a camera patch) once came out as the editor's
-  "실행 취소". Facet's own table answers only `Words.Own`/`OwnF`, which Facet's code calls for its
-  own literals. A row is built with `Words.Owner` set to its mod, so only that mod's translator
-  answers (a translator belongs to the assembly its delegate was compiled in, named after the mod).
+- **Text is stored as its English key and translated through the element's Host** (`Words.Label`,
+  `Words.Tip`; `Ui.Text`, `Ui.Btn` and row labels call them), so page code never translates. **A
+  string is translated only by the table of whoever wrote it**: English keys carry no context, so one
+  mod's "Undo" (remove a camera patch) once came out as the editor's "실행 취소". The host that
+  answers is `Host.For(element)`, re-checked when the element joins a panel. Facet's own literals go
+  through `Words.Own`/`OwnF` with the host's language, never through a host's table. Relabel is
+  live: `Surface.Relabel` re-translates every keyed text in place after a language switch.
   A duplicate key in the table's initializer throws from the static constructor and takes every
   string with it: check with `grep -o '{ "[^"]*",' Facet/Core/Words.cs | sort | uniq -d`.
 
@@ -164,6 +169,8 @@ it bubbling. Three causes hid behind "scrolling is broken", all found by logging
   beside every consumer or via the standalone mod. A patch release adds no public API; any new public
   member bumps the minor (R21: append-only within a minor is unsafe because the first-loaded copy of a
   minor wins).
+- Cross-version shared state (`Shared`, `Coord`'s entries): a key's value type never changes, array slots
+  are only appended, and a reader checks `Length` before reading a slot.
 
 ## Rulings that shaped the code
 
