@@ -29,6 +29,38 @@ namespace Facet.Mod
         }
 
         // Review Focus 1: two mods tick the wheel in one frame, the first with a gated zero read.
+        // Chinese, Japanese and Korean labels draw through an OS fallback face (glyph presence, not label width).
+        IEnumerator SectionCjk()
+        {
+            try
+            {
+                Gallery.Lang = "en";
+                Gallery.Open(); yield return null; yield return null;
+                Gallery.Surface.Relabel();
+                Label size = null;
+                foreach (var l in Root.Query<Label>().ToList()) if (l.text == "Size") size = l;
+                Check(size != null, "the Size row's label reads Size before the CJK languages");
+                var drawer = new Dictionary<string, string>();
+                foreach (var c in new[] { new[] { "zh", "大小" }, new[] { "ja", "サイズ" }, new[] { "ko", "\uD06C\uAE30" } })
+                {
+                    Gallery.Lang = c[0];
+                    Gallery.Surface.Relabel();
+                    yield return null; yield return null; yield return null;
+                    Check(size != null && size.text == c[1], c[0] + ": the Size label reads " + c[1], size?.text);
+                    var face = Fonts.Regular(Gallery.Host);
+                    Check(Fonts.Has(face, c[1]), c[0] + ": the regular face draws " + c[1], face?.name);
+                    var bold = Fonts.BoldFace(face);
+                    Check(bold == null || Fonts.Has(bold, c[1]), c[0] + ": the bold face draws " + c[1], bold?.name);
+                    drawer[c[0]] = Fonts.Drawer(face, c[1][0]).name;
+                }
+                /* Documented limit (Han unification, see Fonts.ForLanguage): the fallback table is shared,
+                   so after ko (SectionWords) and zh the ja host's first Han character draws through the SAME face as zh's, not
+                   a Japanese one. This asserts that known behaviour; per-script sets would change it. */
+                Check(drawer["ja"] == drawer["zh"], "ja's Han character draws through the shared table's first CJK face ", "zh=" + drawer["zh"] + " ja=" + drawer["ja"]);
+            }
+            finally { Gallery.Lang = "en"; Gallery.Surface?.Relabel(); Gallery.Close(); }
+        }
+
         IEnumerator SectionWheel()
         {
             Gallery.Open(); yield return null; yield return null;

@@ -95,6 +95,7 @@ namespace Facet.Mod
             yield return Run("SectionNoStale", SectionNoStale());
             yield return Run("SectionScrollClear", SectionScrollClear());
             yield return Run("SectionWords", SectionWords());
+            yield return Run("SectionCjk", SectionCjk());
             yield return Run("SectionBind", SectionBind());
             yield return Run("SectionRebuild", SectionRebuild());
             yield return Run("SectionRefreshIsolation", SectionRefreshIsolation());

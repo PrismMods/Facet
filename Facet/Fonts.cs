@@ -12,7 +12,7 @@ namespace Facet
        per frame. */
     public static class Fonts
     {
-        sealed class Faces { public FontAsset Sans, Mono; public bool CjkTried; }
+        sealed class Faces { public FontAsset Sans, Mono; public readonly HashSet<string> CjkTried = new HashSet<string>(); }
 
         private static readonly Faces _shared = new Faces();
         private static readonly Dictionary<Host, Faces> _own = new Dictionary<Host, Faces>();
@@ -65,20 +65,35 @@ namespace Facet
             root.schedule.Execute(() => HandDownFonts(root, default(StyleFontDefinition))).Every(200);
         }
 
-        /* Hangul is not in the Latin face (macOS's Arial has none): a Korean host gets an OS CJK face
-           appended to the regular one's fallbacks the first time its language is "ko". Lazy — the
-           file is large — and checked once per face set, never per frame. */
+        /* Korean, Chinese and Japanese are not in the Latin face (macOS's Arial has none): a host in one of
+           those languages gets an OS CJK face appended to the regular and bold faces' fallbacks the first
+           time its language names that script. Lazy — the file is large — and checked once per face set
+           and script, never per frame.
+
+           Known limit (Han unification): the fallback table is one per face set, shared by every
+           language of a host. Chinese, Japanese and Korean share Han code points, so once one CJK file is
+           in the table the others' Han characters draw in ITS forms (zh then ja: kana from the zh file,
+           kanji in Chinese shapes). One language per process is exact; switching between CJK
+           languages at runtime is not. Per-script face sets would fix it at the cost of a second base
+           face per script and re-pointing every surface on Relabel. */
         internal static void ForLanguage(Host h)
         {
-            if (h == null || h.Language != "ko") return;
+            if (h == null) return;
+            var script = Cjk.Script(h.Language);
+            if (script == null) return;
             var f = For(h);
-            if (f.CjkTried) return;
-            f.CjkTried = true;
+            if (!f.CjkTried.Add(script)) return;
             var sans = Regular(h);
             var bold = BoldFace(sans);   // titles and headers are bold; its table is its own
-            if (sans == null || (HasHangul(sans) && (bold == null || HasHangul(bold)))) return;
-            var cjk = FileFontAsset(_cjkFiles, SamplePx);
-            if (cjk == null) { L("Fonts: no CJK font file found — Korean text will draw boxes"); return; }
+            var sample = Cjk.Sample(script);
+            if (sans == null) return;
+            if (Has(sans, sample) && (bold == null || Has(bold, sample)))
+            {
+                L("Fonts: " + script + " already drawable through " + Drawer(sans, sample[0]).name + " — no file loaded");
+                return;
+            }
+            var cjk = FileFontAsset(Cjk.Files(script), SamplePx);
+            if (cjk == null) { L("Fonts: no CJK font file found — " + script + " text will draw boxes"); return; }
             try { cjk.isMultiAtlasTexturesEnabled = true; } catch { }   // thousands of glyphs outgrow one 1024 atlas
             foreach (var fa in new[] { sans, bold })
             {
@@ -86,7 +101,7 @@ namespace Facet
                 if (fa.fallbackFontAssetTable == null) fa.fallbackFontAssetTable = new List<FontAsset>();
                 if (!fa.fallbackFontAssetTable.Contains(cjk)) fa.fallbackFontAssetTable.Add(cjk);
             }
-            L("Fonts: Hangul " + (HasHangul(sans) ? "now" : "STILL NOT") + " drawable through " + cjk.name);
+            L("Fonts: " + script + (Has(sans, sample) ? "" : " STILL NOT") + " drawable through " + cjk.name);
         }
 
         /// The real weight-700 face AttachBold put in the regular face's table, or null.
@@ -97,22 +112,23 @@ namespace Facet
         }
 
         /// Whether the face, with its fallbacks, has the glyphs for 크 and 기.
-        public static bool HasHangul(FontAsset fa)
+        public static bool HasHangul(FontAsset fa) { return Has(fa, Cjk.Sample("ko")); }
+
+        /// The first face in `fa`'s fallback table that itself draws `c` (not through its own fallbacks); `fa` when none does.
+        public static FontAsset Drawer(FontAsset fa, char c)
         {
-            return fa != null && fa.HasCharacter('\uD06C', true, true) && fa.HasCharacter('\uAE30', true, true);
+            var t = fa.fallbackFontAssetTable;
+            if (t != null) foreach (var f in t) if (f != null && f.HasCharacter(c, false, true)) return f;
+            return fa;
         }
 
-        // Windows Malgun Gothic, macOS Apple SD Gothic Neo, then Noto Sans CJK where the distro puts it
-        // (and under /run/host inside the Steam runtime container).
-        private static readonly string[][] _cjkFiles =
+        /// Whether every character of `text` draws through the face and its fallbacks.
+        public static bool Has(FontAsset fa, string text)
         {
-            new[] { "/System/Library/Fonts/AppleSDGothicNeo.ttc" },
-            new[] { @"C:\Windows\Fonts\malgun.ttf", @"C:\Windows\Fonts\malgunbd.ttf" },
-            new[] { "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc" },
-            new[] { "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc" },
-            new[] { "/run/host/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc" },
-            new[] { "/run/host/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc" },
-        };
+            if (fa == null || string.IsNullOrEmpty(text)) return false;
+            foreach (char c in text) if (!fa.HasCharacter(c, true, true)) return false;
+            return true;
+        }
 
         private static FontAsset BuildSans(Host h, Faces f)
         {

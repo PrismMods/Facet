@@ -237,6 +237,10 @@ static class FacetTest {
 
         Check(Hangul.Initials("\uB178\uD2B8") == "\u3134\u314C", "Initials of a Korean word are its leading consonants");
         Check(Hangul.Initials("A\uAC00") == "A\u3131", "other characters pass through Initials unchanged");
+        Check(Cjk.Script("zh-CN") == "zh" && Cjk.Script("ZH") == "zh" && Cjk.Script("ja_JP") == "ja" && Cjk.Script("ko-KR") == "ko", "a host language maps to its script");
+        Check(Cjk.Script("en") == null && Cjk.Script("") == null && Cjk.Script(null) == null, "other languages need no CJK face");
+        Check(Cjk.Files("zh")[0][0] == "/System/Library/Fonts/PingFang.ttc" && Array.Exists(Cjk.Files("zh"), p => p[0].EndsWith("Hiragino Sans GB.ttc")), "zh tries PingFang, then Hiragino Sans GB");
+        Check(Array.Exists(Cjk.Files("ja"), p => p[0].EndsWith("ヒラギノ角ゴシック W3.ttc")) && Cjk.Files("en") == null, "ja has Hiragino Sans");
         Check(Search.Score("\uB178\uD2B8 \uD06C\uAE30", "\u3134\u314C") != Search.NoMatch, "initials find a Korean label");
         Check(Search.Score("\uB178\uD2B8", "\u3131\u3134") == Search.NoMatch, "wrong initials do not match");
         Check(Search.Matches("\uB178\uD2B8 \uD06C\uAE30", "\u314B\u3131"), "initials may start at a later word");

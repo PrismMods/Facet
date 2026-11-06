@@ -181,3 +181,7 @@ it bubbling. Three causes hid behind "scrolling is broken", all found by logging
 - R14: `History.Apply` calls an internal Facet-only refresh hook before the public `AfterApply`, so a
   consumer assigning `AfterApply` cannot clobber Facet's in-place refresh.
 - R21: a patch release adds no public API; any new public member bumps the minor.
+- **Two CJK languages in one process share Han glyph forms.** `Fonts.ForLanguage` appends one OS CJK
+  face per script to a face set's single fallback table, and Chinese, Japanese and Korean share Han
+  code points, so the first-loaded file's forms win (zh then ja draws kanji in Chinese shapes). One
+  language per process is exact. Per-script face sets would fix it; not built.
