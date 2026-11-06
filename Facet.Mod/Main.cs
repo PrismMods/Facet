@@ -14,6 +14,8 @@ namespace Facet.Mod
         static string _log, _dir;
         static bool _auto, _started;
 
+        internal static string LogPath => _log;
+
         internal static void Log(string s)
         {
             try { File.AppendAllText(_log, DateTime.Now.ToString("HH:mm:ss.fff") + " " + s + "\n"); } catch { }

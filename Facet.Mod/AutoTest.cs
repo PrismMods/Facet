@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Reflection;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -30,15 +31,16 @@ namespace Facet.Mod
             return r == null ? 0f : r.layout.width / Screen.width;
         }
 
-        void Pointer(EventType type, Vector2 screen)
+        // via: an element on the panel to send to, when it is not the Gallery's.
+        void Pointer(EventType type, Vector2 screen, int button = 0, VisualElement via = null)
         {
             float k = K();
-            var ev = new Event { type = type, button = 0, clickCount = 1,
+            var ev = new Event { type = type, button = button, clickCount = 1,
                 mousePosition = new Vector2(screen.x * k, (Screen.height - screen.y) * k) };
             EventBase e = type == EventType.MouseDown ? PointerDownEvent.GetPooled(ev)
                         : type == EventType.MouseUp ? PointerUpEvent.GetPooled(ev)
                         : (EventBase)PointerMoveEvent.GetPooled(ev);
-            using (e) Root.panel.visualTree.SendEvent(e);
+            using (e) (via ?? Root).panel.visualTree.SendEvent(e);
         }
 
         IEnumerator Drag(Vector2 from, Vector2 to, int steps = 6)
@@ -50,10 +52,10 @@ namespace Facet.Mod
 
         // Down and up in the same frame: a real pointer's own move event between them would turn
         // a still click into a drag.
-        IEnumerator Click(Vector2 at)
+        IEnumerator Click(Vector2 at, int button = 0, VisualElement via = null)
         {
-            Pointer(EventType.MouseDown, at);
-            Pointer(EventType.MouseUp, at); yield return null; yield return null;
+            Pointer(EventType.MouseDown, at, button, via);
+            Pointer(EventType.MouseUp, at, button, via); yield return null; yield return null;
         }
 
         void Submit(Button b)
@@ -92,6 +94,8 @@ namespace Facet.Mod
             yield return Run("SectionNoStale", SectionNoStale());
             yield return Run("SectionScrollClear", SectionScrollClear());
             yield return Run("SectionWords", SectionWords());
+            yield return Run("SectionBind", SectionBind());
+            yield return Run("SectionRebuild", SectionRebuild());
             // Later tasks: yield return Run("Section...", Section...());
 
             Main.Log("AUTOTEST DONE pass=" + _pass + " fail=" + _fail);
@@ -401,6 +405,172 @@ namespace Facet.Mod
             Gallery.Surface.Relabel();
             Check(size != null && size.text == "Size", "switching back relabels to English again", size?.text);
             Gallery.Close();
+        }
+
+        // Frames until `ok` holds, or `cap` ms pass; the ms it took, -1 if it never did.
+        IEnumerator Until(Func<bool> ok, double[] ms, int cap = 1000)
+        {
+            var sw = Stopwatch.StartNew();
+            ms[0] = -1;
+            while (sw.ElapsedMilliseconds < cap)
+            {
+                yield return null;
+                if (ok()) { ms[0] = sw.Elapsed.TotalMilliseconds; yield break; }
+            }
+        }
+
+        static string Ms(double[] ms) { return ms[0].ToString("0") + " ms"; }
+
+        // Bound controls follow their values in place, leave a field being typed in alone, and stop
+        // reading while hidden or once their getter keeps failing.
+        IEnumerator SectionBind()
+        {
+            Gallery.Model = new Model();
+            Gallery.Open(); yield return null; yield return null;
+            var t = Gallery.Surface.Theme;
+            var row = Root.Q("flag"); var input = Root.Q("flag-input"); var dot = row?.Q("changed");
+            Check(row != null && input != null && dot != null, "the bound toggle's row and input are named from its Id, with a changed dot");
+            if (row == null || input == null || dot == null) yield break;
+            Func<bool> on = () => Near(input.style.backgroundColor.value, t[Role.Accent]);
+            Func<bool> dotShown = () => dot.style.display.value == DisplayStyle.Flex;
+            Check(!on() && !dotShown(), "the toggle starts off, with no dot");
+
+            var ms = new double[1];
+            Gallery.Model.Flag = true;
+            yield return Until(on, ms);
+            Check(ms[0] >= 0 && ms[0] <= 150, "Model.Flag = true behind the UI shows as on within 150 ms", Ms(ms));
+            Check(dotShown(), "...and the changed dot shows while it differs from Default");
+
+            // Review Focus 1: a profile switch replaces the settings object wholesale.
+            Gallery.Model = new Model { Flag = false };
+            yield return Until(() => !on(), ms);
+            Check(ms[0] >= 0 && ms[0] <= 150, "with Gallery.Model replaced by one whose Flag = false, the toggle shows off within 150 ms", Ms(ms));
+
+            // Undo and redo re-read every visible surface at once, not at the next tick.
+            History.Record("Toggle", "bind-test", () => Gallery.Model.Flag = false, () => Gallery.Model.Flag = true);
+            History.Undo(); History.Redo();
+            Check(on(), "a redo shows its value in the same frame (History.AfterApply refreshes the visible surfaces)");
+            History.Clear();
+            Check(dotShown(), "the dot shows again with Flag on");
+            yield return Click(Ctr(row), 2);
+            Check(!Gallery.Model.Flag && !dotShown() && !on(), "a middle-click on the row with Default = false sets Model.Flag false and hides the dot",
+                "flag=" + Gallery.Model.Flag + " dot=" + dotShown());
+
+            // Probes sit at the top of the page, so a click on them lands inside the window.
+            var probes = Ui.Box(); row.parent.Insert(0, probes);
+
+            var bad = Widgets.Toggle(probes, "Throwing probe", Bind.To<bool>(() => throw new InvalidOperationException("probe getter"), v => { }));
+            yield return new WaitForSeconds(0.45f);
+            Check(bad.Unavailable, "a getter that throws makes Unavailable true after 3 ticks");
+            int lines = 0;
+            foreach (var l in File.ReadAllLines(Main.LogPath)) if (l.Contains("[Gallery] ") && l.Contains("Throwing probe")) lines++;
+            Check(lines == 1, "gallery.log holds exactly one [Gallery] line for it", lines + " lines");
+            Check(bad.Root.tooltip == "unavailable, see the log" && Mathf.Abs(bad.Root.style.opacity.value - .35f) < 1e-3f,
+                "...and the row is dimmed, its tooltip saying why", bad.Root.tooltip + " / " + bad.Root.style.opacity.value);
+
+            var name = Root.Q<TextField>("name-input");
+            Check(name != null, "the bound Name field is named name-input");
+            if (name != null)
+            {
+                name.Focus(); yield return null;
+                var fe = name.focusController?.focusedElement as VisualElement;
+                Check(fe != null && (fe == name || name.Contains(fe)), "the Name field takes focus", fe?.GetType().Name);
+                name.SetValueWithoutNotify("typed");
+                Gallery.Model.Name = "behind";
+                yield return new WaitForSeconds(0.35f);
+                Check(name.value == "typed", "while the Name field holds focus, a write to Model.Name behind the UI leaves the typed text", name.value);
+                (name.focusController?.focusedElement as VisualElement)?.Blur();
+                yield return null;
+                Check(Gallery.Model.Name == "typed", "...and leaving the field commits what was typed", Gallery.Model.Name);
+            }
+
+            int reads = 0;
+            Widgets.Toggle(probes, "Counting probe", Bind.To(() => { reads++; return false; }, v => { }));
+            yield return new WaitForSeconds(0.25f);
+            Check(reads > 1, "a visible surface keeps reading its controls", reads + " reads");
+            Gallery.Surface.Visible = false; reads = 0;
+            for (int i = 0; i < 30; i++) yield return null;
+            Check(reads == 0, "with the Gallery hidden for 30 frames the refresher reads nothing", reads + " reads");
+            Gallery.Surface.Visible = true;
+            Check(reads > 0, "...and showing it again reads at once", reads + " reads");
+            yield return null; yield return null;
+
+            int acts = 0;
+            var menu = new List<KeyValuePair<string, Action>> { new KeyValuePair<string, Action>("Reset all", () => acts++) };
+            var withMenu = Widgets.Toggle(probes, "Menu probe", Bind.Value(false), o => o.ContextMenu = menu);
+            yield return null; yield return null;
+            yield return Click(Ctr(withMenu.Root), 1);
+            Label item = null;
+            foreach (var d in FindObjectsByType<UIDocument>(FindObjectsSortMode.None))
+                if (d.rootVisualElement != null)
+                    foreach (var l in d.rootVisualElement.Query<Label>().ToList()) if (l.text == "Reset all" && l.panel != null) item = l;
+            Check(item != null, "a right-click on a row with ContextMenu = { (\"Reset all\", act) } opens a menu naming it");
+            if (item != null)
+            {
+                var pick = item.parent;
+                using (var e = PointerUpEvent.GetPooled(new Event { type = EventType.MouseUp, button = 0 })) { e.target = pick; pick.SendEvent(e); }
+                yield return null;
+            }
+            Check(acts == 1, "picking the item runs act once", acts + " runs");
+            probes.RemoveFromHierarchy();
+        }
+
+        static object RefresherOf(Surface s)
+        {
+            return typeof(Surface).GetField("_refresher", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(s);
+        }
+
+        static int Bound(object refresher)
+        {
+            return refresher == null ? -1 : (int)refresher.GetType().GetProperty("Count", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(refresher);
+        }
+
+        // Review Focus 2: a button that rebuilds the page it sits on. Nothing throws, the old page's
+        // controls leave the refresher and the new page's are the ones read.
+        IEnumerator SectionRebuild()
+        {
+            Gallery.Open(); yield return null;   // Pointer maps screen to panel through the Gallery's root
+            var logs = new List<string>();
+            var h = Host.Create("BindNav", o => o.Log = m => { logs.Add(m); Main.Log("[bindnav] " + m); });
+            var s = new Surface(h, "FacetBindNav", Layer.Window);
+            var w = new Window(s.Root, "bindnav", "Bind nav", new Rect(100, 60, 600, 600));
+            bool value = false;
+            Nav nav = null;
+            var page = new NavItem("Bound", p =>
+            {
+                Ui.Btn("Rebuild", () => nav.Refresh(), p);
+                for (int i = 0; i < 100; i++) { int n = i; Widgets.Toggle(p, "Bound " + n, Bind.To(() => value, v => value = v), o => o.Id = "bound" + n); }
+            });
+            nav = new Nav(w.Body, new[] { page });
+            yield return null; yield return null;
+            var r = RefresherOf(s);
+            Check(Bound(r) == 100, "the open page's 100 bound controls register with their surface's refresher", Bound(r).ToString());
+            var sw = Stopwatch.StartNew();
+            s.Refresh();
+            Main.Log("[perf] refresh pass, 100 bound controls " + sw.Elapsed.TotalMilliseconds.ToString("0.000") + " ms");
+
+            var b = w.Body.Query<Button>().ToList().Find(x => x.text == "Rebuild");
+            Check(b != null, "the page has its Rebuild button");
+            if (b == null) { s.Dispose(); yield break; }
+            bool threw = false;
+            try { Pointer(EventType.MouseDown, Ctr(b), 0, b); Pointer(EventType.MouseUp, Ctr(b), 0, b); }
+            catch (Exception ex) { threw = true; Main.Log("rebuild click threw " + ex); }
+            yield return null; yield return null;
+            var errs = logs.FindAll(m => m.StartsWith("[BindNav] "));
+            Check(!threw && errs.Count == 0 && b.panel == null, "a button that rebuilds its own page raises nothing, and its page is replaced",
+                "threw=" + threw + " attached=" + (b.panel != null) + " " + string.Join(" | ", errs));
+            Check(Bound(r) == 100, "afterwards the refresher holds only the new page's 100 controls", Bound(r).ToString());
+
+            var first = w.Body.Q("bound0-input");
+            value = true;
+            var ms = new double[1];
+            yield return Until(() => first != null && Near(first.style.backgroundColor.value, s.Theme[Role.Accent]), ms);
+            Check(ms[0] >= 0, "the new page's controls are the ones read", Ms(ms));
+
+            threw = false;
+            try { s.Dispose(); } catch { threw = true; }
+            yield return null; yield return null;
+            Check(!threw && Bound(r) == 0, "disposing the surface stops its refresher", Bound(r).ToString());
         }
 
         IEnumerator SharedEscape()

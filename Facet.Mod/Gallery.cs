@@ -20,7 +20,8 @@ namespace Facet.Mod
     public static class Gallery
     {
         public static Surface Surface { get; private set; }
-        public static Model Model { get; private set; } = new Model();
+        /// Replaced wholesale by the autotest, the way a profile switch replaces a mod's settings object.
+        public static Model Model { get; set; } = new Model();
         static Window _win;
 
         /// What the Gallery's host was asked to persist, by key.
@@ -49,11 +50,11 @@ namespace Facet.Mod
             _win.Body.Add(scroll);
             var p = scroll.contentContainer;
             var m = Model;
-            Widgets.Toggle(p, "Toggle", m.Flag, v => m.Flag = v);
+            Widgets.Toggle(p, "Toggle", Bind.To(() => Model.Flag, v => Model.Flag = v), o => { o.Id = "flag"; o.Default = false; });
             Widgets.Slider(p, "Size", m.Size, 0.5f, 2f, v => m.Size = v);
             Widgets.IntSlider(p, "Int slider", m.Count, 0, 10, v => m.Count = v);
             Widgets.Choice(p, "Choice", new[] { "One", "Two", "Three" }, m.Pick, v => m.Pick = v);
-            Widgets.Text(p, "Text", m.Name, v => m.Name = v);
+            Widgets.Text(p, "Text", Bind.To(() => Model.Name, v => Model.Name = v), o => o.Id = "name");
             Widgets.Colour(p, "Colour", m.Tint, v => m.Tint = v);
             Widgets.Key(p, "Key", m.Key, done => done(m.Key));
             Widgets.Action(p, "Action", "Run", () => { });

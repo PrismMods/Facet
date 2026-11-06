@@ -28,6 +28,8 @@ namespace Facet
     {
         private GameObject _go;
         private PanelSettings _settings;
+        // Re-reads the bound controls under Root while visible (Control finds it through Data).
+        private Refresher _refresher;
 
         public VisualElement Root { get; private set; }
 
@@ -135,6 +137,8 @@ namespace Facet
                 }
                 else SetFont(null);   // never leave a panel fontless; see Fallback
                 Fonts.ForLanguage(Host);
+                _refresher = Data.Get<Refresher>(Root);
+                _refresher.Start(this);
                 if (!WarmUpStarted)
                 {
                     WarmUpStarted = true;   // before scheduling: the warm-up window is a surface too
@@ -146,6 +150,10 @@ namespace Facet
 
         /// Re-translates every keyed text under Root (labels, buttons, tooltips, the title) in place.
         public void Relabel() { if (Root != null) Words.Relabel(Root); }
+
+        /// Re-reads every bound control under Root now rather than at the next tick. Undo and redo
+        /// do this for every visible surface.
+        public void Refresh() { if (_refresher != null) _refresher.Now(); }
 
         /// Set by the first surface, which schedules WarmUp.Run.
         internal static bool WarmUpStarted;
@@ -190,6 +198,7 @@ namespace Facet
                 if (Layer != Layer.Hud) Ui.OpenWindows += value ? 1 : -1;
                 if (value) BringToFront();
                 if (Root != null) Root.style.display = value ? DisplayStyle.Flex : DisplayStyle.None;
+                if (_refresher != null) _refresher.Show(value);   // hidden reads nothing
                 if (!value)
                 {
                     if (BlocksGameInput) Input.HoldThisFrame();
@@ -263,6 +272,7 @@ namespace Facet
         public void Dispose()
         {
             _theme.Changed -= Retheme;
+            if (_refresher != null) { _refresher.Stop(); _refresher = null; }
             Ui.Stack.Remove(this);
             if (_visible) { _visible = false; if (Layer != Layer.Hud) Ui.OpenWindows--; RaiseHidden(); }
             if (_go != null) UnityEngine.Object.Destroy(_go);

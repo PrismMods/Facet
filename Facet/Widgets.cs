@@ -87,6 +87,20 @@ namespace Facet
             return BuildSwitch(host, label, value, onChange);
         }
 
+        /* Bound to a live value (Control). Temporary: Task 10 replaces Widgets' value rows with
+           Controls.*, which this and the bound Text below are the first of. */
+        public static Control<bool> Toggle(VisualElement parent, string label, Bind<bool> bind,
+                                           Action<Options<bool>> configure = null)
+        {
+            var o = ControlOptions.Make(parent, label, configure);
+            var host = Row(parent, label);
+            Action<bool> show;
+            var track = Switch(host, out show);
+            var c = new Control<bool>(host.parent, track, label, bind, show, o);
+            Events.On<ClickEvent>(track, e => { c.Set(!c.Value); e.StopPropagation(); });
+            return c;
+        }
+
         /// A track and its knob; `show` draws a state without raising anything.
         private static VisualElement Switch(VisualElement host, out Action<bool> show)
         {
@@ -281,6 +295,25 @@ namespace Facet
             Events.On<KeyDownEvent>(f, e => { if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) set(f.value); });
             host.Add(f);
             return f;
+        }
+
+        /// Bound text, committed on Enter or when focus leaves. Temporary, like the bound Toggle.
+        public static Control<string> Text(VisualElement parent, string label, Bind<string> bind,
+                                           Action<Options<string>> configure = null)
+        {
+            var o = ControlOptions.Make(parent, label, configure);
+            var host = Row(parent, label);
+            var f = new TextField();
+            f.style.width = 200f;
+            Skin.When<TextField>(f, Skin.Field);
+            f.style.fontSize = Tokens.FontSizeSmall;
+            host.Add(f);
+            var c = new Control<string>(host.parent, f, label, bind, v => f.SetValueWithoutNotify(v ?? ""), o);
+            // FocusOut, not Blur: focus sits on the field's inner input, and Blur does not bubble.
+            Action commit = () => { if (f.value != (c.Value ?? "")) c.Set(f.value); };
+            Events.On<FocusOutEvent>(f, _ => commit());
+            Events.On<KeyDownEvent>(f, e => { if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) commit(); });
+            return c;
         }
 
         /// Read-only text beside a label that wraps when long, instead of a TextField that cuts it off.

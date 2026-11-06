@@ -59,7 +59,9 @@ namespace Facet
         /// Raised whenever the stacks change, so a toolbar can enable or disable its buttons.
         public static event Action Changed;
 
-        /// Called after an undo or redo has been applied, for panels to re-read what they show.
+        /// Called after an undo or redo has been applied, for panels to re-read what they show. Facet's
+        /// Refresher adds itself here and re-reads every visible surface at once; Core cannot see
+        /// Surface, so the hook stays a delegate. Add with +=, or Facet's refresh is lost.
         public static Action AfterApply;
 
         public static bool CanUndo => _done.Count > 0;

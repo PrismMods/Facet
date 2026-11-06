@@ -132,7 +132,7 @@ namespace Facet
             return false;
         }
 
-        private static bool IsTextInput(Type t)
+        internal static bool IsTextInput(Type t)
         {
             for (; t != null && t != typeof(VisualElement); t = t.BaseType)
                 if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(TextInputBaseField<>)) return true;
