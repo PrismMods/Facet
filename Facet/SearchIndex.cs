@@ -12,7 +12,8 @@ namespace Facet
        nothing. Being per Nav, building one never touches another window's index.
 
        A hit knows its page, which is what lets a result navigate rather than just report. It keeps
-       the English key beside the shown label, so it matches in both languages. */
+       the English key beside the shown label, and its tooltip in both forms, so it matches in both
+       languages. */
     public sealed class SearchIndex
     {
         public sealed class Hit
@@ -25,6 +26,8 @@ namespace Facet
             public object PageRef;      // the NavItem, held loosely so this file stays generic
             public string Section;
             internal Search.Text[] Labels, Context;
+            /// The row's tooltip, English and shown: a last-resort match (Search.Rate's detail).
+            internal Search.Text Tip;
         }
 
         private readonly List<Hit> _all = new List<Hit>();
@@ -46,14 +49,19 @@ namespace Facet
 
         /* Two characters minimum, copied from Topaz's rule and for its reason: a colour picker's
            R, G and B rows are labels too, and a search that offers "R" as a result is noise. */
-        internal static void Note(string key, string shown)
+        internal static Hit Note(string key, string shown)
         {
             var i = Building;
-            if (i == null || i._page == null || string.IsNullOrEmpty(shown) || shown.Trim().Length < 2) return;
-            i.Add(key ?? shown, shown);
+            if (i == null || i._page == null || string.IsNullOrEmpty(shown) || shown.Trim().Length < 2) return null;
+            return i.Add(key ?? shown, shown);
         }
 
-        private void Add(string key, string shown)
+        internal static void NoteTip(Hit h, string key, string shown)
+        {
+            if (h != null) h.Tip = string.IsNullOrEmpty(key) ? null : new Search.Text(key == shown ? key : key + " " + shown);
+        }
+
+        private Hit Add(string key, string shown)
         {
             var h = new Hit { Label = shown, Key = key, Page = _pageName, PageRef = _page, Section = _section };
             h.Labels = key == shown ? new[] { new Search.Text(shown) } : new[] { new Search.Text(shown), new Search.Text(key) };
@@ -62,6 +70,7 @@ namespace Facet
                 if (!string.IsNullOrEmpty(c)) ctx.Add(new Search.Text(c));
             h.Context = ctx.ToArray();
             _all.Add(h);
+            return h;
         }
 
         /// Ranked matches, best first. Typos are a second pass, run only when the exact one finds nothing.
@@ -74,7 +83,7 @@ namespace Facet
             for (int pass = 0; pass < 2 && scored.Count == 0; pass++)
                 for (int i = 0; i < _all.Count; i++)
                 {
-                    int r = Search.Rate(q, _all[i].Labels, _all[i].Context, null, pass == 1);
+                    int r = Search.Rate(q, _all[i].Labels, _all[i].Context, _all[i].Tip, pass == 1);
                     if (r > 0) scored.Add(new KeyValuePair<int, int>(r, i));
                 }
             scored.Sort((a, b) => a.Key != b.Key ? b.Key.CompareTo(a.Key) : a.Value.CompareTo(b.Value));

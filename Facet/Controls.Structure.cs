@@ -13,23 +13,33 @@ namespace Facet
         private const float ArrowSize = 20f;   // the chevron was a speck at body size
 
         /// What Noted records on a row, through Data (element userData is the consumer's): the English
-        /// key a search hit reveals it by.
-        internal sealed class Noting { public string Key; }
+        /// key a search hit reveals it by, and the index entry its tooltip joins.
+        internal sealed class Noting { public string Key; public SearchIndex.Hit Hit; }
 
         /* Makes `row` findable: the index notes the label as shown (translated, so a search in the
            player's language finds it) and its English key, which is also how a result finds the row
            again. Every row that is a setting by itself, not by way of Row, calls this. */
-        internal static void Noted(VisualElement row, string label)
+        internal static void Noted(VisualElement row, string label, string tooltip = null)
         {
-            Data.Get<Noting>(row).Key = label;
-            SearchIndex.Note(label, Words.Show(label, Host.For(row), false));
+            var n = Data.Get<Noting>(row);
+            n.Key = label;
+            n.Hit = SearchIndex.Note(label, Words.Show(label, Host.For(row), false));
+            NotedTip(row, tooltip);
+        }
+
+        /// The row's tooltip joins its index entry, English and as shown.
+        internal static void NotedTip(VisualElement row, string tooltip)
+        {
+            var n = Data.Find<Noting>(row);
+            if (n != null && n.Hit != null && !string.IsNullOrEmpty(tooltip))
+                SearchIndex.NoteTip(n.Hit, tooltip, Words.Show(tooltip, Host.For(row), false));
         }
 
         /// Label on the left, whatever the caller adds on the right.
         public static VisualElement Row(VisualElement parent, string label, string tooltip = null)
         {
             var row = Ui.Row(parent);
-            Noted(row, label);
+            Noted(row, label, tooltip);
             row.style.minHeight = RowHeight;
             row.style.marginBottom = 2f;
             row.style.justifyContent = Justify.SpaceBetween;

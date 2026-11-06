@@ -884,7 +884,12 @@ namespace Facet.Mod
             Func<string, VisualElement> rowOf = id => w.Body.Q(id);
             Func<string, Label> lab = t => w.Body.Query<Label>().ToList().Find(l => l.text == t);
             var pages = new[] {
-                new NavItem("Alpha", p => { built[0]++; Controls.Info(p, "Page Alpha", () => "a"); }) { Owner = "A" },
+                new NavItem("Alpha", p =>
+                {
+                    built[0]++; Controls.Info(p, "Page Alpha", () => "a");
+                    Controls.Toggle(p, "Quiet", Bind.Value(false), o => o.Tooltip = "Silences the metronome");
+                    Controls.SubPage(p, "Drums", q => { }, o => o.Tooltip = "Cymbal settings");
+                }) { Owner = "A" },
                 new NavItem("Branch").With(
                     new NavItem("Beta1", p => { built[1]++; Controls.Info(p, "Page Beta1", () => "b"); }) { Owner = "A" },
                     new NavItem("Beta2", p => { built[2]++; Controls.Info(p, "Page Beta2", () => "b"); }) { Owner = "A", VisibleWhen = () => !hideBeta2 },
@@ -920,6 +925,10 @@ namespace Facet.Mod
             Check(parts.Length >= 7 && parts[4] == "pages" && int.Parse(parts[3]) == 5 && int.Parse(parts[5]) <= 100, "index of 5 pages built within 100 ms", line);
             nav.Filter("page hidden"); yield return null;
             Check(lab("Nothing matches.") != null, "a hidden page is not searchable");
+            nav.Filter("metronome"); yield return null;
+            Check(lab("Quiet") != null, "a word only in a row's tooltip finds the row");
+            nav.Filter("cymbal"); yield return null;
+            Check(lab("Drums") != null, "...and so does one in a SubPage row's tooltip");
             nav.Go(pages[2]); yield return null; yield return null;
             var tint0 = rowOf("tint");
             Check(tint0 != null && tint0.userData == null, "Facet leaves a row's userData to the consumer", tint0?.userData?.ToString());
