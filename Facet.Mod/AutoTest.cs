@@ -1361,6 +1361,15 @@ namespace Facet.Mod
             History.Record("Probe", "close-probe", () => { }, () => { });
             Check(undo != null && !was && undo.enabledSelf, "a live window's undo button still follows History", "before " + was + ", after " + undo?.enabledSelf);
             History.Clear();
+
+            // A disposed surface cannot be revived: no stack entry, no open count, no input block.
+            Gallery.Close(); yield return null;
+            int open0 = Ui.OpenWindows; bool any0 = Input.AnyWindowOpen, blocks0 = Input.BlocksGameInput;
+            s.Visible = true; s.BringToFront();
+            var stack = (List<Surface>)typeof(Ui).GetField("Stack", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
+            Check(Ui.OpenWindows == open0 && Input.AnyWindowOpen == any0 && Input.BlocksGameInput == blocks0 && !stack.Contains(s),
+                "a disposed surface shown and raised again stays out of the stack, the open count and the input block",
+                "open " + open0 + "->" + Ui.OpenWindows + " any " + any0 + "->" + Input.AnyWindowOpen + " blocks " + blocks0 + "->" + Input.BlocksGameInput + " inStack " + stack.Contains(s));
         }
 
         IEnumerator SectionOpen()

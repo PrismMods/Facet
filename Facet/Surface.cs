@@ -207,6 +207,7 @@ namespace Facet
             set
             {
                 if (_visible == value) return;
+                if (Disposed()) return;
                 _visible = value;
                 if (Layer != Layer.Hud) Ui.OpenWindows += value ? 1 : -1;
                 if (value) BringToFront();
@@ -255,7 +256,8 @@ namespace Facet
            (layer, then raise), so walking it backwards always meets the topmost surface first. */
         public void BringToFront()
         {
-            if (Layer == Layer.Hud) { if (_settings != null) _settings.sortingOrder = _bandBase[0]; return; }
+            if (Disposed()) return;
+            if (Layer == Layer.Hud) { _settings.sortingOrder = _bandBase[0]; return; }
             Ui.Stack.Remove(this);
             int at = Ui.Stack.Count;
             while (at > 0 && Ui.Stack[at - 1].Layer > Layer) at--;
@@ -268,7 +270,7 @@ namespace Facet
                 Order = _bandBase[b] + _bandSpan[b];
                 _bandNext[b] = Coord.Renumber(Input.Entries, b, _bandBase[b], Host.Fallback.LogFn);
             }
-            else if (_settings != null) _settings.sortingOrder = _bandNext[b] += 1f;
+            else _settings.sortingOrder = _bandNext[b] += 1f;
         }
 
         private static readonly float[] _bandBase = { 29000f, 30000f, 31000f, 31500f, 32000f };
@@ -283,16 +285,29 @@ namespace Facet
             set { if (_settings != null) _settings.sortingOrder = value; }
         }
 
+        /* Showing or raising a disposed surface would put it back in Ui.Stack with no panel: counted
+           open forever, blocking input, and (topmost at order -1) keeping Escape from its version. */
+        private bool Disposed()
+        {
+            if (_settings != null) return false;
+            if (Throttle.Allow(Host.Name + "/disposed/" + Name, Time.realtimeSinceStartupAsDouble))
+                L("Surface '" + Name + "' is disposed: shown or raised again, ignored");
+            return true;
+        }
+
         public void Dispose()
         {
+            var settings = _settings;
+            if (settings == null) return;   // twice is harmless
+            _settings = null;   // first, so a Hidden handler cannot show or raise it again
             _theme.Changed -= Retheme;
             if (_refresher != null) { _refresher.Stop(); _refresher = null; }
             Ui.Stack.Remove(this);
             DropFocus();
             if (_visible) { _visible = false; if (Layer != Layer.Hud) Ui.OpenWindows--; RaiseHidden(); }
             if (_go != null) UnityEngine.Object.Destroy(_go);
-            if (_settings != null) UnityEngine.Object.Destroy(_settings);
-            _go = null; _settings = null; Root = null;
+            UnityEngine.Object.Destroy(settings);
+            _go = null; Root = null;
         }
     }
 }
