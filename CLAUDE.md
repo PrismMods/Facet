@@ -147,3 +147,25 @@ it bubbling. Three causes hid behind "scrolling is broken", all found by logging
 - **The key that closes a window is still down for the rest of that frame.** A hiding surface calls
   `Input.HoldThisFrame()` so the host keeps it from the game, or Escape closed the window and then
   paused the game behind it.
+
+## Dev loop and packaging
+
+- `./test.sh`: offline tests plus the grep rules (no loader or game names in `Facet/`, no `RegisterCallback`
+  outside `Events.cs`, no Unity-derived public types, colour only through `Paint`).
+- `./build.sh`: tests, then installs the UMM build to `UMMMods/Facet`. `tools/ingame.sh` runs the autotest
+  through it and wants `AUTOTEST DONE ... fail=0`. `tools/ingame.sh --ml` does the same through the
+  MelonLoader entry (log and trigger in `UserData/Facet/`): unzip `dist/Facet-ML.zip` into the game first.
+- `./release.sh` builds both targets (`-p:LoaderTarget=ML|UMM`), stages `dist/Facet-ML.zip` and
+  `dist/Facet-UMM.zip` and fails unless the entries match the expected lists. It publishes nothing.
+- Rig: one in-game test at a time; wait about 5 s after a quit; `ingame.sh` refuses to run while another
+  suite's trigger (LayoutProbe `autotest`, CamDisplay `selftest`) is armed. Never run the UMM and ML copies
+  together: remove one before installing the other, and `./build.sh` afterwards to restore the default.
+- Packaging rule: only `Facet.Mod/` names a loader. The assembly is `Facet.<major>.<minor>.dll`, append-only
+  within a minor, shipped beside every consumer or via the standalone mod.
+
+## Rulings that shaped the code
+
+- Facet targets netstandard2.1 (Unity 2022.3's reference assemblies reference it).
+- Colours are per host (`Theme`); a host without a theme gets a copy, `Theme.Dark` itself is frozen.
+- R13: editing rule, an edit is never applied from inside a refresh pass.
+- R14: `History` refreshes through an internal hook (`AfterApply`), not a public one.
