@@ -100,7 +100,9 @@ namespace Facet
             _crumbs.Clear();
             _crumbs.style.paddingTop = sz.Gap;
             _crumbs.style.paddingBottom = sz.Gap;
-            var title = Ui.Text("Results for \u201c" + _filter + "\u201d", _crumbs, sz.Title);
+            var title = Ui.Text(Words.OwnF("Results for \u201c{0}\u201d", Host.For(_crumbs).Language, _filter), _crumbs, sz.Title, own: true);
+            var shownFilter = _filter;
+            Words.OnRelabel(title, () => title.text = Words.OwnF("Results for \u201c{0}\u201d", Host.For(title).Language, shownFilter));   // follows a language switch
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
 
             _content.Clear();
@@ -429,12 +431,6 @@ namespace Facet
             _content = contentScroll.contentContainer;
             Data.Get<Tabs.Page>(_content);   // a Pages row's remembered tab is keyed by its index on the page
             _contentScroll = contentScroll;
-
-            /* Siblings draw in the order they were added, so the scrolling pane was painting over
-               the title that is supposed to sit above it — the rows slid under it and both stayed
-               readable. Raising it is what makes the header opaque in practice as well as in
-               theory. */
-            _crumbs.BringToFront();
 
             PaintHandle();
             ReportInset();

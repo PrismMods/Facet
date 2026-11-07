@@ -137,7 +137,10 @@ static class FacetTest {
             "Panel leans .059 from grey .037 toward the accent, alpha .98", Show(bp));
         var grey = Palette.FromAccent(.2f, .4f, 1f, 0f)[(int)Role.Panel];
         Check(grey[0] == grey[1] && grey[1] == grey[2], "tint 0 gives a pure grey Panel", Show(grey));
-        Check(Near(blue[(int)Role.Focus], .2f, .4f, 1f) && Near(blue[(int)Role.AccentText], .06f, .06f, .08f), "Focus is the accent; AccentText is near-black");
+        Check(Near(blue[(int)Role.Focus], .2f, .4f, 1f) && Near(blue[(int)Role.AccentText], .06f, .06f, .08f), "Focus is the accent; a mid blue gets near-black AccentText");
+        Check(Near(Palette.FromAccent(.1f, .12f, .35f, 1f)[(int)Role.AccentText], .92f, .92f, .94f), "a navy accent gets light AccentText");
+        Check(Near(Palette.FromAccent(1f, .75f, .2f, 1f)[(int)Role.AccentText], .06f, .06f, .08f), "a light amber accent gets dark AccentText");
+        Check(Near(Palette.FromAccent(1f, .5995077f, .5995077f, 1f)[(int)Role.AccentText], .06f, .06f, .08f), "Quartz's default red accent gets dark AccentText");
 
         var sz = new Sizes(); var sc = sz.Copy(); sc.Radius = 2f;
         Check(sz.Radius == 3f && sz.Body == 15f && sz.RowHeight == 32f && sz.SwitchRadius == 9f, "Sizes default to Facet 0.1's look");

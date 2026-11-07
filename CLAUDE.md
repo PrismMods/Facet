@@ -48,6 +48,11 @@ theme values live in code (`Theme`).
   compress until its text prints through the row below. Three overlaps came from it, so every
   `Ui.Box` and everything built on it defaults to `flexShrink = 0`. Anything that should absorb slack
   sets it back to 1 on itself. A `ScrollView`'s `contentContainer` is not a `Box`, so set it by hand.
+- **A Button or Label that gains a child loses its text measure.** UI Toolkit's `Hierarchy.Insert` removes
+  the measure function, so the box collapses to its padding (a 13px label came out 12px tall and a long item
+  overflowed instead of widening it). Never add a decoration (a tab's underline, a dropdown's arrow) to a
+  text element: wrap it in a `Ui.Box` cell and pin the decoration in the cell. A check is `MeasureTextSize`
+  against `contentRect` (the tab-row and dropdown autotests).
 - **A flex item's minimum size is its CONTENT, which silently disables scrolling.** A list taller
   than the window makes its container taller than the window too, so the window just clips it: no
   scrollbar, no wheel, nothing in any log. Every scroll container AND every ancestor up to the

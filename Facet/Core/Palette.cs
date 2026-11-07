@@ -28,7 +28,7 @@ namespace Facet {
             c[(int)Role.PanelBorder] = new[] { 1f, 1f, 1f, .09f };
             c[(int)Role.Text] = Lean(.92f, a, .04f * tint);
             c[(int)Role.TextMuted] = Lean(.745f, a, .17f * tint);
-            c[(int)Role.AccentText] = new[] { .06f, .06f, .08f, 1f };
+            c[(int)Role.AccentText] = OnAccent(a);
             c[(int)Role.Rail] = new[] { 0f, 0f, 0f, 0f };
             c[(int)Role.Line] = c[(int)Role.PanelBorder];
             c[(int)Role.Off] = control;
@@ -39,6 +39,20 @@ namespace Facet {
                 ? new[] { 1f, .478f, .271f, 1f } : new[] { .886f, .404f, .427f, 1f };
             return c;
         }
+
+        // Near-black or Dark's light Text, whichever has the higher WCAG contrast against the accent.
+        static float[] OnAccent(float[] a) {
+            var dark = new[] { .06f, .06f, .08f, 1f };
+            var light = new[] { .92f, .92f, .94f, 1f };
+            float la = Lum(a) + .05f, ld = Lum(dark) + .05f, ll = Lum(light) + .05f;
+            return la / ld >= ll / la ? dark : light;
+        }
+
+        static float Lum(float[] c) {
+            return .2126f * Lin(c[0]) + .7152f * Lin(c[1]) + .0722f * Lin(c[2]);
+        }
+
+        static float Lin(float v) { return v <= .04045f ? v / 12.92f : (float)Math.Pow((v + .055f) / 1.055f, 2.4); }
 
         static float C01(float v) { return v < 0f ? 0f : v > 1f ? 1f : v; }
 

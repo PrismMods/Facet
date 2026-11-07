@@ -165,13 +165,17 @@ namespace Facet
             var items = o.Items ?? new string[0];
             Control<int> c = null;
             Button b = null;
-            b = Ui.Btn("", () => Popup.Menu(b, items, c.Value, i => c.Set(i), o.ItemFont), right);
+            /* The arrow goes in a cell around the button, not in the button: a Button that gains a child
+               loses its text measure (UI Toolkit drops it on Insert), so it shrank to its padding and a
+               long item overflowed instead of widening it. */
+            var cell = Ui.Box(right);
+            b = Ui.Btn("", () => Popup.Menu(b, items, c.Value, i => c.Set(i), o.ItemFont), cell);
             var t = Theme.For(b); var sz = t.Sizes;
             Paint.Look(b, t.Looks.Field);
             b.style.minWidth = sz.DropdownWidth;
             b.style.unityTextAlign = TextAnchor.MiddleLeft;
             b.style.paddingRight = sz.ControlPad + sz.Small + sz.Gap;   // room for the arrow
-            var arrow = Ui.Text("\u25be", b, sz.Small, Role.TextMuted, true);
+            var arrow = Ui.Text("\u25be", cell, sz.Small, Role.TextMuted, true);
             arrow.name = o.Id != null ? o.Id + "-arrow" : "arrow";
             arrow.pickingMode = PickingMode.Ignore;
             arrow.style.position = Position.Absolute;
@@ -400,11 +404,14 @@ namespace Facet
             Events.On<ClickEvent>(track, e => { toggle(); e.StopPropagation(); });
             Events.On<NavigationSubmitEvent>(track, e => { toggle(); e.StopPropagation(); });
 
-            // Before the first layout `left` resolves to NaN and Anim.Move starts at the target: a new switch does not slide in.
+            /* A knob with no layout yet resolves `left` to 0, not NaN, so Anim.Move would slide every new
+               on-switch in from off (a page rebuilt into a shown window builds on a live panel). Until the
+               knob is laid out, place it; only a change after that slides. */
             show = v =>
             {
                 Paint.Select(track, v);
-                Anim.Move(knob, v ? on : off, Anim.Fast);
+                if (knob.panel == null || !(knob.layout.width > 0f)) knob.style.left = v ? on : off;
+                else Anim.Move(knob, v ? on : off, Anim.Fast);
             };
             return track;
         }

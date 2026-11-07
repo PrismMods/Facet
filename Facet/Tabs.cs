@@ -106,7 +106,7 @@ namespace Facet
             t.Layout(names);   // every page keeps its index: a hidden one's tab is there, not displayed
             for (int i = 0; i < shown.Length; i++)
             {
-                if (!shown[i]) t._buttons[i].style.display = DisplayStyle.None;
+                if (!shown[i]) t._buttons[i].parent.style.display = DisplayStyle.None;   // the tab's cell
                 else if (!string.IsNullOrEmpty(t._pages[i].Tooltip)) Words.Tip(t._buttons[i], t._pages[i].Tooltip);
             }
 
@@ -180,7 +180,9 @@ namespace Facet
             Selected = keep >= 0 ? keep : (_names.Count > 0 ? 0 : -1);
 
             /* The row sits on a rule, and each tab's underline (selected with it) lands on that rule:
-               it hangs over the button's border by one Line, so both end at the row's bottom edge. */
+               both end at the row's bottom edge. The underline goes in a cell around the button, not
+               in the button: a Button that gains a child loses its text measure (UI Toolkit drops it
+               on Insert), so it shrank to its padding and drew its name one letter per line. */
             var t = Theme.For(_bar); var sz = t.Sizes; var k = t.Looks;   // once per rebuild
             var rule = Pinned(_bar, 0f, sz.Line);
             rule.name = "rule";
@@ -188,9 +190,12 @@ namespace Facet
             for (int i = 0; i < _names.Count; i++)
             {
                 int idx = i;
-                var b = Ui.Btn(_names[i], () => Select(idx), _bar);
+                var cell = Ui.Box(_bar);
+                cell.style.marginRight = sz.Gap;
+                var b = Ui.Btn(_names[i], () => Select(idx), cell);
+                b.style.marginRight = 0f;
                 Facet.Paint.Look(b, k.Tab);
-                var line = Pinned(b, -sz.Line, sz.Indicator);
+                var line = Pinned(cell, 0f, sz.Indicator);   // the cell's edge is the button's outer border edge
                 line.name = "indicator";
                 Facet.Paint.Look(line, k.Indicator);
                 _buttons.Add(b);

@@ -167,8 +167,8 @@ namespace Facet.Mod
             Check(pick != null && Near(pick.style.backgroundColor.value, fieldBg), "pick-input is painted the Field background",
                 pick?.style.backgroundColor.value.ToString());
             Check(pick != null && pick.resolvedStyle.width >= 120f - 0.5f, "pick-input is at least DropdownWidth wide", pick?.resolvedStyle.width.ToString());
-            var arrow = pick?.Q<Label>("pick-arrow");
-            Check(arrow != null && arrow.text == "\u25be" && arrow.pickingMode == PickingMode.Ignore, "pick-input holds a pick-arrow label that ignores picking");
+            var arrow = pick?.parent.Q<Label>("pick-arrow");
+            Check(arrow != null && arrow.text == "\u25be" && arrow.pickingMode == PickingMode.Ignore, "pick-input's cell holds a pick-arrow label that ignores picking");
 
             if (pick != null)
             {
@@ -986,24 +986,41 @@ namespace Facet.Mod
             {
                 var bw = new Window(bs.Root, "tabrow", "Tab row", new Rect(60, 60, 400, 200));
                 var row = new Tabs(bw.Body, null);
-                row.Rebuild(new[] { "A", "B", "C" });
+                row.Rebuild(new[] { "Alpha", "Bravo", "Charlie" });
                 row.Select(1);
                 yield return null; yield return null;
                 var btns = row.Element.Query<Button>().ToList();
-                Func<int, VisualElement> line = i => btns.Count > i ? btns[i].Q("indicator") : null;
-                Check(btns.Count == 3 && line(0) != null && line(1) != null && line(2) != null, "a bare row A/B/C has an underline under each tab", btns.Count.ToString());
+                // A tab sized to its padding alone draws its name one letter per line, over whatever is above the row.
+                var squashed = btns.Where(b =>
+                {
+                    var m = b.MeasureTextSize(b.text, 0f, VisualElement.MeasureMode.Undefined, 0f, VisualElement.MeasureMode.Undefined);
+                    return b.contentRect.width + 0.5f < m.x || b.contentRect.height > m.y * 1.5f;
+                }).Select(b => b.text + " " + b.contentRect.size).ToList();
+                Check(btns.Count == 3 && squashed.Count == 0, "every tab is as wide as its name and one line tall", string.Join(", ", squashed));
+                Func<int, VisualElement> line = i => btns.Count > i ? btns[i].parent.Q("indicator") : null;
+                Check(btns.Count == 3 && line(0) != null && line(1) != null && line(2) != null, "a bare row of three tabs has an underline under each tab", btns.Count.ToString());
                 if (line(0) != null && line(1) != null && line(2) != null)
                 {
                     Check(Near(line(1).resolvedStyle.backgroundColor, bt[Role.Accent]) && line(0).resolvedStyle.backgroundColor.a == 0f && line(2).resolvedStyle.backgroundColor.a == 0f,
-                        "after selecting B, B's underline is Accent and the others are clear", line(1).resolvedStyle.backgroundColor + " / " + line(0).resolvedStyle.backgroundColor);
+                        "after selecting Bravo, its underline is Accent and the others are clear", line(1).resolvedStyle.backgroundColor + " / " + line(0).resolvedStyle.backgroundColor);
                     Check(Px(line(1).style.height) == bt.Sizes.Indicator, "the underline is Sizes.Indicator tall", Px(line(1).style.height).ToString());
-                    Check(Near(btns[1].resolvedStyle.color, bt[Role.Text]) && Near(btns[0].resolvedStyle.color, bt[Role.TextMuted]), "B's text is Text and A's TextMuted",
+                    Check(Near(btns[1].resolvedStyle.color, bt[Role.Text]) && Near(btns[0].resolvedStyle.color, bt[Role.TextMuted]), "Bravo's text is Text and Alpha's TextMuted",
                         btns[1].resolvedStyle.color + " / " + btns[0].resolvedStyle.color);
                     var rule = row.Element.Q("rule");
                     Check(rule != null && Near(rule.resolvedStyle.backgroundColor, bt[Role.Line]) && Px(rule.style.height) == bt.Sizes.Line
                           && Mathf.Abs(rule.worldBound.yMax - row.Element.worldBound.yMax) < 0.5f && Mathf.Abs(line(1).worldBound.yMax - rule.worldBound.yMax) < 0.5f,
                         "the row sits on a Looks.Rule line, Sizes.Line tall, that the underline lands on", rule == null ? "none" : rule.worldBound + " / " + line(1).worldBound);
                 }
+
+                // A dropdown's button keeps its text measure (the arrow sits in a cell, not in the button).
+                var longItem = "A rather long dropdown item that must widen the button";
+                Controls.Dropdown(bw.Body, "dd", Bind.Value(1), o => { o.Id = "ddlong"; o.Items = new[] { "Short", longItem }; });
+                yield return null; yield return null;
+                var ddb = bw.Body.Q<Button>("ddlong-input");
+                var dm = ddb == null ? Vector2.zero : ddb.MeasureTextSize(ddb.text, 0f, VisualElement.MeasureMode.Undefined, 0f, VisualElement.MeasureMode.Undefined);
+                Check(ddb != null && ddb.contentRect.height + 0.5f >= dm.y && ddb.contentRect.width + 0.5f >= dm.x && dm.x > 0f,
+                    "a dropdown is as tall as its text and as wide as a long item", ddb == null ? "none" : ddb.contentRect.size + " / " + dm);
+                Check(ddb != null && ddb.parent.Q<Label>("ddlong-arrow") != null && ddb.childCount == 0, "the dropdown arrow sits beside the button in its cell, not inside it");
 
                 var ds = new Surface(Host.Create("TabRuleDark"), "FacetTabRuleDark", Layer.Window);
                 try
@@ -1093,6 +1110,16 @@ namespace Facet.Mod
                     "Filter(judgement size) finds Size in the never-visited Judgement tab: hit.Tab is Judgement", hits.Count > 0 ? hits[0].Page + "/" + hits[0].Tab + "/" + hits[0].Key : "none");
                 var where = lab("Tabs · Judgement");
                 Check(where != null, "the result says where it lives: Tabs · Judgement");
+                var heading = win.Body.Query<Label>().ToList().Find(l => l.text.StartsWith("Results for"));
+                Check(heading != null && where != null && heading.worldBound.yMax <= where.worldBound.yMin + 0.5f, "the results heading sits above the results",
+                    heading == null || where == null ? "missing" : heading.worldBound.yMax + " / " + where.worldBound.yMin);
+                try
+                {
+                    Gallery.Lang = "ko"; GalleryParts.Surface.Relabel();
+                    var koHead = win.Body.Query<Label>().ToList().Find(l => l.text.Contains("\uAC80\uC0C9 \uACB0\uACFC"));
+                    Check(koHead != null, "after a language switch the open results heading relabels", heading?.text);
+                }
+                finally { Gallery.Lang = "en"; GalleryParts.Surface.Relabel(); }
                 if (where != null) ClickEl(where.parent);
                 var ms = new double[1];
                 Func<bool> revealed = () =>
