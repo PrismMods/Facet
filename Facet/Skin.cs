@@ -186,6 +186,7 @@ namespace Facet
             {
                 _lastWheelFrame = Time.frameCount;
                 NativeStep(e.target as VisualElement, Host.For(root));
+                Glide.Native(e, Host.For(root));
                 if (_sawWheelEvent) return;
                 _sawWheelEvent = true;
                 Host.For(root).Log("Skin: host delivers WheelEvent; polling stands down on frames it arrives");
@@ -255,15 +256,11 @@ namespace Facet
             }
             if (target == null) return;
 
-            float view = target.contentViewport.layout.height;
-            float max = Mathf.Max(0f, target.contentContainer.layout.height - view);
-
             /* A virtualised ListView does not grow its content container — that is the whole point
-               of virtualising — so measuring it says a 53-row log has nothing to scroll. Ask the
-               list how many rows it has instead. */
-            var list = target.GetFirstAncestorOfType<ListView>();
-            if (list != null && list.itemsSource != null && list.fixedItemHeight > 0f)
-                max = Mathf.Max(max, list.itemsSource.Count * list.fixedItemHeight - view);
+               of virtualising — so measuring it says a 53-row log has nothing to scroll. Glide.Max asks
+               the list how many rows it has instead. */
+            float view = target.contentViewport.layout.height;
+            float max = Glide.Max(target);
 
             if (max <= 0f)
             {
@@ -284,12 +281,14 @@ namespace Facet
                its windows scroll like its other menus at the player's setting. */
             float speed = Host.For(root).WheelSpeed;
             float px = speed > 0f ? delta * speed : Mathf.Abs(delta) < 0.6f ? delta * 400f : delta * 60f;
+            if (Glide.On) { Glide.Polled(target, -px, max, Host.For(root)); return; }
             var o = target.scrollOffset;
             float before = o.y;
 
             /* If the native handler already moved this one this frame, leave it alone. That is the
                precise version of "the host handles the wheel" — asked of the element that matters
-               rather than of the panel as a whole. */
+               rather than of the panel as a whole. (A glide does not move it in the handler, so
+               Glide.Polled asks when the native path last fed it instead.) */
             var seen = Data.Get<WheelSeen>(target);
             if (WheelHandledThisFrame && seen.Set && !Mathf.Approximately(seen.Y, before))
             {

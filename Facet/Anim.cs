@@ -25,6 +25,10 @@ namespace Facet
         /// in the same call (reduced motion, tests).
         public static float Speed { get { return Motion.Speed; } set { Motion.Speed = value; } }
 
+        /// Whether a mouse wheel step glides to where it goes instead of jumping (`Motion.Scale(200)` ms,
+        /// OutCirc), shared by every loaded Facet version. Unset reads false: today's instant step.
+        public static bool SmoothScroll { get { return Motion.Smooth; } set { Motion.Smooth = value; } }
+
         /// Fade to an opacity. Starts from wherever it is, so interrupting mid-fade does not jump.
         public static void Fade(VisualElement e, float to, int ms = Normal, Action done = null)
         {

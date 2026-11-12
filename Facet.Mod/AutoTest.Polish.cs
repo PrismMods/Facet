@@ -13,7 +13,7 @@ namespace Facet.Mod
            knob must start at its value, not slide in from off. A later change still slides. */
         IEnumerator SectionSwitchSnap()
         {
-            Anim.Speed = 1f;   // the slide only exists with motion on; Run puts the speed back
+            using var held = Motion.Hold(1f, false);   // the slide only exists with motion on
             var s = new Surface(Host.Create("Snap", o => o.Log = m => Main.Log("[snap] " + m)), "FacetSnap", Layer.Window);
             try
             {

@@ -208,8 +208,12 @@ namespace Facet
                 if (!ready && ++tries <= 30) return;
                 done = true;
                 if (!ready) Host.For(_host).Log("Nav: reveal of '" + hit.Label + "' gave up waiting for layout");
+                // A glide would carry the row off again, and ScrollTo writes nothing for a row already in view.
                 for (var sv = row.GetFirstAncestorOfType<ScrollView>(); sv != null; sv = sv.hierarchy.parent?.GetFirstAncestorOfType<ScrollView>())
+                {
+                    Glide.Stop(sv);
                     sv.ScrollTo(row);
+                }
                 /* Fade a highlight out rather than in: the row is on screen by now, so starting
                    lit and settling is what draws the eye to it. */
                 Paint.Flash(row, Role.Accent, 900);
@@ -885,6 +889,7 @@ namespace Facet
         public void Rebuild()
         {
             var sv = _contentScroll;
+            Glide.Settle(sv);   // a rebuild mid-glide keeps the whole step, not the part already scrolled
             var off = sv.scrollOffset;
             RebuildRail();
             RebuildContent();

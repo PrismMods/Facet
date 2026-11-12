@@ -9,7 +9,8 @@ namespace Facet.Mod
     {
         /* A host's WheelSpeed scrolls linearly on both wheel paths: the polled one, where a notch and a
            trackpad's fraction move in proportion, and the panel's own WheelEvent, which Unity 6 sends at
-           3 per wheel unit. A change to the speed shows on the next scroll. */
+           3 per wheel unit. A change to the speed shows on the next scroll. Each step is instant: the bridges copy the
+           player's smooth-scroll setting every frame, so it is switched off in the frame of each step. */
         IEnumerator SectionWheelSpeed()
         {
             float speed = 80f;
@@ -26,21 +27,25 @@ namespace Facet.Mod
                 yield return null; yield return null;
                 var c = Ctr(sv);
                 float y0 = sv.scrollOffset.y;
+                Anim.SmoothScroll = false;
                 Facet.Input.TickWheel(c, -1f);
                 Check(Mathf.Abs(sv.scrollOffset.y - y0 - 80f) <= 1f, "a host's WheelSpeed of 80 scrolls a notch 80 px", (sv.scrollOffset.y - y0).ToString());
                 yield return null;
                 y0 = sv.scrollOffset.y;
+                Anim.SmoothScroll = false;
                 Facet.Input.TickWheel(c, -0.1f);
                 Check(Mathf.Abs(sv.scrollOffset.y - y0 - 8f) <= 1f, "...and a trackpad's 0.1 a tenth of that, with no boost", (sv.scrollOffset.y - y0).ToString());
                 yield return null;
                 speed = 40f;
                 y0 = sv.scrollOffset.y;
+                Anim.SmoothScroll = false;
                 Facet.Input.TickWheel(c, -1f);
                 Check(Mathf.Abs(sv.scrollOffset.y - y0 - 40f) <= 1f, "changing the host's speed changes the next step", (sv.scrollOffset.y - y0).ToString());
                 yield return null;
                 // The panel's own path: a WheelEvent as Unity 6's input layer sends one notch down (delta.y 3).
                 y0 = sv.scrollOffset.y;
                 var ev = new Event { type = EventType.ScrollWheel, delta = new Vector2(0f, 3f), mousePosition = sv.worldBound.center };
+                Anim.SmoothScroll = false;
                 using (var e = WheelEvent.GetPooled(ev)) s.Root.panel.visualTree.SendEvent(e);
                 yield return null;
                 Check(Mathf.Abs(sv.scrollOffset.y - y0 - 40f) <= 1f, "the panel's own wheel event scrolls the same 40 px a notch", (sv.scrollOffset.y - y0).ToString());

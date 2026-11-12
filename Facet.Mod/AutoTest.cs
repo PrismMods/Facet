@@ -87,53 +87,58 @@ namespace Facet.Mod
         {
             for (int i = 0; i < 5; i++) yield return null;
             Main.Log("AUTOTEST start screen " + Screen.width + "x" + Screen.height);
-            yield return Run("SectionWarmUp", SectionWarmUp());   // first: it needs the session's first surface
-            yield return Run("SectionOpen", SectionOpen());
-            yield return Run("SectionPartsPerf", SectionPartsPerf());   // before any section warms the parts
-            yield return Run("SharedEscape", SharedEscape());
-            yield return Run("SectionHost", SectionHost());
-            yield return Run("SectionTheme", SectionTheme());
-            yield return Run("SectionNoStale", SectionNoStale());
-            yield return Run("SectionScrollClear", SectionScrollClear());
-            yield return Run("SectionWords", SectionWords());
-            yield return Run("SectionCjk", SectionCjk());
-            yield return Run("SectionBind", SectionBind());
-            yield return Run("SectionRebuild", SectionRebuild());
-            yield return Run("SectionRefreshIsolation", SectionRefreshIsolation());
-            yield return Run("SectionValues", SectionValues());
-            yield return Run("SectionStructure", SectionStructure());
-            yield return Run("SectionInput", SectionInput());
-            yield return Run("SectionNavIndex", SectionNavIndex());
-            yield return Run("SectionForm", SectionForm());
-            yield return Run("SectionSpeed", SectionSpeed());
-            yield return Run("SectionWheel", SectionWheel());
-            yield return Run("SectionThemeShape", SectionThemeShape());
-            yield return Run("SectionSkin", SectionSkin());
-            yield return Run("SectionSliderBox", SectionSliderBox());
-            yield return Run("SectionCards", SectionCards());
-            yield return Run("SectionHeaderColumns", SectionHeaderColumns());
-            yield return Run("SectionPreview", SectionPreview());
-            yield return Run("SectionTiles", SectionTiles());
-            yield return Run("SectionTabs", SectionTabs());
-            yield return Run("SectionSidebar", SectionSidebar());
-            yield return Run("SectionSwitchSnap", SectionSwitchSnap());
-            yield return Run("SectionRailIcon", SectionRailIcon());
-            yield return Run("SectionRowEdges", SectionRowEdges());
-            yield return Run("SectionArrowSlot", SectionArrowSlot());
-            yield return Run("SectionButtonRows", SectionButtonRows());
-            yield return Run("SectionScaleClamp", SectionScaleClamp());
-            yield return Run("SectionFieldClip", SectionFieldClip());
-            yield return Run("SectionThumbRadius", SectionThumbRadius());
-            yield return Run("SectionTitleGlyphs", SectionTitleGlyphs());
-            yield return Run("SectionRowPad", SectionRowPad());
-            yield return Run("SectionTabGap", SectionTabGap());
-            yield return Run("SectionCompactRail", SectionCompactRail());
-            yield return Run("SectionCursorHook", SectionCursorHook());
-            yield return Run("SectionWheelSpeed", SectionWheelSpeed());
-            yield return Run("SectionRailButton", SectionRailButton());
-            yield return Run("SectionRailCollapsible", SectionRailCollapsible());
-            yield return Run("SectionClose", SectionClose());
-            // Later tasks: yield return Run("Section...", Section...());
+            // Other mods write the shared speed and smooth-scroll switch every frame: the run reads its own.
+            using (Motion.Hold(1f, false))
+            {
+                yield return Run("SectionWarmUp", SectionWarmUp());   // first: it needs the session's first surface
+                yield return Run("SectionOpen", SectionOpen());
+                yield return Run("SectionPartsPerf", SectionPartsPerf());   // before any section warms the parts
+                yield return Run("SharedEscape", SharedEscape());
+                yield return Run("SectionHost", SectionHost());
+                yield return Run("SectionTheme", SectionTheme());
+                yield return Run("SectionNoStale", SectionNoStale());
+                yield return Run("SectionScrollClear", SectionScrollClear());
+                yield return Run("SectionWords", SectionWords());
+                yield return Run("SectionCjk", SectionCjk());
+                yield return Run("SectionBind", SectionBind());
+                yield return Run("SectionRebuild", SectionRebuild());
+                yield return Run("SectionRefreshIsolation", SectionRefreshIsolation());
+                yield return Run("SectionValues", SectionValues());
+                yield return Run("SectionStructure", SectionStructure());
+                yield return Run("SectionInput", SectionInput());
+                yield return Run("SectionNavIndex", SectionNavIndex());
+                yield return Run("SectionForm", SectionForm());
+                yield return Run("SectionSpeed", SectionSpeed());
+                yield return Run("SectionWheel", SectionWheel());
+                yield return Run("SectionThemeShape", SectionThemeShape());
+                yield return Run("SectionSkin", SectionSkin());
+                yield return Run("SectionSliderBox", SectionSliderBox());
+                yield return Run("SectionCards", SectionCards());
+                yield return Run("SectionHeaderColumns", SectionHeaderColumns());
+                yield return Run("SectionPreview", SectionPreview());
+                yield return Run("SectionTiles", SectionTiles());
+                yield return Run("SectionTabs", SectionTabs());
+                yield return Run("SectionSidebar", SectionSidebar());
+                yield return Run("SectionSwitchSnap", SectionSwitchSnap());
+                yield return Run("SectionRailIcon", SectionRailIcon());
+                yield return Run("SectionRowEdges", SectionRowEdges());
+                yield return Run("SectionArrowSlot", SectionArrowSlot());
+                yield return Run("SectionButtonRows", SectionButtonRows());
+                yield return Run("SectionScaleClamp", SectionScaleClamp());
+                yield return Run("SectionFieldClip", SectionFieldClip());
+                yield return Run("SectionThumbRadius", SectionThumbRadius());
+                yield return Run("SectionTitleGlyphs", SectionTitleGlyphs());
+                yield return Run("SectionRowPad", SectionRowPad());
+                yield return Run("SectionTabGap", SectionTabGap());
+                yield return Run("SectionCompactRail", SectionCompactRail());
+                yield return Run("SectionCursorHook", SectionCursorHook());
+                yield return Run("SectionWheelSpeed", SectionWheelSpeed());
+                yield return Run("SectionRailButton", SectionRailButton());
+                yield return Run("SectionRailCollapsible", SectionRailCollapsible());
+                yield return Run("SectionSmoothScroll", SectionSmoothScroll());
+                yield return Run("SectionClose", SectionClose());
+                // Later tasks: yield return Run("Section...", Section...());
+            }
 
             Main.Log("AUTOTEST DONE pass=" + _pass + " fail=" + _fail);
             yield return null;
@@ -145,10 +150,9 @@ namespace Facet.Mod
         {
             // Hover and focus fades are real transitions now, so a section that reads a resolved colour
             // right after an event would catch it mid-fade: all but the motion-aware ones run at speed 0.
-            float prior = Anim.Speed;
-            Anim.Speed = name == "SectionWarmUp" || name == "SectionOpen" || name == "SectionPartsPerf" || name == "SectionSpeed" || name == "SectionClose" ? 1f : 0f;
-            try
-            {
+            // Wheel steps land at once; the glide's section holds its own switch.
+            float speed = name == "SectionWarmUp" || name == "SectionOpen" || name == "SectionPartsPerf" || name == "SectionSpeed" || name == "SectionClose" || name == "SectionSmoothScroll" ? 1f : 0f;
+            using (Motion.Hold(speed, false))
                 while (true)
                 {
                     try { if (!section.MoveNext()) yield break; }
@@ -160,8 +164,6 @@ namespace Facet.Mod
                     }
                     yield return section.Current;
                 }
-            }
-            finally { Anim.Speed = prior; }
         }
 
 
@@ -1438,13 +1440,11 @@ namespace Facet.Mod
             e.style.left = 0f; e.style.top = 0f; e.style.width = 10f; e.style.height = 10f;
             Root.Add(e);
             yield return null; yield return null;   // laid out, so the motion would start from 0
-            Anim.Speed = 0f;
-            try
+            using (Motion.Hold(0f, false))
             {
                 Anim.Move(e, 40f);
                 Check(e.style.left.value.value == 40f, "with Anim.Speed = 0, Anim.Move(e, 40) leaves left at 40 in the same call", e.style.left.ToString());
             }
-            finally { Anim.Speed = 1f; }
             e.RemoveFromHierarchy();
 
             // Ruling R20: a search hit's flash follows Anim.Speed too.
@@ -1453,13 +1453,11 @@ namespace Facet.Mod
             Paint.Bg(fl, Role.Row);
             yield return null;
             var flash = typeof(Paint).GetMethod("Flash", BindingFlags.NonPublic | BindingFlags.Static);
-            Anim.Speed = 0f;
-            try
+            using (Motion.Hold(0f, false))
             {
                 flash.Invoke(null, new object[] { fl, Role.Accent, 900 });
                 Check(Near(fl.style.backgroundColor.value, g[Role.Row]), "with Anim.Speed = 0, a Flash leaves the resting background in the same call", fl.style.backgroundColor.value.ToString());
             }
-            finally { Anim.Speed = 1f; }
             yield return null; yield return null;
             Check(Near(fl.style.backgroundColor.value, g[Role.Row]), "...and plays no flash after it", fl.style.backgroundColor.value.ToString());
             fl.RemoveFromHierarchy();

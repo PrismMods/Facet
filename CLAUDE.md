@@ -106,6 +106,23 @@ from the 6000.3 IL, 2026-11-12), so the root's trickle-down wheel handler sets e
 pointer to speed / 3 before it acts. Without a speed Facet keeps its own steps (a notch 60, a fraction
 x400). Unity drops deltas under 0.1 before they become events, so small trackpad fractions scroll only
 through the polled path.
+**A step glides while `Anim.SmoothScroll` is on** (shared, 0.2; unset reads false: the instant step). It
+eases to where the step would have jumped, OutCirc over `Motion.Scale(200)` ms read at the step (0 at speed
+0: instant), and a step mid-glide retargets from the offset with a fresh duration, so a settled glide has
+moved exactly the step. The first step after a feed covers the frame it arrived in (the glide starts one
+`unscaledDeltaTime` back): it runs later that same frame, and from the feed's own instant it moved a sliver,
+so a delta every frame (a trackpad) left the glide 17-18 frames behind. One scheduled item per ScrollView
+(`Glide`), paused whenever no glide runs, NOT `Anim.Run`: a pooled `ValueAnimation` cannot be stopped safely
+once it has finished. The panel's own path glides in the root's trickle-down handler, on the scroller Unity
+would have stepped (innermost that can move, `delta.y x mouseWheelScrollSize` against the running glide's
+target), and stops the event so the ScrollView's own handler adds no instant step on top (`StopPropagation`;
+`PreventDefault` is obsolete in 6000.3). A notch past a glide already heading to that end is the glide's and
+is stopped too: Unity would step the live offset there at once, and would not pass the wheel outward while
+that view can still move. Each path leaves a notch the other took: the polled one skips a target the event
+fed this frame or the last, the event one a target the polled path fed this frame. Movers win: Nav's rebuild
+settles a glide at its target before it keeps the offset, its reveal stops the glides it `ScrollTo`s (a row
+already in view writes nothing), and anything else is seen as the offset no longer being what the glide read
+back after its last write (the setter clamps), which ends the glide and leaves the offset alone.
 **The wheel is counted once per frame across mods and versions** (0.2): the first `Input.TickWheel`
 with a delta stamps the frame (`Facet.WheelStamp`, an `int[1]` frame number: a float loses frames past
 2^24) and the topmost visible window of any version scrolls through its Coord slot 9. A zero delta (a
@@ -268,8 +285,9 @@ it bubbling. Three causes hid behind "scrolling is broken", all found by logging
   minor wins).
 - Cross-version shared state (`Shared`, `Coord`'s entries): a key's value type never changes, array slots
   are only appended, and a reader checks `Length` before reading a slot. 0.2 added `Facet.AnimSpeed`
-  (`float[1]`), `Facet.WheelStamp` (`int[1]`) and Coord slot 9 (the wheel); a bad shared value falls back
-  to a private one and is logged once, never kills motion or input.
+  (`float[1]`), `Facet.SmoothScroll` (`bool[1]`, created `{ false }`), `Facet.WheelStamp` (`int[1]`) and
+  Coord slot 9 (the wheel); a bad shared value falls back to a private one and is logged once, never kills
+  motion, scrolling or input.
 
 ## Rulings that shaped the code
 

@@ -58,8 +58,10 @@ every rule takes it: a card's header and rows, the nav's groups, a tab row.
 ## Shared across versions
 
 `Anim.Speed` is one value for every loaded Facet from 0.2 on (0.1 keeps its own), so one setting slows or
-stops every window's motion; 0 is instant. `Input.TickWheel` is counted once per frame: the first call
-with a delta takes the frame, and the topmost open window of any version scrolls one notch.
+stops every window's motion; 0 is instant. So is `Anim.SmoothScroll` (0.2 on; unset is off), so one
+setting makes every window glide to where the mouse wheel sends it or step at once. `Input.TickWheel` is
+counted once per frame: the first call with a delta takes the frame, and the topmost open window of any
+version scrolls one notch.
 
 ## Languages
 
@@ -71,7 +73,7 @@ loaded wins.
 
 | Area | API |
 |---|---|
-| Animation | `Anim.Speed` (shared); `Anim.Hover` |
+| Animation | `Anim.Speed` (shared); `Anim.Hover`; `Anim.SmoothScroll` (shared, default off): a wheel step glides there (OutCirc, 200 ms at speed 1) instead of jumping |
 | Wheel | `Input.TickWheel`, once per frame; `HostOptions.WheelSpeed`, panel px per wheel unit, linear on the polled and the panel's own wheel path (default: Facet's own steps) |
 | Fonts | `Fonts.Has`; zh and ja |
 | Theme | `Role.Rail/Line/Off`; `Theme.Sizes`, `Theme.Looks`, `Theme.Notify()`; `Sizes` (with `ControlPad`, `FieldPad`, `ItemHeight`, `RowPadY` above and below a row's text, `TabGap` under a tab row); `Looks` (with `Group`, `Stage`); `Look.SelectedBorder`, `Look.Copy()` |
@@ -92,6 +94,6 @@ loaded wins.
 
 Several mods can load Facet at once, so the rules are fixed:
 
-- The DLL name carries the version: `Facet.<major>.<minor>.dll`. Different minors load side by side. They share only what must be one per game (the window stack behind Escape and input, the wheel, `Anim.Speed`), through keys whose types never change.
+- The DLL name carries the version: `Facet.<major>.<minor>.dll`. Different minors load side by side. They share only what must be one per game (the window stack behind Escape and input, the wheel, `Anim.Speed`, `Anim.SmoothScroll`), through keys whose types never change.
 - A patch release adds no public API; any new public member bumps the minor. Append-only within a minor is not safe: the first-loaded copy of a minor wins, so a mod built against a later 0.2.x could be handed an earlier one without the member. Signatures never change and enum members go last. A mod built against 0.2.0 runs on any 0.2.x.
 - Ship `Facet.<major>.<minor>.dll` beside your mod, or depend on the standalone Facet mod. Never rename or merge it.

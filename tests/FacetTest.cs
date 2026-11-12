@@ -14,6 +14,16 @@ static class FacetTest {
     static string Show(float[] c) { return c == null ? "null" : string.Join(",", c); }
 
     static void Main() {
+        // Before anything reads Motion: a smooth-scroll value of the wrong type is already in the shared store.
+        Shared.Get<object>("Facet.SmoothScroll", () => new int[1]);
+        Check(!Motion.Smooth, "a bad shared smooth-scroll value reads as off");
+        Motion.Smooth = true;
+        Check(Motion.Smooth, "...and falls back to a private switch that still works");
+        var mp = Motion.TakeProblem();
+        Check(mp != null && mp.Contains("Facet.SmoothScroll") && !mp.Contains("Facet.AnimSpeed"), "...reported once, naming its key", mp ?? "null");
+        Check(Motion.TakeProblem() == null, "...and only once");
+        Motion.Speed = 0.5f;
+        Check(((float[])Shared.Get<object>("Facet.AnimSpeed", () => null))[0] == 0.5f, "the speed beside it stays shared");
         Throttle.Reset();
         Check(Throttle.Allow("h/site", 0), "the first message for a host+site is logged");
         Check(!Throttle.Allow("h/site", 9.9), "a repeat inside 10 s is dropped");
@@ -294,8 +304,22 @@ static class FacetTest {
         Motion.Speed = -1f;       Check(Motion.Scale(120) == 0, "a negative speed is instant");
         Motion.Speed = float.PositiveInfinity; Check(Motion.Scale(0) == 0 && Motion.Scale(120) == 60000, "an infinite speed is capped, and 0 ms stays 0");
         Motion.Speed = 1f;
+        MotionHold();
 
         Console.WriteLine(_fail == 0 ? "ALL PASS" : _fail + " FAILED");
+    }
+
+    // The in-game autotest holds the speed against other mods' per-frame writes.
+    static void MotionHold() {
+        Motion.Speed = 2f;
+        using (Motion.Hold(1f, false)) {
+            Motion.Speed = 3f;   // a bridge's per-frame write
+            Check(Motion.Speed == 1f && !Motion.Smooth, "a held speed ignores other writers");
+            using (Motion.Hold(0.25f, true)) Check(Motion.Speed == 0.25f && Motion.Smooth, "the newest hold wins");
+            Check(Motion.Speed == 1f, "disposing a nested hold restores the outer one");
+        }
+        Check(Motion.Speed == 3f, "with no hold the store's last write shows");
+        Motion.Speed = 1f;
     }
 
     static string First(List<string> l) { return l.Count > 0 ? l[0] : null; }

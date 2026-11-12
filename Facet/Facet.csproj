@@ -8,6 +8,9 @@
     <AssemblyName>Facet.$([System.Version]::Parse($(Version)).ToString(2))</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Facet.Mod" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="UnityEngine.Modules" Version="2022.3.0" IncludeAssets="compile" PrivateAssets="all" />
   </ItemGroup>
 </Project>
