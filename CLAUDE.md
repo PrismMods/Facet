@@ -89,13 +89,23 @@ theme values live in code (`Theme`).
   `UnityEngine.Cursor.SetCursor` on pointer enter. There is no per-element cursor at runtime, so
   every element that sets one must clear it on exit AND on `DetachFromPanelEvent`: a panel hidden
   while the pointer is over it would otherwise strand the cursor. Only the ambiguous ones get one
-  (a resize edge, a text field).
+  (a resize edge, a text field). **A host can set the OS cursor instead** (`HostOptions.Cursor`, a
+  `Func<Cursors.Kind, bool>`): it is asked first on every enter and clear, and again every frame while
+  a kind is held, because the game or another mod may set its own cursor in between; returning false
+  falls back to the drawn one. Facet ships no OS cursor code of its own.
 
 ## Wheel and scrolling
 
 `WheelEvent` delivery differs BETWEEN panels, so the question is per frame, not ever. A single "the
 host sends wheel events" flag, set by the first panel to see one, switched polling off for a list
 that never got them. `Ui.TickWheel` stands down only on frames where one actually arrived.
+**A host can set the wheel's speed** (`HostOptions.WheelSpeed`, panel px per wheel unit, asked on every
+scroll), linear on both paths. The polled path moves delta x speed. The panel's own path moves
+`delta.y x mouseWheelScrollSize`, and Unity 6's input layer (InputForUI) sends 3 per wheel unit (read
+from the 6000.3 IL, 2026-11-12), so the root's trickle-down wheel handler sets each scroller under the
+pointer to speed / 3 before it acts. Without a speed Facet keeps its own steps (a notch 60, a fraction
+x400). Unity drops deltas under 0.1 before they become events, so small trackpad fractions scroll only
+through the polled path.
 **The wheel is counted once per frame across mods and versions** (0.2): the first `Input.TickWheel`
 with a delta stamps the frame (`Facet.WheelStamp`, an `int[1]` frame number: a float loses frames past
 2^24) and the topmost visible window of any version scrolls through its Coord slot 9. A zero delta (a
@@ -138,6 +148,10 @@ it bubbling. Three causes hid behind "scrolling is broken", all found by logging
 - **`ColumnsOptions.StackBelow`** (default 560) stacks `Controls.Columns` below that width, with 40 px hysteresis
   (back to columns at StackBelow + 40).
 - **`Sizes.ControlPad`, `FieldPad` and `ItemHeight`** are the control, field and list-row paddings/heights; read at build like the rest of `Sizes`.
+- **`Sizes.RowPadY`** (default 0) is a margin above and below a row's TEXT (its label, a help column, an
+  Info value), not padding on the row, so a one-line row stays `RowHeight` and only wrapped text grows
+  it. **`Sizes.TabGap`** (default 8, Gap's value) is the space under a tab row. Both defaults keep the
+  look Facet had; a skin raises them.
 - **The first re-theme of a session is cold** (about 7-10 ms, within the 16 ms budget, not warmed); later ones take about 0.5 ms.
 - **`Looks.Card` is the window shell and popups, `Looks.Group` a `Controls.Card` body, `Looks.Stage` a
   preview's stage**, so a skin can put cards on a fill of their own. Dark keeps 0.1's look (within 1px):
@@ -191,11 +205,26 @@ it bubbling. Three causes hid behind "scrolling is broken", all found by logging
 - **A row's control ends on the row's control edge**: `Sizes.Pad` inside a card's inner edge, 4 px in a
   bare container, and before the arrow slot beside a row that opens a page. A control placed in a row
   zeroes its own trailing margin (`Ui.Btn` adds `Gap`) and spaces its siblings with `marginLeft`; the
-  colour swatch and the page header's switch follow the same edge. The arrow slot exists only in a
-  container where some row opens a page (`Arrow` marks the container and shows its rows' slots), so a
-  card of plain rows reserves none. The row-edge and arrow-slot autotests pin it.
+  colour swatch, the page header's switch and a card header's note with no actions after it follow the
+  same edge. The arrow slot exists only where some row opens a page: in a card through its whole body,
+  so the rows of its ToggleGroup, Section and Advanced bodies line up with the rest, and outside a card
+  in that row's container (`Arrow` marks it and shows the slots under it whose box it is, the rule
+  `AddArrowSlot` reads, so a card inside that container keeps its own decision). A card of plain rows
+  reserves none. A new row control joins the row-edges autotest (`SectionRowEdges`); `SectionArrowSlot`
+  pins the slot.
 - **A button-only row is found by its button.** An `Action` or `Danger` row with no label is indexed
   under the button's text (English key and as shown), with its tooltip.
+- **The compact rail** (`Nav.Compact`) is an icon strip as wide as an entry's padding, its icon and the
+  padding again. The rail floats absolute over the page with a spacer holding the strip's place, so a
+  0.1 s hover widens it OVER the page (which does not move) and leaving narrows it; titles fade, rules and
+  the open entry's marker stay. `Nav.CompactButton` adds a button at the top of the rail that flips
+  Compact and raises `OnCompactChanged` (the host keeps the setting); collapsing under the pointer does
+  not widen again until the pointer leaves. Its glyph is drawn chevrons at `Sizes.Icon` in the icons'
+  column, tinted as an entry's icon: a » in text drew a third of an icon's height. `ToggleRail` does
+  nothing while compact.
+- **`Nav.Collapsible`** (default true) is for a host whose own setting decides whether the rail shows.
+  False stops the handle's drag at `MinRail` instead of shutting the rail, keeps `ToggleRail` from
+  shutting it, and opens a rail that is shut; the width still drags.
 - **Search reaches pages Facet did not build.** `Nav.AddSearchSource` returns `SearchIndex.Entry`s
   (`Label`, `Where`, `Open`, `Tip`), asked each time the index builds; choosing one runs `Open`. `Label`
   and `Where` are English keys, shown through the host's table (unknown text shows as given).

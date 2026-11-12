@@ -9,6 +9,12 @@ namespace Facet {
         public Func<string, string> Read;
         public Action<string, string> Write;
         public Theme Theme;
+        /// Sets an OS cursor for a kind and says whether it did; false falls back to Facet's drawn one.
+        public Func<Cursors.Kind, bool> Cursor;
+        /// Panel px one wheel unit scrolls (Input.mouseScrollDelta 1, a notch), linear on the polled and the
+        /// panel's own wheel path alike; asked on every scroll, so a setting applies at once. null or <= 0
+        /// keeps Facet's own (a notch 60, a trackpad fraction x400).
+        public Func<float> WheelSpeed;
         public int RefreshMs = 100;
         /// null keeps Facet's own font lists.
         public string[][] SansFonts, MonoFonts;
@@ -122,6 +128,11 @@ namespace Facet {
         }
 
         internal Action<string> LogFn { get { return _log; } }
+
+        internal Func<Cursors.Kind, bool> CursorHook => _o.Cursor;
+
+        /// The host's wheel speed, or 0 for Facet's own; asked on every scroll.
+        internal float WheelSpeed => _o.WheelSpeed == null ? 0f : Safe.Get(this, "WheelSpeed", _o.WheelSpeed, 0f);
     }
 
     public static partial class Safe {

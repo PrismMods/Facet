@@ -201,6 +201,7 @@ namespace Facet
             f.style.width = o.Width;
             Skin.When<TextField>(f, Skin.Field);
             f.style.fontSize = Theme.For(right).Sizes.Small;
+            Cursors.Set(f, Cursors.Kind.Text);
             right.Add(f);
             var c = new Control<string>(right.parent, f, label, Tracked(parent, label, o, bind), v => f.SetValueWithoutNotify(v ?? ""), o);
             // On commit, not per keystroke: a setter that persists to disk should not run once per
@@ -306,6 +307,7 @@ namespace Facet
             right.style.flexShrink = 1f;
             right.style.maxWidth = Length.Percent(65f);
             var v = Ui.Muted("", right);
+            Spaced(v, Theme.For(right).Sizes);
             v.style.whiteSpace = WhiteSpace.Normal;
             v.style.unityTextAlign = TextAnchor.MiddleRight;
             v.style.flexShrink = 1f;

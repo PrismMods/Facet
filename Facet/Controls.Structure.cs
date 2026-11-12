@@ -57,6 +57,8 @@ namespace Facet
             if (l == null || l.parent == null) return;
             var col = Ui.Box();
             l.parent.Insert(l.parent.IndexOf(l), col);
+            Spaced(col, Theme.For(row).Sizes);   // the column, label and help together, stands off the row's edges
+            l.style.marginTop = 0f; l.style.marginBottom = 0f;
             col.style.flexGrow = 1f;
             col.style.flexShrink = 1f;
             col.style.minWidth = 0f;
@@ -68,8 +70,17 @@ namespace Facet
             help.pickingMode = PickingMode.Ignore;
         }
 
-        /// Marks a card's body (and an Advanced fold's): its rows take the card rules. Title is the card's.
-        internal sealed class CardRows { public int Rows; public string Title; }
+        /// Sizes.RowPadY above and below a row's text: one line still fits RowHeight, and lines that wrap
+        /// stand off the row's top and bottom instead of touching them.
+        internal static void Spaced(VisualElement text, Sizes sz)
+        {
+            text.style.marginTop = sz.RowPadY;
+            text.style.marginBottom = sz.RowPadY;
+        }
+
+        /// Marks a card's body (and an Advanced fold's): its rows take the card rules. Title is the card's;
+        /// Card is the card's own body, for an Advanced fold's (null on the card's body itself).
+        internal sealed class CardRows { public int Rows; public string Title; public VisualElement Card; }
 
         /* In a card, a row pads Sizes.Pad on both sides and every row after the first draws a
            Sizes.Line rule above it in Looks.Rule's colour (its Bg), as the card's header rule is; an
@@ -111,6 +122,7 @@ namespace Facet
             // A long label gives way (ellipsis, one line) before the control does: without minWidth 0
             // the text's own width is the floor and it pushes the switch out of the window.
             l.style.minWidth = 0f;
+            Spaced(l, sz);
             l.pickingMode = PickingMode.Ignore;
             Data.Get<Noting>(row).Label = l;
 
@@ -126,6 +138,18 @@ namespace Facet
         /// Marks a container one of whose rows opens a page (Arrow): every row in it reserves the arrow slot.
         internal sealed class Arrowed { }
 
+        /* Where the rows that share an arrow slot live: a card's whole body, so a row in its ToggleGroup,
+           Section or Advanced body lines up with the rows beside it; outside a card, the row's container. */
+        private static VisualElement ArrowBox(VisualElement row)
+        {
+            for (var e = row.parent; e != null; e = e.parent)
+            {
+                var c = Data.Find<CardRows>(e);
+                if (c != null) return c.Card ?? e;
+            }
+            return row.parent;
+        }
+
         /* The arrow's place, the row's last child. Shown only in a container where some row opens a
            page, so the switches beside that row line up with its own instead of sitting one arrow to
            the right; anywhere else an empty slot would only widen the right gutter past the left. */
@@ -137,7 +161,7 @@ namespace Facet
             arrow.style.unityTextAlign = TextAnchor.MiddleRight;
             arrow.style.flexShrink = 0f;
             arrow.pickingMode = PickingMode.Ignore;
-            arrow.style.display = Data.Find<Arrowed>(row.parent) != null ? DisplayStyle.Flex : DisplayStyle.None;
+            arrow.style.display = Data.Find<Arrowed>(ArrowBox(row)) != null ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
         /* A toggle and the rows it governs. Showing controls that the mod is currently ignoring is
@@ -300,18 +324,16 @@ namespace Facet
             return c;
         }
 
-        /// Fill the row's arrow slot, and from now on reserve one beside every row in its container.
+        /// Fill the row's arrow slot, and from now on reserve one beside every row in its card (or container).
         private static void Arrow(VisualElement row)
         {
-            var box = row.parent;
+            var box = ArrowBox(row);
             if (box != null && Data.Find<Arrowed>(box) == null)
             {
                 Data.Get<Arrowed>(box);
-                for (int i = 0; i < box.childCount; i++)
-                {
-                    var slot = Slot(box[i]);
-                    if (slot != null) slot.style.display = DisplayStyle.Flex;
-                }
+                // Only the slots whose own box this is, by the rule AddArrowSlot reads: outside a card the box is
+                // the row's container, and a card in it keeps its own decision.
+                box.Query<Label>(name: "arrow").ForEach(l => { if (Slot(l.parent) == l && ArrowBox(l.parent) == box) l.style.display = DisplayStyle.Flex; });
             }
             var arrow = Slot(row);
             if (arrow != null) arrow.text = "\u203A";

@@ -12,6 +12,9 @@ namespace Facet
        element that sets one must also clear it, and why leaving the window has to restore the
        system arrow rather than whatever was set last.
 
+       A host can show the OS's own cursors instead (HostOptions.Cursor): its hook is asked first on every
+       enter and leave, and every frame while it holds one; a kind it declines is drawn here.
+
        Deliberately only the ambiguous ones. A resize edge and a text field look like anything else
        until the cursor says otherwise; a button already looks like a button, and the pointing hand
        is a web convention rather than a desktop one. */
@@ -21,22 +24,73 @@ namespace Facet
 
         private static Texture2D _horizontal, _corner, _text;
         private static Kind _current = Kind.Default;
+        private static bool _drawn;   // a drawn texture is set, so a clear has to unset it
 
         /// Swap while the pointer is over this element, and restore when it leaves.
         public static void Set(VisualElement e, Kind kind)
         {
             if (e == null) return;
-            Events.On<MouseEnterEvent>(e, _ => Apply(kind));
-            Events.On<MouseLeaveEvent>(e, _ => Apply(Kind.Default));
-            // A panel can be hidden with the pointer still over it, which would otherwise strand
-            // the cursor in whatever shape it last took.
-            Events.On<DetachFromPanelEvent>(e, _ => Apply(Kind.Default));
+            Set(e, () => kind);
         }
 
-        public static void Apply(Kind kind)
+        /* `kind` is asked on each enter (a rail handle has one only while the rail is open). The element's
+           host's Cursor hook is tried first; while it holds a kind it is asked again every frame, because
+           an OS cursor set from outside the engine is reset by the engine on the next pointer move. */
+        internal static void Set(VisualElement e, Func<Kind> kind)
         {
-            if (kind == _current) return;
+            IVisualElementScheduledItem held = null;
+            Kind now = Kind.Default;
+            Action reapply = () => { if (_current == now && !_drawn) Native(Host.For(e), now); };
+            Events.On<MouseEnterEvent>(e, _ =>
+            {
+                now = kind();
+                if (!Apply(now, Host.For(e)) || now == Kind.Default) return;
+                if (held == null) held = e.schedule.Execute(reapply).Every(0);
+                else held.Resume();
+            });
+            Action<EventBase> clear = _ =>
+            {
+                if (held != null) held.Pause();
+                Apply(Kind.Default, Host.For(e));
+            };
+            Events.On<MouseLeaveEvent>(e, _ => clear(_));
+            // A panel can be hidden with the pointer still over it, which would otherwise strand
+            // the cursor in whatever shape it last took.
+            Events.On<DetachFromPanelEvent>(e, _ => clear(_));
+        }
+
+        /// Swap to `kind` (Default: the system arrow) with Facet's drawn cursors; no host hook is asked.
+        public static void Apply(Kind kind) { Apply(kind, null); }
+
+        // True when the host's hook took it; else the drawn cursor is set (or cleared).
+        private static bool Apply(Kind kind, Host host)
+        {
+            if (Native(host, kind))
+            {
+                if (_drawn) Draw(Kind.Default);   // the hook's cursor shows only with no texture set over it
+                _current = kind;
+                return true;
+            }
+            if (kind != _current || (kind != Kind.Default) != _drawn) Draw(kind);
             _current = kind;
+            return false;
+        }
+
+        // The hook and kind being asked, read by one cached Func: asked every frame while held, so no closure per ask.
+        private static Func<Kind, bool> _hook;
+        private static Kind _asking;
+        private static readonly Func<bool> AskHook = () => _hook(_asking);
+
+        private static bool Native(Host host, Kind kind)
+        {
+            var hook = host == null ? null : host.CursorHook;
+            if (hook == null) return false;
+            _hook = hook; _asking = kind;
+            return Safe.Get(host, "Cursors hook", AskHook, false);
+        }
+
+        private static void Draw(Kind kind)
+        {
             try
             {
                 switch (kind)
@@ -54,6 +108,7 @@ namespace Facet
                         UnityEngine.Cursor.SetCursor(null, Vector2.zero, CursorMode.Auto);
                         break;
                 }
+                _drawn = kind != Kind.Default;
             }
             catch (Exception e) { Host.Fallback.Log("Cursors: " + e.Message); }
         }

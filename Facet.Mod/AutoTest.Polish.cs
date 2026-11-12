@@ -69,6 +69,14 @@ namespace Facet.Mod
                     ic?.resolvedStyle.unityBackgroundImageTintColor.ToString());
                 Check(oc != null && Near(oc.resolvedStyle.unityBackgroundImageTintColor, th[Role.Text]), "the open entry's icon is tinted Text",
                     oc?.resolvedStyle.unityBackgroundImageTintColor.ToString());
+                // Read in the same frame: the real pointer is elsewhere, so the panel sends a leave next frame.
+                var irow = ic?.parent;
+                if (irow != null) using (var e = MouseEnterEvent.GetPooled()) { e.target = irow; irow.SendEvent(e); }
+                Check(ic != null && Near(ic.style.unityBackgroundImageTintColor.value, th[Role.Text]), "hovering a closed entry tints its icon Text, as its title",
+                    ic?.style.unityBackgroundImageTintColor.value.ToString());
+                if (irow != null) using (var e = MouseLeaveEvent.GetPooled()) { e.target = irow; irow.SendEvent(e); }
+                Check(ic != null && Near(ic.style.unityBackgroundImageTintColor.value, th[Role.TextMuted]), "...and TextMuted again once the pointer leaves",
+                    ic?.style.unityBackgroundImageTintColor.value.ToString());
             }
             finally { s.Dispose(); }
         }
@@ -122,8 +130,10 @@ namespace Facet.Mod
             finally { s.Dispose(); }
         }
 
-        /* A row that opens a page reserves an arrow slot, and so does every row beside it; a card without
-           one ends its controls Pad inside its edge, and a page header's switch ends there too. */
+        /* A row that opens a page reserves an arrow slot, and so does every row in its card, those in a
+           ToggleGroup's body included; a card without one ends its controls Pad inside its edge, and a page
+           header's switch ends there too, as does a card header's note with no actions after it. A page row outside any
+           card reserves the slot in its own container only, never in the cards beside it. */
         IEnumerator SectionArrowSlot()
         {
             var s = new Surface(Host.Create("Slot", o => o.Log = m => Main.Log("[slot] " + m)), "FacetSlot", Layer.Window);
@@ -137,9 +147,20 @@ namespace Facet.Mod
                 Controls.Colour(plain, "Colour", Bind.To(() => col, x => col = x), o => o.Id = "s-colour");
                 var paged = Controls.Card(w.Body, "Paged");
                 Controls.Toggle(paged, "Before", Bind.To(() => b, x => b = x), o => o.Id = "p-before");
+                var group = Controls.ToggleGroup(paged, "Group", Bind.To(() => b, x => b = x));
+                Controls.Toggle(group, "Nested", Bind.To(() => b, x => b = x), o => o.Id = "p-nested");
                 Controls.SubPage(paged, "More", q => { }, o => o.Id = "p-sub");
                 Controls.Toggle(paged, "After", Bind.To(() => b, x => b = x), o => o.Id = "p-after");
                 Controls.Colour(paged, "Colour", Bind.To(() => col, x => col = x), o => o.Id = "p-colour");
+                var later = Controls.ToggleGroup(paged, "Later", Bind.To(() => b, x => b = x));
+                Controls.Toggle(later, "Nested after", Bind.To(() => b, x => b = x), o => o.Id = "p-nested-after");
+                var noted = Controls.Card(w.Body, "Noted", o => o.Note = "Licence");
+                Controls.Toggle(noted, "Toggle", Bind.To(() => b, x => b = x), o => o.Id = "n-toggle");
+                var linked = Controls.Card(w.Body, "Linked", o =>
+                {
+                    o.Note = "Some";
+                    o.Actions = new List<KeyValuePair<string, Action>> { new KeyValuePair<string, Action>("All", () => { }) };
+                });
                 yield return null; yield return null;
                 var sz = Theme.For(plain).Sizes;
                 var card = plain.parent;
@@ -160,11 +181,42 @@ namespace Facet.Mod
                 Check(arrow != null && arrow.name == "arrow" && arrow.resolvedStyle.display == DisplayStyle.Flex && parts[0] != null
                       && Mathf.Abs(arrow.worldBound.xMin - parts[0].worldBound.xMax) <= 1f, "...one arrow slot in from the page row's arrow",
                     arrow == null || parts[0] == null ? "none" : arrow.worldBound.xMin + " vs " + parts[0].worldBound.xMax);
+                var nested = new[] { w.Body.Q("p-nested-input"), w.Body.Q("p-nested-after-input") };
+                Check(parts[0] != null && Array.TrueForAll(nested, p => p != null && Mathf.Abs(p.worldBound.xMax - parts[0].worldBound.xMax) <= 1f),
+                    "a row in a ToggleGroup body of that card ends on its siblings' control edge, built before the page row or after",
+                    string.Join(", ", Array.ConvertAll(nested, p => p == null ? "none" : p.worldBound.xMax.ToString("0.0"))) + " vs " + (parts[0] == null ? "none" : parts[0].worldBound.xMax.ToString("0.0")));
                 var plainRow = w.Body.Q("s-toggle");
                 var slot = plainRow == null ? null : plainRow[plainRow.childCount - 1];
                 Check(slot != null && slot.name == "arrow" && slot.resolvedStyle.display == DisplayStyle.None, "a card with no page row reserves no arrow slot");
+                Func<VisualElement, string, Label> note = (body, text) => body.parent.Query<Label>().Where(l => l.text == text).First();
+                var lone = note(noted, "Licence"); var nsw = w.Body.Q("n-toggle-input");
+                Check(lone != null && nsw != null && Mathf.Abs(lone.worldBound.xMax - nsw.worldBound.xMax) <= 1f, "a header note with no actions after it ends on the rows' control edge",
+                    lone == null || nsw == null ? "none" : lone.worldBound.xMax + " vs " + nsw.worldBound.xMax);
+                var some = note(linked, "Some"); var all = linked.parent.Query<Button>().Where(x => x.text == "All").First();
+                Check(some != null && all != null && Mathf.Abs(all.worldBound.xMin - some.worldBound.xMax - sz.Gap) <= 1f, "...and a note before actions keeps a Gap before them",
+                    some == null || all == null ? "none" : (all.worldBound.xMin - some.worldBound.xMax).ToString());
             }
             finally { s.Dispose(); }
+
+            // A page row outside any card marks only its own container: the cards beside it keep no slot.
+            var s2 = new Surface(Host.Create("Slot2", o => o.Log = m => Main.Log("[slot2] " + m)), "FacetSlot2", Layer.Window);
+            try
+            {
+                var w2 = new Window(s2.Root, "slot2", "Slot 2", new Rect(60, 60, 640, 480));
+                bool b2 = true;
+                Controls.Toggle(Controls.Card(w2.Body, "First"), "Toggle", Bind.To(() => b2, x => b2 = x), o => o.Id = "f-toggle");
+                Controls.SubPage(w2.Body, "Bare", q => { }, o => o.Id = "bare-sub");
+                Controls.Toggle(Controls.Card(w2.Body, "Second"), "Toggle", Bind.To(() => b2, x => b2 = x), o => o.Id = "g-toggle");
+                yield return null; yield return null;
+                var rows = new[] { w2.Body.Q("f-toggle"), w2.Body.Q("g-toggle") };
+                Func<VisualElement, string> shown = r => r == null ? "none" : r[r.childCount - 1].name + ":" + r[r.childCount - 1].resolvedStyle.display;
+                Check(Array.TrueForAll(rows, r => r != null && r[r.childCount - 1].name == "arrow" && r[r.childCount - 1].resolvedStyle.display == DisplayStyle.None),
+                    "a bare page row on a window body leaves the slots of the cards before and after it hidden", shown(rows[0]) + ", " + shown(rows[1]));
+                var ins = new[] { w2.Body.Q("f-toggle-input"), w2.Body.Q("g-toggle-input") };
+                Check(ins[0] != null && ins[1] != null && Mathf.Abs(ins[0].worldBound.xMax - ins[1].worldBound.xMax) <= 1f, "...so both cards end their controls on one edge",
+                    ins[0] == null || ins[1] == null ? "none" : ins[0].worldBound.xMax + " vs " + ins[1].worldBound.xMax);
+            }
+            finally { s2.Dispose(); }
         }
 
         /* A button row with no label of its own (Action or Danger with "") is found by its button's text. */
@@ -272,6 +324,59 @@ namespace Facet.Mod
                     "undo and redo are bare until hovered, like the close button", bs.Count < 2 ? "none" : bs[0].resolvedStyle.backgroundColor + " / " + bs[1].resolvedStyle.backgroundColor);
                 Check(bs.Count == 3 && Px(bs[0].style.fontSize) == sz.Title + 3f && Px(bs[1].style.fontSize) == sz.Title + 3f,
                     "...drawn at Sizes.Title + 3", bs.Count < 2 ? "none" : Px(bs[0].style.fontSize).ToString());
+            }
+            finally { s.Dispose(); }
+        }
+
+        /* Sizes.RowPadY stands a row's wrapped text off its top and bottom; one line stays RowHeight. Facet's own
+           default is 0, the look it had. */
+        IEnumerator SectionRowPad()
+        {
+            Check(new Sizes().RowPadY == 0f, "Facet's own RowPadY is 0: rows keep the look they had", new Sizes().RowPadY.ToString());
+            var th = new Theme();
+            th.Sizes.RowPadY = 6f; th.Sizes.RowHeight = 38f;
+            var s = Themed("RowPad", th);
+            try
+            {
+                var w = new Window(s.Root, "rowpad", "Row padding", new Rect(60, 60, 460, 640));
+                var card = Controls.Card(w.Body, "Credits");
+                string longText = "A credits line long enough to wrap over several lines in a narrow window, and then some more words after that.";
+                bool b = true;
+                Controls.Info(card, "Made by", () => longText, o => o.Id = "rp-info");
+                Controls.Toggle(card, "Helped", Bind.To(() => b, x => b = x), o => { o.Id = "rp-help"; o.Help = longText; });
+                Controls.Toggle(card, "Plain", Bind.To(() => b, x => b = x), o => o.Id = "rp-plain");
+                yield return null; yield return null;
+                float pad = th.Sizes.RowPadY;
+                var info = w.Body.Q("rp-info"); var v = w.Body.Q("rp-info-input");
+                Check(v != null && v.worldBound.height > 2f * th.Sizes.Small, "the Info value wraps over several lines", v == null ? "none" : v.worldBound.height.ToString());
+                Check(info != null && v != null && v.worldBound.yMin - info.worldBound.yMin >= pad - 0.5f && info.worldBound.yMax - v.worldBound.yMax >= pad - 0.5f,
+                    "a wrapped Info row's text sits RowPadY inside its top and bottom", info == null || v == null ? "none" : v.worldBound + " in " + info.worldBound);
+                var help = w.Body.Q("rp-help"); var col = help?.Q<Label>("help")?.parent;
+                Check(help != null && col != null && col.worldBound.yMin - help.worldBound.yMin >= pad - 0.5f && help.worldBound.yMax - col.worldBound.yMax >= pad - 0.5f,
+                    "a row whose help wraps keeps its label and help RowPadY inside its top and bottom", help == null || col == null ? "none" : col.worldBound + " in " + help.worldBound);
+                var plain = w.Body.Q("rp-plain");
+                Check(plain != null && Mathf.Abs(plain.worldBound.height - th.Sizes.RowHeight) <= 1f, "a one-line row stays RowHeight tall",
+                    plain == null ? "none" : plain.worldBound.height.ToString());
+            }
+            finally { s.Dispose(); }
+        }
+
+        /* Sizes.TabGap is the space under a tab row, before its page; Facet's own default is Gap's 8, the look it had. */
+        IEnumerator SectionTabGap()
+        {
+            var d = new Sizes();
+            Check(d.TabGap == 8f && d.TabGap == d.Gap, "Facet's own TabGap is Gap's 8: tab rows keep the look they had", d.TabGap.ToString());
+            var th = new Theme();
+            th.Sizes.TabGap = 20f;
+            var s = Themed("TabGap", th);
+            try
+            {
+                var w = new Window(s.Root, "tabgap", "Tab gap", new Rect(60, 60, 460, 400));
+                var tabs = Tabs.Pages(w.Body, new[] { new NavItem("One", p => Controls.PageHeader(p, "Head", null, o => o.Id = "tg-head")), new NavItem("Two", p => { }) }, 0);
+                yield return null; yield return null;
+                var head = w.Body.Q("tg-head");
+                Check(head != null && Mathf.Abs(head.worldBound.yMin - tabs.Element.worldBound.yMax - th.Sizes.TabGap) <= 1f, "a tab row stands Sizes.TabGap above its page",
+                    head == null ? "none" : (head.worldBound.yMin - tabs.Element.worldBound.yMax).ToString());
             }
             finally { s.Dispose(); }
         }

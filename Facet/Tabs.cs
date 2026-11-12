@@ -29,7 +29,7 @@ namespace Facet
             _onSelect = onSelect;
             _bar = Ui.Row(parent);
             _bar.style.flexWrap = Wrap.Wrap;
-            _bar.style.marginBottom = Theme.For(_bar).Sizes.Gap;
+            _bar.style.marginBottom = Theme.For(_bar).Sizes.TabGap;
         }
 
         public VisualElement Element => _bar;

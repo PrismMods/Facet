@@ -182,13 +182,28 @@ namespace Facet
             /* TrickleDown, so this is seen on the way IN — a ScrollView that handles the wheel
                stops it bubbling, and a bubbling handler would therefore never hear about exactly
                the case it needs to know about. */
-            Events.On<WheelEvent>(root, _ =>
+            Events.On<WheelEvent>(root, e =>
             {
                 _lastWheelFrame = Time.frameCount;
+                NativeStep(e.target as VisualElement, Host.For(root));
                 if (_sawWheelEvent) return;
                 _sawWheelEvent = true;
                 Host.For(root).Log("Skin: host delivers WheelEvent; polling stands down on frames it arrives");
             }, TrickleDown.TrickleDown);
+        }
+
+        /* The panel's own path moves a ScrollView delta.y x mouseWheelScrollSize, and Unity 6's input layer
+           sends 3 per wheel unit (InputForUI: -3 x Input.mouseScrollDelta), so a third of the host's speed
+           moves it as far as the polled path does. Set on each scroller under the pointer just before it
+           handles the event, so a changed setting shows on the next scroll. */
+        private const float NativeUnitsPerWheel = 3f;
+
+        private static void NativeStep(VisualElement target, Host host)
+        {
+            float speed = host.WheelSpeed;
+            if (speed <= 0f) return;
+            for (var sv = target as ScrollView ?? target?.GetFirstAncestorOfType<ScrollView>(); sv != null; sv = sv.GetFirstAncestorOfType<ScrollView>())
+                sv.mouseWheelScrollSize = speed / NativeUnitsPerWheel;
         }
 
         /// Scroll whatever is under the pointer. `delta` is Input.mouseScrollDelta.y.
@@ -265,8 +280,10 @@ namespace Facet
                -0.05, which at the 40px-per-unit this used to apply moved the page TWO pixels and
                looked exactly like nothing happening. Scale the two separately: a notch is worth
                about three rows, and a trackpad's continuous stream is worth enough per event to
-               keep up with the finger. */
-            float px = Mathf.Abs(delta) < 0.6f ? delta * 400f : delta * 60f;
+               keep up with the finger. A host that gives a WheelSpeed gets one linear step instead, so
+               its windows scroll like its other menus at the player's setting. */
+            float speed = Host.For(root).WheelSpeed;
+            float px = speed > 0f ? delta * speed : Mathf.Abs(delta) < 0.6f ? delta * 400f : delta * 60f;
             var o = target.scrollOffset;
             float before = o.y;
 

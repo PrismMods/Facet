@@ -66,7 +66,7 @@ namespace Facet
        A branch expands IN PLACE in the rail rather than replacing it. Replacing the rail is how you
        lose people — the thing they clicked vanishes and the way back is a button somewhere else.
        The breadcrumb above the content says where they are and every crumb is clickable. */
-    public sealed class Nav
+    public sealed partial class Nav
     {
         private readonly VisualElement _rail, _crumbs, _content;
         private readonly VisualElement _host;
@@ -237,7 +237,8 @@ namespace Facet
             return null;
         }
 
-        /* Below CollapseAt the rail is worth less than the space it costs, so it snaps shut — and
+        /* Below CollapseAt the rail is worth less than the space it costs, so it snaps shut (unless the
+           host made it not Collapsible: then it stops at MinRail) — and
            dragging back out from nothing reopens it at a usable width rather than at one pixel. */
         public const float MinRail = 120f, MaxRail = 380f, CollapseAt = 80f;
 
@@ -258,7 +259,7 @@ namespace Facet
             {
                 if (!handle.HasPointerCapture(e.pointerId)) return;
                 float w = startWidth + (e.position.x - startX);
-                if (w < CollapseAt)
+                if (w < CollapseAt && _collapsible)
                 {
                     _railOpen = false;
                     rail.style.display = DisplayStyle.None;
@@ -288,9 +289,28 @@ namespace Facet
             });
         }
 
-        /// Collapse the rail to give the content the whole window.
+        private bool _collapsible = true;
+
+        /// Whether the rail can be shut (default true). False is for a host whose own setting decides if the
+        /// rail shows: dragging the handle stops at MinRail, ToggleRail never shuts it, and a shut rail opens.
+        /// The width still drags.
+        public bool Collapsible
+        {
+            get { return _collapsible; }
+            set
+            {
+                _collapsible = value;
+                if (value || _railOpen) return;
+                ToggleRail();   // opens it
+                PaintHandle();
+            }
+        }
+
+        /// Collapse the rail to give the content the whole window. Does nothing while Compact, or (shutting)
+        /// while not Collapsible.
         public void ToggleRail()
         {
+            if (_compact || (_railOpen && !_collapsible)) return;
             _railOpen = !_railOpen;
             ReportInset();
             if (_railScroll == null) return;
@@ -321,14 +341,14 @@ namespace Facet
         private void ReportInset()
         {
             // No captured locals here: the check runs on every drag move and must not allocate.
-            if (OnInsetChanged == null || (_railOpen ? _railWidth : 0f) + 7f == _lastInset) return;
+            if (OnInsetChanged == null || Inset == _lastInset) return;
             NotifyInset();
         }
 
         private void NotifyInset()
         {
             var f = OnInsetChanged;
-            float inset = (_railOpen ? _railWidth : 0f) + 7f;
+            float inset = Inset;
             _lastInset = inset;
             Safe.Run(Host.For(_host), "Nav.OnInsetChanged", () => f(inset));
         }
@@ -379,10 +399,7 @@ namespace Facet
             handle.pickingMode = PickingMode.Position;
             /* Resize cursor only while there is something to resize. Collapsed, the knob is a
                click-to-open affordance and a double arrow would promise the wrong gesture. */
-            Events.On<MouseEnterEvent>(handle, _ =>
-                Cursors.Apply(_railOpen ? Cursors.Kind.ResizeHorizontal : Cursors.Kind.Default));
-            Events.On<MouseLeaveEvent>(handle, _ => Cursors.Apply(Cursors.Kind.Default));
-            Events.On<DetachFromPanelEvent>(handle, _ => Cursors.Apply(Cursors.Kind.Default));
+            Cursors.Set(handle, () => _railOpen ? Cursors.Kind.ResizeHorizontal : Cursors.Kind.Default);
 
             var sz = Theme.For(handle).Sizes;
             var line = Ui.Box(handle);
@@ -410,6 +427,7 @@ namespace Facet
             Events.On<MouseEnterEvent>(handle, _ => { Paint.Hover(line, true); Paint.Hover(knob, true); });
             Events.On<MouseLeaveEvent>(handle, _ => { Paint.Hover(line, false); Paint.Hover(knob, false); });
             MakeRailHandle(handle, railScroll);
+            BuildCompact(split, handle, sz);
 
             var right = Ui.Box(split);
             right.style.flexGrow = 1f;
@@ -604,7 +622,10 @@ namespace Facet
             _rail.Clear();
             _pendingRule = false;
             var t = Theme.For(_rail);   // once per rebuild, not per entry
+            if (_compactButton) AddRailButton(t.Sizes, t.Looks);
             foreach (var i in _roots) AddRailItem(i, 0, t.Sizes, t.Looks);
+            if (_compact && !_widened) Titles(0f, false);
+            DrawRailButton();
         }
 
         private bool _pendingRule;
@@ -628,7 +649,7 @@ namespace Facet
             {
                 // An untitled group is a rule between groups, drawn only once a row follows it: a
                 // group that hides entirely leaves no rule, and none sits above the first entry.
-                if (_rail.childCount > 0) _pendingRule = true;
+                if (_rail.childCount > (_compactButton ? 1 : 0)) _pendingRule = true;   // the button is not an entry
                 foreach (var c in item.Children) AddRailItem(c, depth, sz, k);
                 return;
             }
@@ -654,7 +675,7 @@ namespace Facet
 
             var row = Ui.Row(_rail);
             row.style.minHeight = sz.NavRowHeight;
-            row.style.paddingLeft = 10f + depth * 12f;
+            row.style.paddingLeft = ItemInset + depth * 12f;
             row.pickingMode = PickingMode.Position;
             // The selected LEAF is the highlighted one. A branch on the path is merely open, and
             // colouring it as selected too makes it unclear which page is actually showing.
@@ -695,7 +716,7 @@ namespace Facet
                 icon.style.backgroundImage = item.Icon;
                 icon.style.backgroundSize = new BackgroundSize(BackgroundSizeType.Contain);   // a wide sprite keeps its shape
                 icon.pickingMode = PickingMode.Ignore;
-                Paint.Tint(icon, selected ? Role.Text : Role.TextMuted);
+                TintAsTitle(row, icon, k.RailItem, selected);
             }
 
             // The row's look drives the text (muted, full on hover or selected); without hover
@@ -726,6 +747,17 @@ namespace Facet
             });
 
             if (open) foreach (var c in item.Children) AddRailItem(c, depth + 1, sz, k);
+        }
+
+        // Tinted as the row's title: the rail look's text, lit while `row` is hovered unless it is the open entry.
+        private static void TintAsTitle(VisualElement row, VisualElement image, Look rk, bool selected)
+        {
+            Role rest = (selected ? rk.SelectedText : null) ?? rk.Text ?? Role.TextMuted;
+            Role lit = (selected ? rk.SelectedText : null) ?? rk.HoverText ?? rest;
+            Paint.Tint(image, rest);
+            if (lit == rest) return;
+            Events.On<MouseEnterEvent>(row, _ => Paint.Tint(image, lit));
+            Events.On<MouseLeaveEvent>(row, _ => Paint.Tint(image, rest));
         }
 
         // Titles live in the rail; _crumbs stays for search's results heading (see where it is built).

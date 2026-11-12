@@ -26,6 +26,10 @@ namespace Facet
         public float Indicator = 2f;
         /// A rail entry's icon, square.
         public float Icon = 16f;
+        /// Space above and below a row's text, so lines that wrap stand off the row's edges (0: none).
+        public float RowPadY = 0f;
+        /// Space under a tab row, before its page.
+        public float TabGap = 8f;
 
         public Sizes Copy() { return (Sizes)MemberwiseClone(); }
     }

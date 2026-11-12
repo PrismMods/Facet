@@ -125,6 +125,13 @@ namespace Facet.Mod
             yield return Run("SectionFieldClip", SectionFieldClip());
             yield return Run("SectionThumbRadius", SectionThumbRadius());
             yield return Run("SectionTitleGlyphs", SectionTitleGlyphs());
+            yield return Run("SectionRowPad", SectionRowPad());
+            yield return Run("SectionTabGap", SectionTabGap());
+            yield return Run("SectionCompactRail", SectionCompactRail());
+            yield return Run("SectionCursorHook", SectionCursorHook());
+            yield return Run("SectionWheelSpeed", SectionWheelSpeed());
+            yield return Run("SectionRailButton", SectionRailButton());
+            yield return Run("SectionRailCollapsible", SectionRailCollapsible());
             yield return Run("SectionClose", SectionClose());
             // Later tasks: yield return Run("Section...", Section...());
 

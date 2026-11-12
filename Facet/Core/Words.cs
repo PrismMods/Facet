@@ -65,6 +65,8 @@ namespace Facet
             { "Remove stop", "스톱 제거" },
             { "unavailable, see the log", "사용할 수 없음 — 로그를 확인하세요" },
             { "Advanced", "고급" },
+            { "Collapse sidebar", "사이드바 접기" },
+            { "Expand sidebar", "사이드바 펼치기" },
         };
     }
 }

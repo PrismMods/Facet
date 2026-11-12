@@ -61,7 +61,8 @@ namespace Facet
                 if (o.NoteText != null || !string.IsNullOrEmpty(o.Note))
                 {
                     var note = Ui.Text(o.NoteText != null ? "" : o.Note, head, sz.Small, Role.TextMuted);
-                    note.style.marginRight = sz.Gap;
+                    // A Gap before the actions; with none after it, the note ends on the row-control edge.
+                    if (o.Actions != null && o.Actions.Count > 0) note.style.marginRight = sz.Gap;
                     // A Control of its own: the refresher re-reads it, and a throwing NoteText dims only the note.
                     if (o.NoteText != null)
                         new Control<string>(note, null, title + " note", Bind.To(o.NoteText, null), s => note.text = s ?? "", new ControlOptions());
@@ -150,7 +151,7 @@ namespace Facet
             text.pickingMode = PickingMode.Ignore;
 
             var body = Ui.Box(card);
-            if (rows != null) { var r = Data.Get<CardRows>(body); r.Rows = 1; r.Title = title; }
+            if (rows != null) { var r = Data.Get<CardRows>(body); r.Rows = 1; r.Title = title; r.Card = rows.Card ?? card; }
 
             bool open = false; int n = 0;
             Action say = () => text.text = (open ? "▾ " : "▸ ") + Words.Show(label ?? "Advanced", Host.For(text), label == null) + " (" + n + ")";
