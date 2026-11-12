@@ -1383,6 +1383,7 @@ namespace Facet.Mod
             yield return Until(() => WarmUp.Done, ms, 5000);
             if (earlier) Check(ms[0] >= 0, "the warm-up an earlier surface scheduled is done", Ms(ms));
             else Check(ms[0] >= 450, "the first surface's warm-up is done, half a second or more after it", Ms(ms));
+            Check(WarmUp.Drawn, "a frame drew the warm-up window before it was thrown away");
             yield return Quiet();
 
             var sw = Stopwatch.StartNew();

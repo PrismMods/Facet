@@ -17,6 +17,9 @@ namespace Facet
         /// Set once the warm-up window has been drawn and thrown away.
         public static bool Done { get; private set; }
 
+        /// Whether a frame drew the warm-up window before it was thrown away (the autotest reads it).
+        internal static bool Drawn { get; private set; }
+
         /// Draws the warm-up window, once per session: later calls do nothing. The first surface
         /// schedules it half a second after it exists; a host that knows its load better may call it.
         public static void Run()
@@ -26,8 +29,14 @@ namespace Facet
             // Fallback has no Write, so the throwaway window's geometry is never saved.
             var host = Host.Fallback;
             Surface s = null;
+            bool painted = false;
+            int shown = Time.frameCount;
+            var lived = new System.Diagnostics.Stopwatch();
             Action done = () =>
             {
+                Drawn = painted;
+                host.Log("[perf] warm-up window " + (painted ? "drawn" : "thrown away before it was drawn") + ", "
+                         + (Time.frameCount - shown) + " frames and " + lived.ElapsedMilliseconds + " ms after it showed");
                 try { if (s != null) s.Dispose(); } catch { }
                 Done = true;
             };
@@ -41,9 +50,16 @@ namespace Facet
                 // Two null-titled groups, so the rule between groups is drawn here too.
                 new Nav(w.Body, new[] { NavItem.Heading(null, new NavItem("Warm-up", Rows)), NavItem.Heading(null, new NavItem("Warm-up 2", _ => { })) });
                 s.Root.style.translate = new Translate(-10000f, 0f);
+                s.Root.generateVisualContent += _ => painted = true;   // runs when a frame draws the panel
                 s.Visible = true;
+                shown = Time.frameCount; lived.Start();
                 host.Log("[perf] warm-up window built in " + sw.ElapsedMilliseconds + " ms");
-                s.Root.schedule.Execute(done).StartingIn(100);   // after it has been drawn
+                /* Thrown away 100 ms on, but only once a frame has drawn it. At load a single frame can
+                   outlast the 100 ms (237 ms in game beside other mods), and the window went before it was
+                   ever laid out or drawn, so the first real window paid the whole cost. A window no frame
+                   draws in 2 s goes anyway: it counts as an open window while it lives. */
+                s.Root.schedule.Execute(() => { if (painted || lived.ElapsedMilliseconds >= 2000) done(); })
+                    .StartingIn(100).Every(16).Until(() => Done);
             }
             catch (Exception e) { host.Log("WarmUp: failed: " + e.Message); done(); }
         }

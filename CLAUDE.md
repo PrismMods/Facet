@@ -83,7 +83,10 @@ theme values live in code (`Theme`).
   parts, a suite page opened straight after it took 19-42 ms against 11-18 ms warm (2026-11-07). It runs
   once per minor and session, from whichever mod's surface comes first. Unity's own UI Toolkit code is
   warmed by the first Facet of ANY minor (0.2's warm-up took 34 ms after 0.1's 185 on the rig), so with
-  0.1 mods loaded the 0.2 figures understate a 0.2-only player's first open.
+  0.1 mods loaded the 0.2 figures understate a 0.2-only player's first open. **The window goes only once a
+  frame has drawn it** (`WarmUp.Drawn`, checked by the autotest). Beside the Prism mods the warm-up runs
+  during the game's loading, where one frame outlasted the 100 ms (237 ms): the window was thrown away
+  before it was ever laid out or drawn, and the Gallery's first open took 56-68 ms instead of 10 (2026-11-13).
 - **Cursors are drawn, and the swap is GLOBAL.** USS `cursor` keywords are editor-only and a runtime
   mod has no cursor assets, so `Cursors` draws them in code and swaps through
   `UnityEngine.Cursor.SetCursor` on pointer enter. There is no per-element cursor at runtime, so
@@ -270,24 +273,58 @@ it bubbling. Three causes hid behind "scrolling is broken", all found by logging
 - `./test.sh`: offline tests plus the grep rules (no loader or game names in `Facet/`, no `RegisterCallback`
   outside `Events.cs`, no Unity-derived public types, colour only through `Paint` except the pickers'
   swatches and a tile's data colour, no size literal in a part (`SetRadius(e, 4f)`, `fontSize = 13`),
-  and no `Look` preset painted by a part).
+  no `Look` preset painted by a part, and no public member naming a UI Toolkit event type,
+  `IVisualElementScheduledItem` or `ITextEdition` outside `Events.cs` and `Glide.cs`: Quartz's CI compiles
+  against stubs that have none of them).
 - `./build.sh`: tests, then installs the UMM build to `UMMMods/Facet`. `tools/ingame.sh` runs the autotest
   through it and wants `AUTOTEST DONE ... fail=0`. `tools/ingame.sh --ml` does the same through the
   MelonLoader entry (log and trigger in `UserData/Facet/`): unzip `dist/Facet-ML.zip` into the game first.
 - `./release.sh` builds both targets (`-p:LoaderTarget=ML|UMM`), stages `dist/Facet-ML.zip` and
   `dist/Facet-UMM.zip` and fails unless the entries match the expected lists. It publishes nothing.
-- Rig: one in-game test at a time; wait about 5 s after a quit; `ingame.sh` refuses to run while another
-  suite's trigger (LayoutProbe `autotest`, CamDisplay `selftest`) is armed. Never run the UMM and ML copies
-  together: remove one before installing the other, and `./build.sh` afterwards to restore the default.
 - Packaging rule: only `Facet.Mod/` names a loader. The assembly is `Facet.<major>.<minor>.dll`, shipped
   beside every consumer or via the standalone mod. A patch release adds no public API; any new public
   member bumps the minor (R21: append-only within a minor is unsafe because the first-loaded copy of a
   minor wins).
 - Cross-version shared state (`Shared`, `Coord`'s entries): a key's value type never changes, array slots
   are only appended, and a reader checks `Length` before reading a slot. 0.2 added `Facet.AnimSpeed`
-  (`float[1]`), `Facet.SmoothScroll` (`bool[1]`, created `{ false }`), `Facet.WheelStamp` (`int[1]`) and
-  Coord slot 9 (the wheel); a bad shared value falls back to a private one and is logged once, never kills
-  motion, scrolling or input.
+  (`float[1]`), `Facet.SmoothScroll` (`bool[1]`, created `{ false }`), `Facet.WheelStamp` (`int[1]`),
+  `Facet.MotionHold` (`float[3]`, the test hold) and Coord slot 9 (the wheel); a bad shared value falls back
+  to a private one and is logged once, never kills motion, scrolling or input.
+
+## Testing
+
+The rig is the player's own install, so an in-game run guards it (`tools/rig-guard.sh`; `tools/ingame.sh`
+calls each step in this order, and each runs alone as a dry check).
+
+- **`wait`** refuses a locked screen (exit 4) and waits up to `WAIT_GAME` s (default 1800, polled every 30 s)
+  for the player's own game to exit, then 5 s more; a game still there is `NEEDS_CONTEXT` with its pid
+  (exit 3). Nothing here or in `ingame.sh` ever quits a game.
+- **`copies <dll>`** refuses any `Facet.0.2.dll` under `UMMMods`, `Mods`, `UserLibs` or Quartz's `Runtime`
+  that differs from this build, since within a minor the first-loaded copy wins, and prints the refresh
+  commands (exit 2). `UMMMods/unused` is skipped: nothing loads it and no refresh reaches it.
+- **`pre`** backs up every settings file a run may touch (PrismLib's `settings.txt`, and every `.txt`,
+  `.xml` and `.json` two levels under `UMMMods` and `UserData`, logs and runtime stores aside) to
+  `~/FacetRig-backup-<time>/` with their md5s. **`post <dir>`**, `ingame.sh`'s EXIT trap, restores each one
+  that changed, except the player's play stats (`keycounts.txt`, `layout.json`, `KeyViewerLayout.json`,
+  `PlayCount.json`, `CalibrationTimings.json`), and removes a `UMMMods/LayoutProbe` that was not there before.
+- **`ingame.sh` reports instead of acting.** No log 45 s after launch prints a hint (Steam's cloud conflict:
+  choose LOCAL; Screen Time: Ignore Limit) and keeps waiting. 90 s without log growth, or 300 s in all, with
+  the game alive is `NEEDS_CONTEXT: launch hung` (exit 3), the game left running. After `AUTOTEST DONE` it
+  waits 60 s for the game to quit itself, else `NEEDS_CONTEXT: game did not exit` (exit 3).
+- **An agent with a tool timeout** runs `WAIT_GAME=540 tools/rig-guard.sh wait` as separate calls for as
+  long as it may wait, then `WAIT_GAME=0 tools/ingame.sh` inside a 400 s timeout: a run killed by the timeout
+  would skip the restore.
+- One in-game test at a time; `ingame.sh` refuses to run while another suite's trigger (LayoutProbe
+  `autotest`, CamDisplay `selftest`) is armed. Never run the UMM and ML copies together: remove one before
+  installing the other, and `./build.sh` afterwards to restore the default.
+- **The autotest runs under a motion hold.** Prism mods copy the player's animation speed and smooth-scroll
+  setting into the shared store every frame, so hover, focus and fold checks read mid-transition and wheel
+  steps glide. `Motion.Hold(speed, smooth)` (internal; `Facet.Mod` sees internals) makes `Anim.Speed` and
+  `Anim.SmoothScroll` read the held values until the scope ends, whoever writes meanwhile; writes still
+  reach the store, and a nested hold puts the outer one back when it ends. `Start` holds speed 1 for the
+  run, `Run` each section's speed (0 unless it is about motion) with smooth off, and a section that needs
+  another speed or the glide takes its own nested hold: a check never sets up motion by writing
+  `Anim.Speed` or `Anim.SmoothScroll`, only a check of the store itself does.
 
 ## Rulings that shaped the code
 

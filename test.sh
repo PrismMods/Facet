@@ -21,3 +21,5 @@ if grep -rnE 'SetRadius\([^,]+, *([1-9][0-9.]*|0\.[0-9]+)f?\)|fontSize *= *[0-9]
     echo "a size literal in a part: read it from the theme's Sizes"; exit 1; fi
 if grep -rnE '\bLook\.(Button|FlatButton|AccentButton|DangerButton|Row|RailItem|Field|Ring|Card|Chrome)\b' Facet/ --include='*.cs' | grep -v 'Core/Looks.cs'; then
     echo "a part paints a Look preset: take it from the theme's Looks"; exit 1; fi
+if grep -nE '^\s*public [^=]*\b([A-Z]\w*Event|EventBase|IVisualElementScheduledItem|ITextEdition)\b' Facet/*.cs | grep -v 'Events.cs\|Glide.cs'; then
+    echo "a public member names a UI Toolkit event type: Quartz's stubs cannot compile it"; exit 1; fi
