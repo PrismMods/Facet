@@ -27,6 +27,8 @@ namespace Facet
         private Label _hexLabel;
         /// The picker's name in its header (where a row's help line goes).
         internal Label Title { get; private set; }
+        /// The swatch in its header, the row's right-hand control.
+        internal VisualElement Swatch { get; private set; }
         private TextField _hexField;
         private Slider _r, _g, _b, _a;
         private readonly Action<Color> _onEdit;
@@ -84,7 +86,7 @@ namespace Facet
             _hexLabel.pickingMode = PickingMode.Ignore;
 
             // Checkerboard behind the swatch, so a transparent colour looks transparent.
-            var swatchBg = new VisualElement();
+            var swatchBg = Swatch = new VisualElement();
             swatchBg.style.width = 44f;
             swatchBg.style.height = 18f;
             Ui.SetRadius(swatchBg, _sz.Radius);

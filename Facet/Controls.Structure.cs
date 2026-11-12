@@ -119,17 +119,25 @@ namespace Facet
             var right = Ui.Row(row);
             right.style.flexShrink = 0f;
             right.name = "control";
+            AddArrowSlot(row);
+            return right;
+        }
 
-            /* Every row reserves the arrow's width, filled or not. Without it the switches on rows
-               that have a page behind them sit one arrow to the left of the ones that do not, and a
-               column of toggles reads as ragged. */
+        /// Marks a container one of whose rows opens a page (Arrow): every row in it reserves the arrow slot.
+        internal sealed class Arrowed { }
+
+        /* The arrow's place, the row's last child. Shown only in a container where some row opens a
+           page, so the switches beside that row line up with its own instead of sitting one arrow to
+           the right; anywhere else an empty slot would only widen the right gutter past the left. */
+        internal static void AddArrowSlot(VisualElement row)
+        {
             var arrow = Ui.Text("", row, ArrowSize, Role.TextMuted);
             arrow.name = "arrow";
             arrow.style.width = ArrowSlot;
             arrow.style.unityTextAlign = TextAnchor.MiddleRight;
             arrow.style.flexShrink = 0f;
             arrow.pickingMode = PickingMode.Ignore;
-            return right;
+            arrow.style.display = Data.Find<Arrowed>(row.parent) != null ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
         /* A toggle and the rows it governs. Showing controls that the mod is currently ignoring is
@@ -292,11 +300,29 @@ namespace Facet
             return c;
         }
 
-        /// Fill the arrow slot Row() reserved.
+        /// Fill the row's arrow slot, and from now on reserve one beside every row in its container.
         private static void Arrow(VisualElement row)
         {
-            var arrow = row.Q<Label>("arrow");
+            var box = row.parent;
+            if (box != null && Data.Find<Arrowed>(box) == null)
+            {
+                Data.Get<Arrowed>(box);
+                for (int i = 0; i < box.childCount; i++)
+                {
+                    var slot = Slot(box[i]);
+                    if (slot != null) slot.style.display = DisplayStyle.Flex;
+                }
+            }
+            var arrow = Slot(row);
             if (arrow != null) arrow.text = "\u203A";
+        }
+
+        // The last child, when it is the arrow slot. Not Q("arrow"): a Dropdown with no Id has an "arrow" of its own.
+        private static Label Slot(VisualElement row)
+        {
+            int n = row.childCount;
+            var l = n > 0 ? row[n - 1] as Label : null;
+            return l != null && l.name == "arrow" ? l : null;
         }
 
         public static Label Header(VisualElement parent, string text)

@@ -208,11 +208,11 @@ namespace Facet
 
             TitleBarRight = Ui.Row(bar);
 
-            /* Undo and redo in the header, where they apply to whatever the window is showing.
-               Text rather than ↶ ↷: the panel draws in an OS font chosen at runtime and there is
-               no guarantee it carries those glyphs, whereas a missing glyph is a blank button. */
-            var undo = Glyph(TitleBarRight, "\u21B6", () => History.Undo(), sz.Body + 2f);
-            var redo = Glyph(TitleBarRight, "\u21B7", () => History.Redo(), sz.Body + 2f);
+            /* Undo and redo in the header, where they apply to whatever the window is showing. Bare
+               like the ×, so the three read as one set of window controls, and at title size: at body
+               size the arrows were specks beside it. */
+            var undo = Glyph(TitleBarRight, "\u21B6", () => History.Undo(), sz.Title + 3f);
+            var redo = Glyph(TitleBarRight, "\u21B7", () => History.Redo(), sz.Title + 3f);
             Action refreshHistory = () =>
             {
                 string lang = _host.Language;
@@ -281,6 +281,7 @@ namespace Facet
         private static Button Glyph(VisualElement parent, string glyph, Action onClick, float size)
         {
             var b = Ui.Btn(glyph, onClick, parent);
+            Paint.Look(b, GlyphLook);
             b.style.width = 30f;
             b.style.height = 26f;
             b.style.fontSize = size;
@@ -311,13 +312,16 @@ namespace Facet
 
         // A window control, not a toolbar button: bare until hovered, then Danger.
         private static readonly Look CloseLook = new Look { Text = Role.Text, HoverBg = Role.Danger, PressedBg = Role.Danger };
+        // Undo and redo: bare like the ×, lit on hover.
+        private static readonly Look GlyphLook = new Look { Text = Role.Text, HoverBg = Role.RowHover, PressedBg = Role.RowAlt };
 
+        /// Clamped to 0.6-2.5.
         public float Scale
         {
             get { return _scale; }
             set
             {
-                _scale = Mathf.Clamp(value, 0.6f, 2f);
+                _scale = Mathf.Clamp(value, 0.6f, 2.5f);
                 _savedScale[_key] = _scale;
                 Apply();
             }

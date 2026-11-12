@@ -11,6 +11,8 @@ namespace Facet
     {
         public string Title;
         public string Tooltip;
+        /// Drawn left of the title in the rail; the default (empty) draws none.
+        public Background Icon;
         /// Fills the content area. Called on every visit — build fresh rather than cache, so a page
         /// cannot show a value that changed while it was hidden.
         public Action<VisualElement> Build;
@@ -681,6 +683,19 @@ namespace Facet
             {
                 var pad = Ui.Box(row);
                 pad.style.width = depth > 0 ? 14f : 0f;
+            }
+
+            // In the row, before the title: the row keeps its left edge and the title moves right.
+            if (item.Icon != default(Background))
+            {
+                var icon = Ui.Box(row);
+                icon.name = item.Title + "-icon";
+                icon.style.width = sz.Icon; icon.style.height = sz.Icon;
+                icon.style.marginRight = sz.Gap;
+                icon.style.backgroundImage = item.Icon;
+                icon.style.backgroundSize = new BackgroundSize(BackgroundSizeType.Contain);   // a wide sprite keeps its shape
+                icon.pickingMode = PickingMode.Ignore;
+                Paint.Tint(icon, selected ? Role.Text : Role.TextMuted);
             }
 
             // The row's look drives the text (muted, full on hover or selected); without hover

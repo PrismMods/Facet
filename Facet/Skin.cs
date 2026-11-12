@@ -41,8 +41,8 @@ namespace Facet
                 Paint.Look(dragger, k.Thumb);
                 dragger.style.width = sz.ThumbWidth;
                 dragger.style.height = sz.ThumbHeight;
-                // KnobRadius, at most a round end (ThumbHeight/2): Dark gives 0.1's 6.
-                Ui.SetRadius(dragger, Mathf.Min(sz.KnobRadius, sz.ThumbHeight / 2f));
+                // KnobRadius, at most half the thumb's narrow side (a round end): Dark gives 0.1's 6, a 4 px wide thumb 2.
+                Ui.SetRadius(dragger, Mathf.Min(sz.KnobRadius, Mathf.Min(sz.ThumbWidth, sz.ThumbHeight) / 2f));
                 Ui.SetBorderWidth(dragger, 0f);
                 /* Centre it on the track. Both the tracker and the dragger are laid out by the
                    theme — which a runtime mod does not get — so each is placed here against the
@@ -102,6 +102,8 @@ namespace Facet
                 Ui.SetRadius(input, sz.Radius);
                 Ui.SetPadding(input, sz.FieldPad);
                 input.style.unityTextAlign = TextAnchor.MiddleLeft;
+                // Text longer than the box is cut at its border, not drawn past it: nothing clips on a runtime panel by default.
+                input.style.overflow = Overflow.Hidden;
                 // Without this the caret is drawn in the theme's colour, which is nothing.
                 Paint.Tint(input, Role.Text);
             }

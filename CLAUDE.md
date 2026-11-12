@@ -188,6 +188,14 @@ it bubbling. Three causes hid behind "scrolling is broken", all found by logging
   tile widths come from the grid's `contentRect`. `Help` is dropped on a tile (fixed height, clipped).
 - **`Controls.Switch` takes the toggle action** and answers both `ClickEvent` and `NavigationSubmitEvent`,
   so every switch built on it is keyboard-operable; a tile's track is not focusable (the tile is the stop).
+- **A row's control ends on the row's control edge**: `Sizes.Pad` inside a card's inner edge, 4 px in a
+  bare container, and before the arrow slot beside a row that opens a page. A control placed in a row
+  zeroes its own trailing margin (`Ui.Btn` adds `Gap`) and spaces its siblings with `marginLeft`; the
+  colour swatch and the page header's switch follow the same edge. The arrow slot exists only in a
+  container where some row opens a page (`Arrow` marks the container and shows its rows' slots), so a
+  card of plain rows reserves none. The row-edge and arrow-slot autotests pin it.
+- **A button-only row is found by its button.** An `Action` or `Danger` row with no label is indexed
+  under the button's text (English key and as shown), with its tooltip.
 - **Search reaches pages Facet did not build.** `Nav.AddSearchSource` returns `SearchIndex.Entry`s
   (`Label`, `Where`, `Open`, `Tip`), asked each time the index builds; choosing one runs `Open`. `Label`
   and `Where` are English keys, shown through the host's table (unknown text shows as given).

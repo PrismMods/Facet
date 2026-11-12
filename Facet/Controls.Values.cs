@@ -147,10 +147,15 @@ namespace Facet
             var buttons = new List<Button>();
             Control<int> c = null;
             var items = o.Items;
+            float gap = Theme.For(right).Sizes.Gap;
             for (int i = 0; i < (items != null ? items.Count : 0); i++)
             {
                 int idx = i;
-                buttons.Add(Ui.Btn(items[i], () => { if (idx != c.Value) c.Set(idx); }, right));
+                var b = Ui.Btn(items[i], () => { if (idx != c.Value) c.Set(idx); }, right);
+                // The gap goes before a segment, not after: the last ends on the row's control edge.
+                b.style.marginRight = 0f;
+                if (i > 0) b.style.marginLeft = gap;
+                buttons.Add(b);
             }
             Action<int> show = v => { for (int j = 0; j < buttons.Count; j++) Paint.Select(buttons[j], j == v); };
             c = new Control<int>(right.parent, right, label, Tracked(parent, label, o, bind), show, o);
@@ -172,6 +177,7 @@ namespace Facet
             b = Ui.Btn("", () => Popup.Menu(b, items, c.Value, i => c.Set(i), o.ItemFont), cell);
             var t = Theme.For(b); var sz = t.Sizes;
             Paint.Look(b, t.Looks.Field);
+            b.style.marginRight = 0f;   // the box fills its cell, so the arrow is pinned inside the box's border
             b.style.minWidth = sz.DropdownWidth;
             b.style.unityTextAlign = TextAnchor.MiddleLeft;
             b.style.paddingRight = sz.ControlPad + sz.Small + sz.Gap;   // room for the arrow
@@ -212,7 +218,8 @@ namespace Facet
             var root = Ui.Row(parent);
             Controls.Noted(root, label);
             var sz = Theme.For(root).Sizes;
-            Carded(root, sz);
+            // The swatch ends where the other rows' controls do: inside the row's padding and, beside a row that opens a page, its arrow slot.
+            root.style.paddingRight = Carded(root, sz) ? sz.Pad : 4f;
             root.style.alignItems = Align.FlexStart;
             var inner = Ui.Box(root);
             inner.style.flexGrow = 1f;
@@ -220,6 +227,8 @@ namespace Facet
             Control<Color> c = null;
             var picker = new ColourPicker(inner, label, Color.white, o.Alpha, col => { if (c != null) c.Set(col); }, col => { if (c != null) c.Edit(col); }, () => { if (c != null) c.Commit(); });
             Data.Get<Noting>(root).Label = picker.Title;   // a help line goes under the picker's name
+            if (o.Id != null) picker.Swatch.name = o.Id + "-swatch";
+            AddArrowSlot(root);
             c = new Control<Color>(root, inner, label, Tracked(parent, label, o, bind), picker.SetColour, o);
             // The dot sits in the flow before the picker: level it with the header, not the whole picker.
             var dot = root.Q("changed");
@@ -277,6 +286,7 @@ namespace Facet
                 if (!ok) end(false);
             }, right);
             Events.On<DetachFromPanelEvent>(b, _ => cancel());
+            b.style.marginRight = 0f;
             b.style.minWidth = 110f;
             c = new Control<string>(right.parent, b, label, Tracked(parent, label, o, bind), v => Draw(b, v), o);
             return c;
@@ -307,7 +317,9 @@ namespace Facet
         {
             var o = ControlOptions.Make(parent, label, configure);
             var right = Controls.Row(parent, label);
+            if (string.IsNullOrEmpty(label)) Noted(right.parent, button);   // no label: search finds the row by its button
             var b = Ui.Btn(button, onClick, right);
+            b.style.marginRight = 0f;
             Hook(right.parent, b, label, o);
             return b;
         }
@@ -318,6 +330,7 @@ namespace Facet
         {
             var o = ControlOptions.Make(parent, label, configure);
             var right = Controls.Row(parent, label);
+            if (string.IsNullOrEmpty(label)) Noted(right.parent, button);
             var b = Armed(button, onConfirm, right);
             Hook(right.parent, b, label, o);
             return b;
@@ -360,6 +373,7 @@ namespace Facet
                 Safe.Run(Host.For(b), "Danger handler", () => { if (onConfirm != null) onConfirm(); });
             }, parent);
             Paint.Look(b, Theme.For(b).Looks.DangerButton);
+            b.style.marginRight = 0f;
             return b;
         }
 

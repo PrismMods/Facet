@@ -24,6 +24,8 @@ namespace Facet
         public float SliderWidth = 180f, NumberWidth = 62f, DropdownWidth = 120f;
         /// A selection bar's thickness (a tab's underline, a rail entry's edge).
         public float Indicator = 2f;
+        /// A rail entry's icon, square.
+        public float Icon = 16f;
 
         public Sizes Copy() { return (Sizes)MemberwiseClone(); }
     }

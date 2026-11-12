@@ -84,6 +84,8 @@ loaded wins.
 | Tabs | `Tabs.Pages`, `Tabs.Content`; `SearchIndex.Hit.Tab` |
 | Search | `Nav.AddSearchSource` with `SearchIndex.Entry` (`Label`, `Where`, `Open`, `Tip`; `Label` and `Where` are English keys, translated) for pages Facet did not build; `NavItem.OnHit` |
 | Sidebar | Nav draws a rule between groups; a skin gives `Looks.Rule` a colour (on Theme.Dark it is invisible) |
+| Rail icons | `NavItem.Icon`, a `Background` drawn left of the entry's title and tinted as the title (default: none); `Sizes.Icon`, its square size (16) |
+| Window | `Window.Scale` is clamped to 0.6-2.5 |
 
 ## Coexistence
 

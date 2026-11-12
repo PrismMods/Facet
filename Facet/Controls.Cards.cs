@@ -109,6 +109,7 @@ namespace Facet
             var t = Theme.For(root); var sz = t.Sizes;
             root.style.minHeight = sz.RowHeight;
             root.style.marginBottom = sz.Pad;
+            root.style.paddingRight = sz.Line + sz.Pad;   // the switch ends where a card row's control does: its border, then Pad
             Noted(root, title);
             var col = Ui.Box(root);
             col.style.flexGrow = 1f;
