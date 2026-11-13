@@ -181,8 +181,9 @@ namespace Facet
                             int nx = x + dx, ny = y + dy;
                             if (nx >= 0 && ny >= 0 && nx < S && ny < S && ink(nx, ny)) near = true;
                         }
-                    // Texture rows run bottom-up; the shapes here are symmetric, so no flip needed.
-                    px[y * S + x] = on ? Color.white : near ? new Color(0f, 0f, 0f, 0.85f) : Color.clear;
+                    // Shapes are drawn y down, as on screen; texture rows run bottom-up, so row y is S - 1 - y.
+                    // Without the flip a diagonal comes out mirrored: the top-left corner arrow pointed top-right.
+                    px[(S - 1 - y) * S + x] = on ? Color.white : near ? new Color(0f, 0f, 0f, 0.85f) : Color.clear;
                 }
             t.SetPixels(px);
             t.Apply(false, false);

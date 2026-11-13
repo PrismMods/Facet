@@ -143,6 +143,21 @@ Validity is by reference, so a document must keep its identity:
 3. **A step that swaps the document passes `valid: null`.** An import or a profile switch replaces the
    document, so a step bound to it would be stale the moment it was recorded.
 
+## Canvas
+
+The canvas's geometry is plain BCL code (`Facet/Core/CanvasMath.cs`, tested offline), in canvas units with y down.
+
+- **Move.** A drag snaps the moved box's edges or centre line to the canvas centre or to another item's line
+  within reach, drawing a guide; on an axis with nothing in reach, that edge (the box's left or top) lands on the
+  grid, whose step grows as the view zooms out. A snapped box lands on a whole unit even where the line is a half
+  unit (an odd size's centre line); the guide stays on the line. With snapping off, or Alt held, it moves in whole
+  units. A drag locked to one axis (Shift) leaves the other where it was, with no guide.
+- **Resize.** The opposite edges stay put and sizes come out in whole units, snapping on or off; while snapping
+  the dragged side rounds to the grid, then to another item's size within reach. Shift keeps the aspect: on a
+  corner the larger relative change drives, and the other side follows in whole units, so it may sit off the
+  grid. On an edge the other side grows about the box's centre line rather than from a fixed top or left edge;
+  its position stays whole, so it is centred to within half a unit of that line.
+
 ## API in 0.2
 
 | Area | API |

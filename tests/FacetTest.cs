@@ -306,6 +306,7 @@ static class FacetTest {
         Motion.Speed = 1f;
         MotionHold();
         HistorySteps();
+        CanvasGeometry();
 
         Console.WriteLine(_fail == 0 ? "ALL PASS" : _fail + " FAILED");
     }
@@ -466,6 +467,93 @@ static class FacetTest {
         Check(History.Undo() && kr == 1 && History.Undo() && kr == 0, "two keyless records 0.1 s apart are two steps", "kr=" + kr);
         History.Log = hl.Add;
         History.Log = oldLog; History.Clock = clock; History.Clear();
+    }
+
+    // The canvas's snapping, grid, resize, marquee, z-order, zoom and fit, in canvas units with y down.
+    static void CanvasGeometry() {
+        Check(CanvasMath.GridStep(5, 1) == 5 && CanvasMath.GridStep(5, 2) == 3 && CanvasMath.GridStep(5, 0.5f) == 10
+           && CanvasMath.GridStep(5, 4) == 1 && CanvasMath.GridStep(5, 0.3f) == 17 && CanvasMath.GridStep(0, 1) == 1, "grid step by zoom");
+        Check(CanvasMath.GridPitch(5, 1) == 5 && CanvasMath.GridPitch(5, 0.5f) == 10 && CanvasMath.GridPitch(5, 0.3f) == 20, "drawn grid pitch");
+        float gp = CanvasMath.GridPitch(8, 1e-30f);
+        Check(CanvasMath.GridPitch(0, 1) == 0 && CanvasMath.GridPitch(-5, 1) == 0 && CanvasMath.GridPitch(float.NaN, 1) == 0
+           && CanvasMath.GridPitch(float.PositiveInfinity, 1) == 0 && CanvasMath.GridPitch(5, 0) == 0 && CanvasMath.GridPitch(5, -1) == 0
+           && gp > 0 && !float.IsInfinity(gp) && CanvasMath.GridPitch(8, float.Epsilon) == 0, "no grid, or a pitch past a float, draws none (0)",
+              CanvasMath.GridPitch(-5, 1) + " " + CanvasMath.GridPitch(5, 0) + " " + gp + " " + CanvasMath.GridPitch(8, float.Epsilon));
+        Check(CanvasMath.LatchAxis(-10, 3) == 1 && CanvasMath.LatchAxis(2, -9) == 2, "the axis lock compares magnitudes");
+        var tg = new Box[108]; tg[0] = new Box(200, 50, 60, 60);
+        var ms = new MoveSnap { Targets = tg, Count = 1, CentreX = 450, CentreY = 195, Distance = 8, Step = 5, On = true };
+        CanvasMath.Move(new Box(100, 300, 60, 60), 94, 0, ref ms, out var dx, out var dy, out var gx, out var gy);
+        Check(dx == 100 && gx == 200 && float.IsNaN(gy), "left snaps to a target's left within 8, with a guide");
+        CanvasMath.Move(new Box(100, 300, 60, 60), 316, 0, ref ms, out dx, out _, out gx, out _);
+        Check(dx == 320 && gx == 450, "the centre line snaps to the canvas centre");
+        CanvasMath.Move(new Box(100, 300, 60, 60), 0, -130, ref ms, out dx, out dy, out gx, out gy);
+        Check(dy == -135 && gy == 195 && dx == 0 && float.IsNaN(gx), "the centre line snaps to the canvas centre on y too", dy + " " + gy);
+        CanvasMath.Move(new Box(100, 300, 60, 60), 13, 0, ref ms, out dx, out _, out gx, out _);
+        Check(dx == 15 && float.IsNaN(gx), "no line in range: the left rounds to the grid step");
+        // A centre line of an odd size is a half unit: the snapped box lands on a whole unit, the guide on the line.
+        CanvasMath.Move(new Box(100, 300, 45, 45), 330, 0, ref ms, out dx, out _, out gx, out _);
+        Check(dx == 328 && gx == 450, "an odd box centred on the canvas centre lands on a whole unit", dx + " " + gx);
+        tg[0] = new Box(200, 50, 61, 60);
+        CanvasMath.Move(new Box(100, 300, 60, 60), 128.6f, 0, ref ms, out dx, out _, out gx, out _);
+        Check(dx == 131 && gx == 230.5f, "a left snapped to an odd target's centre lands on a whole unit", dx + " " + gx);
+        // The position rounds, not the delta: a box off a whole unit still lands on one (rounding the delta would give 230.3).
+        CanvasMath.Move(new Box(100.3f, 300, 60, 60), 128.6f, 0, ref ms, out dx, out _, out gx, out _);
+        Check(100.3f + dx == 231 && gx == 230.5f, "a box at a fractional x snaps onto a whole unit", (100.3f + dx) + " " + gx);
+        // Shift latched a mostly horizontal drag: y stays put though a target's top is in reach, x still snaps.
+        ms.Keep = CanvasMath.LatchAxis(40, 1);
+        CanvasMath.Move(new Box(100, 45, 60, 60), 40, 1, ref ms, out dx, out dy, out gx, out gy);
+        Check(dy == 0 && float.IsNaN(gy) && dx == 40 && gx == 200, "a Shift-latched move leaves the locked axis alone", dx + " " + dy + " " + gx + " " + gy);
+        ms.On = false; CanvasMath.Move(new Box(100, 45, 60, 60), 40.4f, 3.4f, ref ms, out dx, out dy, out _, out _);
+        Check(dx == 40 && dy == 0, "with snapping off the locked axis stays put too", dx + " " + dy);
+        ms.Keep = 0;
+        ms.On = false; CanvasMath.Move(new Box(100, 300, 60, 60), 94.4f, 0, ref ms, out dx, out _, out gx, out _);
+        Check(dx == 94 && float.IsNaN(gx), "snap off or Alt: one-unit steps, no guide");
+        var ss = new SizeSnap { Widths = new float[] { 83 }, Heights = new float[] { 0 }, Count = 1, Distance = 4, Min = 10, Step = 5, On = true };
+        var r = CanvasMath.Resize(new Box(0, 0, 60, 40), 7, 22, 3, ref ss);
+        Check(r.X == 0 && r.Y == 0 && r.W == 83 && r.H == 45, "bottom-right: size rounds to 5, then snaps to a sibling width within 4");
+        ss.KeepAspect = true; ss.Count = 0; r = CanvasMath.Resize(new Box(0, 0, 60, 40), 7, 30, 2, ref ss);
+        Check(r.W == 90 && r.H == 60, "Shift keeps the aspect, the larger change driving");
+        r = CanvasMath.Resize(new Box(0, 0, 60, 40), 4, 30, 0, ref ss);
+        Check(r.X == 0 && r.W == 90 && r.H == 60 && r.CY == 20, "Shift on an edge: the other side follows, centred on the start's centre line");
+        r = CanvasMath.Resize(new Box(0, 0, 60, 40), 4, 35, 0, ref ss);
+        Check(r.W == 95 && r.H == 63 && r.Y == -12, "an odd growth centres within half a unit, on a whole unit", r.Y + " " + r.W + "x" + r.H);
+        r = CanvasMath.Resize(new Box(0, 0, 60, 40), 0, 80, 80, ref ss);
+        Check(r.W == 15 && r.H == 10 && r.Right == 60 && r.Bottom == 40, "with Shift the minimum keeps the aspect");
+        ss.KeepAspect = false; r = CanvasMath.Resize(new Box(0, 0, 60, 40), 0, 80, 80, ref ss);
+        Check(r.W == 10 && r.H == 10 && r.Right == 60 && r.Bottom == 40, "top-left past the far edge stops at the minimum, far edges fixed");
+        ss.On = false; ss.Count = 1; r = CanvasMath.Resize(new Box(0, 0, 60, 40), 7, 22.4f, 3.6f, ref ss);
+        Check(r.W == 82 && r.H == 44, "snap off: sizes round to whole units and skip the sibling width", r.W + "x" + r.H);
+        var sk = new SizeSnap { Min = 10, Step = 5, On = true, KeepAspect = true };
+        var rh = CanvasMath.Resize(new Box(0, 0, 63, 41), 8, 10, 10, ref sk); var rl = CanvasMath.Resize(new Box(0, 0, 63, 41), -1, 10, 10, ref sk);
+        Check(rh.X == 0 && rh.Y == 0 && rh.W == 63 && rh.H == 41 && rl.X == 0 && rl.Y == 0 && rl.W == 63 && rl.H == 41,
+              "with Shift, a handle outside 0..7 leaves the box as it was", rh.X + "," + rh.Y + " " + rh.W + "x" + rh.H);
+        Check(!CanvasMath.Hits(new Box(0, 0, 10, 10), new Box(10, 0, 5, 5)) && CanvasMath.Hits(new Box(0, 0, 10, 10), new Box(9, 9, 5, 5)), "marquee overlap is strict");
+        var ord = new[] { 0, 1, 2, 3 }; Check(CanvasMath.StepZ(ord, new[] { false, true, false, false }, true) && string.Join("", ord) == "0213", "forward one step");
+        ord = new[] { 0, 1, 2, 3 }; Check(!CanvasMath.StepZ(ord, new[] { false, false, true, true }, true), "blocked by a selected top: no change");
+        ord = new[] { 0, 1, 2, 3 }; CanvasMath.StepZ(ord, new[] { true, false, true, false }, true); Check(string.Join("", ord) == "1032", "each selected one steps past its neighbour");
+        ord = new[] { 0, 1, 2, 3 }; Check(CanvasMath.StepZ(ord, new[] { false, true, false, true }, false) && string.Join("", ord) == "1032", "backward mirrors forward");
+        Check(CanvasMath.ClampZoom(0.1f) == 0.3f && CanvasMath.ClampZoom(9) == 4, "zoom clamps 0.3..4");
+        CanvasMath.ZoomAt(1, 0, 0, 2, 100, 50, out var px, out var py); Check(px == -100 && py == -50, "zooming keeps the point under the pointer");
+        CanvasMath.ZoomAt(8, 0, 0, 4, 100, 0, out px, out py); Check(px == 50 && py == 0, "the current zoom is taken as given, only the new one clamps", px + " " + py);
+        CanvasMath.ZoomAt(0, 0, 0, 2, 100, 50, out px, out py); Check(px == -100 && py == -50, "a current zoom of 0 divides by 1", px + " " + py);
+        CanvasMath.Fit(new Box(0, 0, 900, 390), 1000, 500, 40, out var z, out px, out py);
+        Check(Math.Abs(z - 920f / 900f) < 1e-4 && Math.Abs(px - 40) < 0.01 && Math.Abs(py - (500 - 390 * z) / 2) < 0.01, "fit frames with 40 px padding");
+        CanvasMath.Fit(new Box(0, 0, 0, 0), 1000, 500, 40, out z, out px, out py); Check(z == 1 && !float.IsNaN(px + py), "fitting nothing is finite");
+        Check(CanvasMath.Clamp(9000, 8000) == 8000 && CanvasMath.Clamp(-9000, 8000) == -8000, "positions clamp at the limit");
+
+        // A drag moves every frame against the whole layout: 108 targets. Even rounds start among them and snap on
+        // both axes; odd rounds start out of reach of every line and land on the grid.
+        var all = new Box[108];
+        for (int i = 0; i < all.Length; i++) all[i] = new Box(i * 37 % 900, i * 53 % 390, 40 + i % 3 * 10, 40);
+        var am = new MoveSnap { Targets = all, Count = 108, CentreX = 450, CentreY = 195, Distance = 8, Step = 5, On = true };
+        CanvasMath.Move(new Box(10, 10, 60, 60), 3, 4, ref am, out var ax, out var ay, out var agx, out var agy);   // JIT first
+        long mb = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 100000; i++) {
+            float o = 10 + (i & 1) * 5000;
+            CanvasMath.Move(new Box(o, o, 60, 60), i % 97, i % 89, ref am, out ax, out ay, out agx, out agy);
+        }
+        mb = GC.GetAllocatedBytesForCurrentThread() - mb;
+        Check(mb == 0, "100000 moves over 108 snap targets allocate nothing", mb + " bytes");
     }
 
     // The in-game autotest holds the speed against other mods' per-frame writes.
