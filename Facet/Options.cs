@@ -29,6 +29,13 @@ namespace Facet
         /// row by it, as by Tooltip.
         public string Help { get; set; }
 
+        /// False: the row's writes record nothing in History (its host records the change itself).
+        public bool Undoable { get; set; } = true;
+
+        /// Read when the row records a step; the step stays live while this returns that same
+        /// reference, so an undo after the document was replaced skips it (History.BoundTo).
+        public Func<object> UndoDocument { get; set; }
+
         /// A button row: nothing to read, so the refresher polls it only for EnabledWhen/VisibleWhen.
         internal bool NoRead;
 

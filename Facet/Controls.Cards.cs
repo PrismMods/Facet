@@ -129,7 +129,7 @@ namespace Facet
             VisualElement track = null;
             Control<bool> c = null;
             if (on != null) track = Switch(root, out show, () => c.Set(!c.Value));
-            c = new Control<bool>(root, track, title, on != null ? Tracked(parent, title, o, on) : Bind.To(() => false, null), show, o);
+            c = on != null ? TrackedRow(root, track, parent, title, o, on, show) : new Control<bool>(root, track, title, Bind.To(() => false, null), show, o);
             return c;
         }
 

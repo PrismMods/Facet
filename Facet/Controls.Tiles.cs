@@ -121,7 +121,7 @@ namespace Facet
             };
             var host = Host.For(tile);
             o.Help = null;   // a fixed-height, overflow-hidden tile would clip a help line (TileOptions says so)
-            ctl = new Control<bool>(tile, track, label, Tracked(grid, label, o, on), show, o);
+            ctl = TrackedRow(tile, track, grid, label, o, on, show);
             Action activate = () =>
             {
                 if (o.Switch && o.Open != null) Safe.Run(host, "Open '" + label + "'", o.Open);

@@ -150,7 +150,9 @@ namespace Facet
             Show(v);
         }
 
-        private void Show(T v)
+        /// Show v as the row's value without writing the bind or raising anything: an undo has
+        /// already written the bind, and calls this before Commit.
+        internal void Show(T v)
         {
             Value = v;
             if (_show != null) _show(v);

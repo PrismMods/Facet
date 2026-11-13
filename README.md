@@ -41,7 +41,8 @@ static void Update()
 The getter is re-read on every refresh, so replacing `Cfg` wholesale (a profile switch) shows through.
 The host also owns the game's side of input: skip the game's keys while `Facet.Input.BlocksGameInput`
 or `Facet.Input.HeldThisFrame` (the Escape that just closed a window is still down).
-`Facet.Mod/Gallery.cs` has one of every control, and `Facet.Mod/GalleryParts.cs` one of every 0.2 part.
+`Facet.Mod/Gallery.cs` has one of every control, `Facet.Mod/GalleryParts.cs` one of every 0.2 part, and
+`Facet.Mod/GalleryEditor.cs` the editor parts, a page each.
 
 ## Theming a part
 
@@ -69,6 +70,79 @@ A host's `Language` picks the fonts: Korean (`ko`), Chinese (`zh`) and Japanese 
 OS's CJK font, loaded on first use. Two CJK languages in one process share Han glyph forms: the first one
 loaded wins.
 
+## History
+
+`History` is one undo stack for the whole session, by value: every value row records how to put its change
+back and how to do it again, and the window header's arrows undo and redo. Changes to one key within
+`CoalesceSeconds` (0.9 s) are one step, keeping the first undo and the last redo, so a slider drag is one
+step; a null key never coalesces.
+
+- **Steps.** `History.Step(label, key, valid, translate)` opens a scope: everything recorded until it is
+  disposed (`Record`, row writes, `Snapshot`) is one step under its label and key. An undo runs the parts
+  last-first, a redo first-last, each on its own, so the ones that throw are logged in one line and the others
+  still run. A nested scope joins the outer one and ANDs its `valid` in; an empty scope records nothing. A
+  scope opened while recording is off (inside a snapshot's `change`, or during an undo) records nothing and
+  leaves the outer step's `valid` alone. **Close a scope in the call that opened it**: always `using`, never
+  held across frames or a `yield`. One still open 5 s after it opened is closed by the next record (logged
+  once), and `History.Clear()` abandons one (its later `Dispose` does nothing).
+- **Snapshots.** `History.Snapshot(label, key, capture, restore, change, valid, translate)` captures, runs
+  `change` with recording suppressed, and captures again. Equal captures (`EqualityComparer<T>.Default`)
+  record nothing; otherwise undo restores the first capture and redo the second, with `History.Applying`
+  true. Same-key snapshots coalesce: the first before, the last after. **Captures compare by value**: return a
+  copy or an immutable value, since a list mutated in place equals itself and records nothing. An exception
+  from `capture` or `change` is logged and swallowed (whatever `change` did is still recorded when the
+  captures differ), so do the work that can fail first and only swap in `change`, as the import below does.
+- **Validity.** A step is live while its `valid` returns true. `Undo` and `Redo` skip a stale step (false,
+  or a throw, logged once) and apply the nearest live one below it, and return false when none is live.
+  `CanUndo`, `CanRedo`, `NextUndo`, `NextRedo` and their `…Text` skip stale steps too, so the header never
+  names one. A skipped step stays where it is: once `valid` says true again it is live again.
+  `History.BoundTo(() => doc)` reads the document when it is called (when the step is recorded) and stays
+  true while it returns that same reference. **`BoundTo` and `UndoDocument` compare by reference**: return
+  the document object itself, never an int or a computed string (a fresh box or string is never the same
+  reference, so every step would be stale at once). A document whose getter throws gives a step that is
+  dropped, not kept, and the throw is logged at most once per 10 s. After replacing a document, call
+  `History.Invalidate()`: it raises `Changed`, so headers re-read. `Changed` is not raised when a change only
+  coalesces into the top step and the header would show the same.
+- **Labels.** History is session-wide, so pass your host's translator (the `HostOptions.Translate` you gave
+  your host) as `translate` to `Record`, `Step` and `Snapshot`: the header shows the label through it, and
+  never through another host's table. Rows pass their own host's.
+- **Rows.** The value rows record (`Toggle`, `Slider`, `IntSlider`, `Number`, `Choice`, `Dropdown`, `Text`,
+  `Colour`, `Key`) and so does the switch of a `Tile` or a `PageHeader`; `Undoable` and `UndoDocument` apply
+  to those. `ControlOptions.Undoable = false` makes a row record nothing, for a host that records the change
+  itself. `ControlOptions.UndoDocument` binds each of the row's steps to the document it was made on. An undo
+  or redo of a row's step writes the bind once, shows the value, and raises the row's `Committed` with it:
+  `History.Applying` is true inside the handler, and `Changed` is not raised. It shows and raises `Committed`
+  only while that row is on a panel: a row whose page was removed or whose window closed is left alone (the
+  bind is still written), so work that must follow every undo belongs in the bind's setter, not in `Committed`.
+  A step holds the row's bind, and whatever the bind captures, for as long as History keeps it; never the row.
+
+```csharp
+// One step for a change to many items, live only while Doc is the document it was made on.
+using (History.Step("Move", null, History.BoundTo(() => Doc)))
+    foreach (var it in selected)
+    {
+        float was = it.X, now = was + dx;
+        it.X = now;
+        History.Record("Move", null, () => it.X = was, () => it.X = now);
+    }
+
+// A step that swaps the document: no validity, and its undo brings the old document's steps back.
+// Load first: a throw from Load reaches you, and change only swaps.
+var d = Load(path);
+History.Snapshot("Import", "import", () => Doc, x => Doc = x, () => Doc = d);
+```
+
+### Undo contract
+
+Validity is by reference, so a document must keep its identity:
+
+1. **A restore keeps the document's reference.** It loads into the same object, or puts back the very object
+   it captured, never a copy: a copy would leave every step bound to the original stale.
+2. **Keys survive a restore.** A step that names an item finds it by its key, so an undo that rebuilds the
+   items gives them the keys they had.
+3. **A step that swaps the document passes `valid: null`.** An import or a profile switch replaces the
+   document, so a step bound to it would be stale the moment it was recorded.
+
 ## API in 0.2
 
 | Area | API |
@@ -89,6 +163,7 @@ loaded wins.
 | Rail icons | `NavItem.Icon`, a `Background` drawn left of the entry's title and tinted as the title, hover included (default: none); `Sizes.Icon`, its square size (16) |
 | Cursors | `HostOptions.Cursor`, a host hook asked first to set the OS cursor for a kind (and again every frame while held); false falls back to Facet's drawn cursor |
 | Window | `Window.Scale` is clamped to 0.6-2.5 |
+| Undo | `History.Step`, `History.BoundTo`, `History.Snapshot<T>`, `History.Invalidate`; stale steps are skipped; a null key never coalesces; `ControlOptions.Undoable`, `ControlOptions.UndoDocument`; an undo or redo of a row's step raises its `Committed` while the row is on a panel |
 
 ## Coexistence
 

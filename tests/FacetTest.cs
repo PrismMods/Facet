@@ -305,8 +305,167 @@ static class FacetTest {
         Motion.Speed = float.PositiveInfinity; Check(Motion.Scale(0) == 0 && Motion.Scale(120) == 60000, "an infinite speed is capped, and 0 ms stays 0");
         Motion.Speed = 1f;
         MotionHold();
+        HistorySteps();
 
         Console.WriteLine(_fail == 0 ? "ALL PASS" : _fail + " FAILED");
+    }
+
+    // Grouped steps, snapshots, and steps that go stale with the document they were recorded on.
+    static void HistorySteps() {
+        var clock = History.Clock;
+        History.Clear(); double t = 0; History.Clock = () => t;
+        int a = 0, b = 0;
+        using (History.Step("Pair", "pair")) { a = 1; History.Record("A", "a", () => a = 0, () => a = 1);
+                                               b = 1; History.Record("B", "b", () => b = 0, () => b = 1); }
+        Check(History.NextUndo == "Pair", "a scope records one step under its own label");
+        History.Undo(); Check(a == 0 && b == 0 && !History.CanUndo, "one undo puts both back");
+        History.Redo(); Check(a == 1 && b == 1, "one redo does both again");
+        var log = new List<string>(); History.Clear();
+        using (History.Step("Ord")) { History.Record("1", "k1", () => log.Add("u1"), () => log.Add("r1"));
+                                      History.Record("2", "k2", () => log.Add("u2"), () => log.Add("r2")); }
+        History.Undo(); History.Redo(); Check(string.Join(",", log) == "u2,u1,r1,r2", "undo last-first, redo first-last");
+        History.Clear(); using (History.Step("Empty")) { } Check(!History.CanUndo, "an empty scope records nothing");
+        bool okA = true, okB = true; History.Clear();
+        using (History.Step("Outer", null, () => okA)) using (History.Step("Inner", null, () => okB)) History.Record("x", "x", () => { }, () => { });
+        Check(History.NextUndo == "Outer", "a nested scope joins the outer step");
+        okB = false; Check(!History.CanUndo, "the joined step is stale when either check fails");
+        // stale: a live step under a step bound to a replaced document
+        History.Clear(); int doc = 1, v = 0, w = 7;
+        History.Record("W", "w", () => w = 0, () => w = 7); t += 2;
+        int bound = doc; using (History.Step("Old", "old", () => doc == bound)) { v = 5; History.Record("V", "v", () => v = 0, () => v = 5); }
+        doc = 2;
+        Check(History.NextUndo == "W", "the header never names a stale step");
+        Check(History.Undo() && w == 0 && v == 5, "undo skips the stale step and undoes the next live one");
+        Check(!History.CanUndo && !History.Undo(), "nothing live is left");
+        History.Clear(); using (History.Step("Throws", null, () => { throw new Exception("x"); })) History.Record("y", "y", () => { }, () => { });
+        Check(!History.CanUndo, "a throwing validity check counts as stale");
+        // bound at record time, by reference: a document that comes back brings its steps back
+        History.Clear(); object docA = new object(), docB = new object(), cur = docA; int ea = 0, eb = 0;
+        using (History.Step("EA", "ea", History.BoundTo(() => cur))) { ea = 1; History.Record("a", "a", () => ea = 0, () => ea = 1); }
+        cur = docB; t += 2;
+        using (History.Step("EB", "eb", History.BoundTo(() => cur))) { eb = 1; History.Record("b", "b", () => eb = 0, () => eb = 1); }
+        Check(History.Undo() && eb == 0 && ea == 1 && !History.CanUndo, "only the step on the current document is live");
+        cur = docA; Check(History.NextUndo == "EA" && History.Undo() && ea == 0, "a step whose document comes back is live again");
+        // keyless steps never coalesce
+        History.Clear(); t = 20; int k = 0;
+        using (History.Step("D1")) { k = 1; History.Record("x", "x1", () => k = 0, () => k = 1); }
+        t += 0.1; using (History.Step("D2")) { k = 2; History.Record("x", "x2", () => k = 1, () => k = 2); }
+        History.Undo(); Check(k == 1 && History.CanUndo, "two keyless scopes 0.1 s apart are two steps");
+        // snapshot
+        History.Clear(); var s = new List<int> { 1, 2 }; Func<string> cap = () => string.Join(",", s);
+        Action<string> put = x => { s.Clear(); foreach (var p in x.Split(',')) s.Add(int.Parse(p)); };
+        History.Snapshot("Add", "doc", cap, put, () => { s.Add(3); History.Record("inner", "inner", () => { }, () => { }); });
+        Check(cap() == "1,2,3" && History.NextUndo == "Add", "a snapshot runs the change and records one step");
+        History.Undo(); Check(cap() == "1,2" && !History.CanUndo, "undo restores the before capture; the inner record was suppressed");
+        History.Redo(); Check(cap() == "1,2,3", "redo restores the after capture");
+        History.Clear(); History.Snapshot("None", "doc", cap, put, () => { }); Check(!History.CanUndo, "equal captures record nothing");
+        History.Clear(); t = 10; History.Snapshot("N", "n", cap, put, () => s.Add(4)); t += 0.3; History.Snapshot("N", "n", cap, put, () => s.Add(5));
+        History.Undo(); Check(cap() == "1,2,3" && !History.CanUndo, "coalesced snapshots keep the first before");
+        // a throwing part is logged and the step's other parts still run
+        var hl = new List<string>(); var oldLog = History.Log; History.Log = hl.Add;
+        History.Clear(); int c1 = 1, c2 = 1;
+        using (History.Step("Parts")) { History.Record("1", "p1", () => c1 = 0, () => c1 = 1);
+                                        History.Record("2", "p2", () => { throw new Exception("part"); }, () => { });
+                                        History.Record("3", "p3", () => c2 = 0, () => c2 = 1); }
+        Check(History.Undo() && c1 == 0 && c2 == 0 && hl.Count == 1, "a throwing part is logged and the others still run", string.Join(" | ", hl));
+        // a record never coalesces into a stale top entry
+        History.Clear(); t = 30; bool live = true; int z = 0;
+        using (History.Step("Z", "z", () => live)) { z = 1; History.Record("z", "z", () => z = 0, () => z = 1); }
+        live = false; t += 0.1; z = 2; History.Record("Z", "z", () => z = 1, () => z = 2);
+        Check(History.Undo() && z == 1 && !History.CanUndo, "a same-key record beside a stale top is a step of its own", "z=" + z);
+        // a drag's steps on one document coalesce without chaining a check per frame
+        History.Clear(); t = 40; object dd = new object(); int reads = 0; float drag = 0;
+        Func<object> docf = () => { reads++; return dd; };
+        for (int i = 1; i <= 50; i++) { float was = drag; drag = i; float now = drag; t += 0.01;
+            using (History.Step("Drag", "drag", History.BoundTo(docf))) History.Record("Drag", "drag", () => drag = was, () => drag = now); }
+        reads = 0;
+        Check(History.CanUndo && reads == 1, "coalesced steps on one document keep one validity check", reads + " reads");
+        Check(History.Undo() && drag == 0 && !History.CanUndo, "...and stay one step");
+        // a step opened while recording is off (inside a snapshot's change) leaves the outer step's check alone
+        History.Clear(); t = 60; object imp = new object(), was0 = imp; int bnd = 0;
+        Func<object> impf = () => imp;
+        using (History.Step("Import", "import"))
+            History.Snapshot("Import", "import", impf, x => imp = x, () => { imp = new object();
+                using (History.Step("Row", "row", History.BoundTo(impf))) { bnd = 1; History.Record("Row", "row", () => bnd = 0, () => bnd = 1); } });
+        Check(History.Undo() && ReferenceEquals(imp, was0), "undoing an import puts the old document back");
+        Check(History.CanRedo && History.Redo() && !ReferenceEquals(imp, was0), "...and the import can be redone although its change wrote a row bound to the new document");
+        // steps on a document that cannot be read are dropped, so a long drag never pushes live steps out
+        History.Clear(); t = 70; int lv = 0;
+        History.Record("Live", "live", () => lv = 0, () => lv = 1); lv = 1; t += 2;
+        var bl = new List<string>(); History.Log = bl.Add; Throttle.Reset();
+        Func<object> gone = () => { throw new Exception("gone"); };
+        for (int i = 0; i < History.Limit + 50; i++) { t += 0.01;
+            using (History.Step("Lost", "lost", History.BoundTo(gone))) History.Record("Lost", "lost", () => { }, () => { }); }
+        History.Log = hl.Add;
+        Check(History.NextUndo == "Live" && History.Undo() && lv == 0, "steps on an unreadable document leave the live step below them in place and undoable", History.NextUndo ?? "null");
+        Check(bl.Count == 1 && bl[0].Contains("History.BoundTo"), "...and the unreadable document is logged once", string.Join(" | ", bl));
+        // a drag whose check is false while it runs is still one step: its frames share that check
+        History.Clear(); t = 90; bool open = false; Func<bool> gate = () => open; float g = 0;
+        for (int i = 1; i <= 50; i++) { float was = g; g = i; float now = g; t += 0.01;
+            using (History.Step("Gate", "gate", gate)) History.Record("Gate", "gate", () => g = was, () => g = now); }
+        open = true;
+        Check(History.Undo() && g == 0 && !History.CanUndo, "a stale step takes the next frames that carry its own check", "g=" + g);
+        // the throwing parts of one undo are one log line
+        var tl = new List<string>(); History.Log = tl.Add; History.Clear();
+        using (History.Step("Three")) for (int i = 0; i < 3; i++) { int n = i; History.Record("p", "p" + n, () => { throw new Exception("part " + n); }, () => { }); }
+        History.Undo(); History.Log = hl.Add;
+        Check(tl.Count == 1 && tl[0].Contains("undo Three: 3 parts threw: part 2"), "an undo whose 3 parts throw logs one line", string.Join(" | ", tl));
+        // Clear abandons a scope left open: later records are steps of their own, and its Dispose does nothing
+        History.Clear(); t = 100; int ab = 0;
+        var held = History.Step("Held", "held");
+        History.Clear();
+        ab = 1; History.Record("After", "after", () => ab = 0, () => ab = 1);
+        Check(History.NextUndo == "After", "after Clear, a record is a step of its own, not part of a scope left open", History.NextUndo ?? "null");
+        held.Dispose();
+        Check(History.NextUndo == "After" && History.Undo() && ab == 0 && !History.CanUndo, "...and disposing the abandoned scope later does nothing");
+        // a scope still open 5 s after it opened is closed by the next record, logged once
+        var ol = new List<string>(); History.Log = ol.Add; History.Clear(); t = 200; int lo = 0, nx = 0;
+        var lost = History.Step("Lost scope", "lostscope");
+        lo = 1; History.Record("in", "in", () => lo = 0, () => lo = 1);
+        t += 6; nx = 1; History.Record("Next", "next", () => nx = 0, () => nx = 1);
+        History.Log = hl.Add;
+        Check(History.NextUndo == "Next" && ol.Count == 1 && ol[0].Contains("a history step stayed open: Lost scope"),
+              "a record 5 s after a scope opened closes that scope first, logged once", (History.NextUndo ?? "null") + " / " + string.Join(" | ", ol));
+        Check(History.Undo() && nx == 0 && History.NextUndo == "Lost scope" && History.Undo() && lo == 0, "...and what the scope recorded is still one step under its label");
+        lost.Dispose(); Check(!History.CanUndo && History.CanRedo, "...and disposing it later records nothing and keeps the redo branch");
+        // a drag's coalescing frames allocate nothing inside History, as a bound step or a plain record
+        History.Clear(); t = 300; object ad = new object(); Func<object> adf = () => ad; Action nop = () => { };
+        for (int i = 0; i < 3; i++) { t += 0.01; using (History.Step("A", "alloc", History.BoundTo(adf))) History.Record("A", "alloc", nop, nop); }
+        long ab0 = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 1000; i++) { t += 0.001; using (History.Step("A", "alloc", History.BoundTo(adf))) History.Record("A", "alloc", nop, nop); }
+        ab0 = GC.GetAllocatedBytesForCurrentThread() - ab0;
+        Check(ab0 == 0, "1000 coalescing frames of a document-bound step allocate nothing", ab0 + " bytes");
+        History.Clear(); for (int i = 0; i < 3; i++) { t += 0.01; History.Record("R", "rec", nop, nop); }
+        long ab1 = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 1000; i++) { t += 0.001; History.Record("R", "rec", nop, nop); }
+        ab1 = GC.GetAllocatedBytesForCurrentThread() - ab1;
+        Check(ab1 == 0 && History.Undo() && !History.CanUndo, "1000 coalescing records allocate nothing and stay one step", ab1 + " bytes");
+        // a row's drag frame moves the end of the step it recorded last instead of recording again
+        History.Clear(); t = 400; float rv = 0; var rend = new[] { 1f };
+        Action rredo = () => rv = rend[0];
+        History.Record("Row", "row", () => rv = 0, rredo); rv = 1;
+        t += 0.1; Check(History.Extend("row", null, rredo), "a write that only moves the end of the row's own top step extends it");
+        rend[0] = 2f; rv = 2;
+        Check(!History.Extend("row", null, () => { }) && !History.Extend("other", null, rredo), "...only for that step's own redo and key");
+        t += 2; Check(!History.Extend("row", null, rredo), "...and only within CoalesceSeconds");
+        History.Undo(); Check(rv == 0 && History.Redo() && rv == 2f, "...so the step's undo puts back the first value and its redo the newest");
+        // a step on a document that throws is not kept, and the throw is logged once
+        var gl = new List<string>(); History.Log = gl.Add; Throttle.Reset(); History.Clear(); t = 500;
+        for (int i = 0; i < 3; i++) { t += 2;
+            using (History.Step("Gone", "gone" + i, History.BoundTo(() => { throw new Exception("no doc"); }))) History.Record("x", "x", () => { }, () => { }); }
+        Check(!History.CanUndo && gl.Count == 1 && gl[0].Contains("History.BoundTo: no doc"), "steps on a document that throws are not kept, and the throw is logged once", string.Join(" | ", gl));
+        // three reads of a throwing validity check log once
+        gl.Clear(); History.Clear();
+        using (History.Step("Bad", "bad", () => { throw new Exception("bad check"); })) History.Record("x", "x", () => { }, () => { });
+        bool canBad = History.CanUndo; string nextBad = History.NextUndo; bool didBad = History.Undo();
+        Check(!canBad && nextBad == null && !didBad && gl.Count == 1, "three reads of a throwing validity check log it once", string.Join(" | ", gl));
+        // keyless records never coalesce
+        History.Clear(); t = 600; int kr = 1;
+        History.Record("K", null, () => kr = 0, () => kr = 1);
+        t += 0.1; kr = 2; History.Record("K", null, () => kr = 1, () => kr = 2);
+        Check(History.Undo() && kr == 1 && History.Undo() && kr == 0, "two keyless records 0.1 s apart are two steps", "kr=" + kr);
+        History.Log = hl.Add;
+        History.Log = oldLog; History.Clock = clock; History.Clear();
     }
 
     // The in-game autotest holds the speed against other mods' per-frame writes.

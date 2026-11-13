@@ -144,11 +144,35 @@ it bubbling. Three causes hid behind "scrolling is broken", all found by logging
 ## State and text
 
 - **Undo/redo (`History`) is session-wide and by VALUE.** Every widget records how to put its change
-  back and how to do it again; nothing snapshots a settings object. `History.Applying` must suppress
-  recording while an undo runs, or the widget's own change handler pushes a fresh entry and undo
-  becomes inescapable. Consecutive changes to the same key within `CoalesceSeconds` merge, keeping
-  the FIRST undo and the LAST redo, so a slider drag is one step. `History.AfterApply` is how a
-  panel re-reads what it shows. `History.Clock` is injectable so the offline tests set their own.
+  back and how to do it again. `History.Applying` must suppress recording while an undo runs, or the
+  widget's own change handler pushes a fresh entry and undo becomes inescapable. Consecutive changes to
+  the same non-null key within `CoalesceSeconds` merge, keeping the FIRST undo and the LAST redo, so a
+  slider drag is one step; a null key never merges. `History.AfterApply` is how a panel re-reads what it
+  shows. `History.Clock` is injectable so the offline tests set their own.
+  - **`Step` scopes** group records into one step. Close one in the call that opened it (`using`), never
+    across a frame or a `yield`: one still open 5 s later is force-closed by the next record (logged), and
+    `Clear` abandons it. A scope opened while recording is off (a snapshot's change, an undo) does not AND
+    its `valid` into the outer step: a row written inside an import's change would bind the import to the
+    new document and its undo could never be redone.
+  - **`Snapshot` copies a value** for changes easier to copy than describe. Captures compare by VALUE: a
+    list mutated in place equals itself and records nothing, so capture a copy. `change` runs with recording
+    off, and its exceptions are logged and swallowed: load before, swap inside.
+  - **Validity is by REFERENCE** (`BoundTo`, `UndoDocument`): the getter returns the document object, never
+    an int or a computed string (a new box or string is never the same reference: every step stale at once).
+    Stale steps stay in place and are skipped; a step whose document getter throws is DROPPED, or a drag
+    would push one dead entry a frame and `Limit` would evict the live history. A stale top merges only a
+    step with its very check (one drag on one document).
+  - **An undo raises a row's `Committed` only while the row is on a panel.** Entries reach the row through a
+    relay emptied on `DetachFromPanelEvent`, and no step closure reads the row's options (their tooltip func,
+    menu actions and `VisibleWhen` often capture the row), so History (500 entries, session-long) does not
+    hold a removed row; it still holds whatever the consumer's bind captures. Off a panel the bind is still
+    written, so work every undo needs belongs in the setter. `SectionHistorySteps` checks the row is collected.
+  - **A coalescing frame allocates nothing**: a merge reuses the spare entry and per-depth scopes, a row
+    extends its own top step instead of recording (`History.Extend`), and a merge that leaves the header as
+    it was raises no `Changed`. A lambda capturing a parameter makes its closure at the top of the method on
+    every call, even on paths that never build it: keep such lambdas in helpers off the per-frame path.
+    In game `GC.GetAllocatedBytesForCurrentThread` reads 0 even for code that allocates (2026-11-13), so an
+    in-game probe counts heap growth with the collector paused (`SectionHistorySteps`); offline mono counts exactly.
 - **Window geometry** persists through the Host's `Read`/`Write` (`HostOptions.Read`/`Write`,
   host-supplied delegates: Facet cannot own a file). Hosts flush at most once a second because a drag writes every frame, and keep
   it out of the real settings file: a mid-write crash must not corrupt settings.

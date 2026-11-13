@@ -79,7 +79,7 @@ namespace Facet
             Action<bool> show;
             Control<bool> c = null;
             var track = Switch(right, out show, () => c.Set(!c.Value));
-            c = new Control<bool>(right.parent, track, label, Tracked(parent, label, o, bind), show, o);
+            c = TrackedRow(right.parent, track, parent, label, o, bind, show);
             return c;
         }
 
@@ -118,7 +118,7 @@ namespace Facet
                 Skin.SetFill(fill, s);
                 field.SetValueWithoutNotify(v.ToString(CultureInfo.CurrentCulture));
             };
-            c = new Control<int>(right.parent, s, label, Tracked(parent, label, o, bind), show, o);
+            c = TrackedRow(right.parent, s, parent, label, o, bind, show);
 
             var drag = Watch(s, c);
             Events.On<ChangeEvent<int>>(s, e =>
@@ -158,7 +158,7 @@ namespace Facet
                 buttons.Add(b);
             }
             Action<int> show = v => { for (int j = 0; j < buttons.Count; j++) Paint.Select(buttons[j], j == v); };
-            c = new Control<int>(right.parent, right, label, Tracked(parent, label, o, bind), show, o);
+            c = TrackedRow(right.parent, right, parent, label, o, bind, show);
             return c;
         }
 
@@ -189,7 +189,7 @@ namespace Facet
             arrow.style.unityTextAlign = TextAnchor.MiddleCenter;
             // An item's English key, translated like any label; out of range shows blank.
             Action<int> show = v => Words.Label(b, v >= 0 && v < items.Count ? items[v] : "");
-            c = new Control<int>(right.parent, b, label, Tracked(parent, label, o, bind), show, o);
+            c = TrackedRow(right.parent, b, parent, label, o, bind, show);
             return c;
         }
 
@@ -203,7 +203,7 @@ namespace Facet
             f.style.fontSize = Theme.For(right).Sizes.Small;
             Cursors.Set(f, Cursors.Kind.Text);
             right.Add(f);
-            var c = new Control<string>(right.parent, f, label, Tracked(parent, label, o, bind), v => f.SetValueWithoutNotify(v ?? ""), o);
+            var c = TrackedRow(right.parent, f, parent, label, o, bind, v => f.SetValueWithoutNotify(v ?? ""));
             // On commit, not per keystroke: a setter that persists to disk should not run once per
             // character typed.
             OnTyped(f, text => { if (text != (c.Value ?? "")) c.Set(text); return true; }, null);
@@ -230,7 +230,7 @@ namespace Facet
             Data.Get<Noting>(root).Label = picker.Title;   // a help line goes under the picker's name
             if (o.Id != null) picker.Swatch.name = o.Id + "-swatch";
             AddArrowSlot(root);
-            c = new Control<Color>(root, inner, label, Tracked(parent, label, o, bind), picker.SetColour, o);
+            c = TrackedRow(root, inner, parent, label, o, bind, picker.SetColour);
             // The dot sits in the flow before the picker: level it with the header, not the whole picker.
             var dot = root.Q("changed");
             if (dot != null) dot.style.marginTop = (sz.RowHeight - 6f) / 2f;
@@ -289,7 +289,7 @@ namespace Facet
             Events.On<DetachFromPanelEvent>(b, _ => cancel());
             b.style.marginRight = 0f;
             b.style.minWidth = 110f;
-            c = new Control<string>(right.parent, b, label, Tracked(parent, label, o, bind), v => Draw(b, v), o);
+            c = TrackedRow(right.parent, b, parent, label, o, bind, v => Draw(b, v));
             return c;
         }
 
@@ -460,7 +460,7 @@ namespace Facet
                 if (s != null) { s.SetValueWithoutNotify(scale.ToT(v, min, max)); Skin.SetFill(fill, s); }
                 field.SetValueWithoutNotify(text(v));
             };
-            var c = new Control<float>(right.parent, s ?? (VisualElement)field, label, Tracked(parent, label, o, bind), show, o);
+            var c = TrackedRow(right.parent, s ?? (VisualElement)field, parent, label, o, bind, show);
 
             if (s != null)
             {
@@ -533,27 +533,74 @@ namespace Facet
             return d;
         }
 
+        /* A row whose writes record in History. The undo needs the row (to show and commit what it
+           restored), and the row needs the wrapped bind first, so the wrapper reads it from a box
+           filled once the row exists. The box is a relay, empty while the row is off every panel:
+           History outlives pages, and an entry holding the row would keep its removed page alive. An
+           undo meanwhile restores the value only; a row back on a panel is refilled and its refresher
+           reads the value, and a rebuilt page has new rows. */
+        private static Control<T> TrackedRow<T>(VisualElement root, VisualElement input, VisualElement at, string label, ControlOptions o, Bind<T> bind, Action<T> show)
+        {
+            var row = new Control<T>[1];
+            var c = new Control<T>(root, input, label, Tracked(at, label, o, bind, row), show, o);
+            if (!o.Undoable) return c;
+            Events.On<AttachToPanelEvent>(c.Root, _ => row[0] = c);
+            Events.On<DetachFromPanelEvent>(c.Root, _ => row[0] = null);
+            if (c.Root.panel != null) row[0] = c;
+            return c;
+        }
+
         /* Undo. The bind handed to Control is wrapped so every write — a click, a drag frame, the
-           middle-click reset — records, and an undo writes the raw bind. The previous value is read
+           middle-click reset — records, and an undo writes the raw bind once, then shows the value
+           and raises Committed (Applying is true, Changed is not raised). The previous value is read
            INSIDE the setter, not captured from an enclosing variable, or the undo closure would see
            whatever the value had become by the time it ran. Dragging is one step: History coalesces
-           by key. */
-        private static Bind<T> Tracked<T>(VisualElement at, string label, ControlOptions o, Bind<T> b)
+           by key. With UndoDocument each write is a step bound to the document it was made on.
+
+           A drag frame allocates nothing: when History says the write only moves the end of the
+           step this row recorded last, the row moves what that step's redo restores (end) instead of
+           recording again. The closures are made in record, never in the setter, because a lambda
+           capturing v would make its closure on every write. No lambda here reads o: every step would
+           then hold the options, whose delegates (a tooltip func, a menu action) often capture the row. */
+        private static Bind<T> Tracked<T>(VisualElement at, string label, ControlOptions o, Bind<T> b, Control<T>[] row)
         {
+            if (!o.Undoable) return b;
             var host = Host.For(at);
             var tr = Words.Translator(at);   // fixed at build: the recorder's host, or Facet's own table
             var nav = Nav.Active;
             // Per control, never the label alone: two "Enabled" rows on different pages are two steps.
             string key = host.Name + "/" + (nav != null ? nav.PageTitle : "") + "/" + label + "#" + (o.Id ?? (++Seq).ToString());
             string site = "History '" + label + "'";
+            var document = o.UndoDocument;
+            T prev = default(T);
+            Action read = () => prev = b.Get();
+            T[] end = null;          // what the row's newest step's redo restores
+            Action endRedo = null;   // and that redo
+            Action<T, T, Func<bool>> record = (was, now, valid) =>
+            {
+                var to = end = new[] { now };
+                Action undo = () => { b.Set(was); Applied(row, was); };
+                Action redo = endRedo = () => { b.Set(to[0]); Applied(row, to[0]); };
+                if (document == null) History.Record(label, key, undo, redo, tr);
+                else using (History.Step(label, key, valid, tr)) History.Record(label, key, undo, redo, tr);
+            };
             return Bind.To(b.Get, v =>
             {
-                T prev = default(T);
-                bool read = Safe.Run(host, site, () => { prev = b.Get(); });
-                if (read && !EqualityComparer<T>.Default.Equals(prev, v))
-                    History.Record(label, key, () => b.Set(prev), () => b.Set(v), tr);
+                if (Safe.Run(host, site, read) && !EqualityComparer<T>.Default.Equals(prev, v))
+                {
+                    var valid = document == null ? null : History.BoundTo(document);
+                    if (History.Extend(key, valid, endRedo)) end[0] = v;
+                    else record(prev, v, valid);
+                }
                 b.Set(v);
             });
+        }
+
+        // Show and commit what an undo restored, on the row in the box.
+        private static void Applied<T>(Control<T>[] row, T x)
+        {
+            var c = row[0];
+            if (c != null) { c.Show(x); c.Commit(); }
         }
     }
 }
