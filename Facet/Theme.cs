@@ -34,6 +34,7 @@ namespace Facet
             new Color(0f, 0f, 0f, 0f),                 // Rail
             new Color(1f, 1f, 1f, 0.10f),              // Line (= PanelBorder)
             new Color(1f, 1f, 1f, 0.05f),              // Off (= RowAlt)
+            new Color(1f, 0.35f, 0.6f, 1f),            // Guide
         });
 
         private readonly Color[] _c;

@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -14,6 +16,27 @@ namespace Facet.Mod
         public bool Quiet;
         public float Bound;
         public object Doc = new object();
+
+        /// The Canvas page: twelve boxes, and a second set (Tab 1) that only Find reaches while Tab 0 shows. Their
+        /// steps are bound to BoxDoc; Limit is read when the page builds.
+        public List<GalleryBox> Boxes = GalleryEditor.NewBoxes();
+        public List<GalleryBox> Other = new List<GalleryBox>
+        {
+            new GalleryBox("o1", "Other 1", new Rect(20, 20, 60, 40)),
+            new GalleryBox("o2", "Other 2", new Rect(110, 20, 60, 40)),
+            new GalleryBox("o3", "Other 3", new Rect(200, 20, 60, 40)),
+        };
+        public int Tab;
+        public object BoxDoc = new object();
+        public float Limit = 8000f;
+    }
+
+    /// A plain box on the Canvas page. Not "Box": Core's internal Box struct is visible to this assembly.
+    public sealed class GalleryBox
+    {
+        public string Key, Name;
+        public Rect Rect;
+        public GalleryBox(string key, string name, Rect rect) { Key = key; Name = name; Rect = rect; }
     }
 
     // The Editor window: one Nav page per editor part, on the Gallery's host.
@@ -28,6 +51,11 @@ namespace Facet.Mod
         /// The Undo page's slider and document-bound row, as last built.
         public static Control<float> AmountRow { get; private set; }
         public static Control<float> BoundRow { get; private set; }
+        public static NavItem CanvasItem { get; private set; }
+        /// The Canvas page's canvas, as last built.
+        public static Canvas<GalleryBox> Canvas { get; private set; }
+        /// Snap targets beside the boxes, like another tab's items: drawn dim, never selected.
+        public static readonly Rect[] Ghosts = { new Rect(400, 20, 60, 40), new Rect(400, 100, 60, 40) };
 
         public static Window Open()
         {
@@ -35,7 +63,7 @@ namespace Facet.Mod
             Surface = new Surface(Gallery.Host, "FacetGalleryEditor", Layer.Window);
             _win = new Window(Surface.Root, "editor", "Facet Editor", new Rect(140, 70, 900, 600));
             _win.CloseRequested += _ => Close();
-            Nav = new Nav(_win.Body, new[] { NavItem.Heading(null, UndoItem = new NavItem("Undo", Undo)) });
+            Nav = new Nav(_win.Body, new[] { NavItem.Heading(null, UndoItem = new NavItem("Undo", Undo), CanvasItem = new NavItem("Canvas", CanvasPage)) });
             return _win;
         }
 
@@ -47,11 +75,85 @@ namespace Facet.Mod
             BoundRow = Controls.Slider(p, "Bound", Bind.To(() => Model.Bound, v => Model.Bound = v), o => { o.Id = "ed-bound"; o.UndoDocument = () => Model.Doc; });
         }
 
+        /// Four rows of 60 x 40 boxes, 90 apart across and 80 down; box 12 is 83 wide, a width off the grid.
+        internal static List<GalleryBox> NewBoxes()
+        {
+            var l = new List<GalleryBox>();
+            for (int i = 0; i < 12; i++)
+                l.Add(new GalleryBox("k" + (i + 1), "Box " + (i + 1), new Rect(20 + i % 4 * 90, 20 + i / 4 * 80, i == 11 ? 83 : 60, 40)));
+            return l;
+        }
+
+        static void CanvasPage(VisualElement p)
+        {
+            var drawn = new Dictionary<string, VisualElement>();
+            var c = Canvas = Controls.Canvas<GalleryBox>(p, "Canvas", o =>
+            {
+                o.Id = "ed-canvas";
+                o.Items = () => Model.Tab == 0 ? Model.Boxes : Model.Other;
+                o.Key = b => b.Key;
+                o.Find = k => Model.Boxes.Find(b => b.Key == k) ?? Model.Other.Find(b => b.Key == k);
+                o.GetRect = b => b.Rect;
+                o.SetRect = (b, r) => b.Rect = r;
+                o.Size = new Vector2(900, 390);
+                o.Ghosts = () => Ghosts;
+                o.UndoDocument = () => Model.BoxDoc;
+                o.Limit = Model.Limit;
+            });
+            foreach (var g in Ghosts) Place(Plain(c.Content, new Color(0.6f, 0.6f, 0.65f, 0.25f)), g);
+            Action draw = () => Draw(c, drawn);
+            c.Changed += draw;
+            draw();
+            Ui.Btn("Replace", () =>
+            {
+                // New objects with the same keys, as an import or an undo that rebuilds its document would make.
+                var l = Model.Tab == 0 ? Model.Boxes : Model.Other;
+                for (int i = 0; i < l.Count; i++) l[i] = new GalleryBox(l[i].Key, l[i].Name, l[i].Rect);
+                c.Refresh();
+                draw();
+            }, p).name = "ed-replace";
+        }
+
+        // Every box where its rect says, in the set Items shows; a different set of keys is drawn afresh.
+        static void Draw(Canvas<GalleryBox> c, Dictionary<string, VisualElement> drawn)
+        {
+            var items = Model.Tab == 0 ? Model.Boxes : Model.Other;
+            bool same = drawn.Count == items.Count;
+            for (int i = 0; i < items.Count && same; i++) same = drawn.ContainsKey(items[i].Key);
+            if (!same)
+            {
+                foreach (var e in drawn.Values) e.RemoveFromHierarchy();
+                drawn.Clear();
+                foreach (var b in items)
+                {
+                    var e = drawn[b.Key] = Plain(c.Content, new Color(0.25f, 0.45f, 0.8f, 0.85f));
+                    e.name = "ed-box-" + b.Key;
+                    Ui.Text(b.Name, e).pickingMode = PickingMode.Ignore;
+                }
+            }
+            for (int i = 0; i < items.Count; i++) Place(drawn[items[i].Key], items[i].Rect);
+        }
+
+        static VisualElement Plain(VisualElement content, Color colour)
+        {
+            var e = new VisualElement { pickingMode = PickingMode.Ignore };
+            e.style.position = Position.Absolute;
+            e.style.backgroundColor = colour;
+            content.Add(e);
+            return e;
+        }
+
+        static void Place(VisualElement e, Rect r)
+        {
+            e.style.left = r.x; e.style.top = r.y;
+            e.style.width = r.width; e.style.height = r.height;
+        }
+
         public static void Close()
         {
             if (Surface == null) return;
             Surface.Dispose();
-            Surface = null; Nav = null; _win = null; AmountRow = null; BoundRow = null;
+            Surface = null; Nav = null; _win = null; AmountRow = null; BoundRow = null; Canvas = null;
         }
     }
 }

@@ -20,9 +20,11 @@ namespace Facet
        is a web convention rather than a desktop one. */
     public static class Cursors
     {
-        public enum Kind { Default, ResizeHorizontal, ResizeCorner, Text }
+        /// Appended only (a mod built against an earlier Facet passes them by number). ResizeCorner points top-left to
+        /// bottom-right, ResizeCornerNESW top-right to bottom-left; Move is the four-way arrow over a canvas item.
+        public enum Kind { Default, ResizeHorizontal, ResizeCorner, Text, Move, ResizeVertical, ResizeCornerNESW }
 
-        private static Texture2D _horizontal, _corner, _text;
+        private static Texture2D _horizontal, _corner, _text, _move, _vertical, _cornerNesw;
         private static Kind _current = Kind.Default;
         private static bool _drawn;   // a drawn texture is set, so a clear has to unset it
 
@@ -38,25 +40,37 @@ namespace Facet
            an OS cursor set from outside the engine is reset by the engine on the next pointer move. */
         internal static void Set(VisualElement e, Func<Kind> kind)
         {
+            var show = Follow(e);
+            Events.On<MouseEnterEvent>(e, _ => show(kind()));
+        }
+
+        /* A cursor that changes while the pointer moves over e (a canvas: a handle, an item, empty stage). The
+           returned show(kind) swaps when the kind differs from the one shown; leaving e or its panel clears it. */
+        internal static Action<Kind> Follow(VisualElement e)
+        {
             IVisualElementScheduledItem held = null;
             Kind now = Kind.Default;
             Action reapply = () => { if (_current == now && !_drawn) Native(Host.For(e), now); };
-            Events.On<MouseEnterEvent>(e, _ =>
+            Action<Kind> show = k =>
             {
-                now = kind();
-                if (!Apply(now, Host.For(e)) || now == Kind.Default) return;
+                if (k == now) return;
+                now = k;
+                if (held != null) held.Pause();
+                if (!Apply(k, Host.For(e)) || k == Kind.Default) return;
                 if (held == null) held = e.schedule.Execute(reapply).Every(0);
                 else held.Resume();
-            });
-            Action<EventBase> clear = _ =>
+            };
+            Action clear = () =>
             {
+                now = Kind.Default;
                 if (held != null) held.Pause();
                 Apply(Kind.Default, Host.For(e));
             };
-            Events.On<MouseLeaveEvent>(e, _ => clear(_));
+            Events.On<MouseLeaveEvent>(e, _ => clear());
             // A panel can be hidden with the pointer still over it, which would otherwise strand
             // the cursor in whatever shape it last took.
-            Events.On<DetachFromPanelEvent>(e, _ => clear(_));
+            Events.On<DetachFromPanelEvent>(e, _ => clear());
+            return show;
         }
 
         /// Swap to `kind` (Default: the system arrow) with Facet's drawn cursors; no host hook is asked.
@@ -104,6 +118,15 @@ namespace Facet
                     case Kind.Text:
                         UnityEngine.Cursor.SetCursor(TextBeam(), new Vector2(11f, 11f), CursorMode.Auto);
                         break;
+                    case Kind.Move:
+                        UnityEngine.Cursor.SetCursor(FourWay(), new Vector2(11f, 11f), CursorMode.Auto);
+                        break;
+                    case Kind.ResizeVertical:
+                        UnityEngine.Cursor.SetCursor(Vertical(), new Vector2(11f, 11f), CursorMode.Auto);
+                        break;
+                    case Kind.ResizeCornerNESW:
+                        UnityEngine.Cursor.SetCursor(CornerNesw(), new Vector2(11f, 11f), CursorMode.Auto);
+                        break;
                     default:
                         UnityEngine.Cursor.SetCursor(null, Vector2.zero, CursorMode.Auto);
                         break;
@@ -145,6 +168,56 @@ namespace Facet
                 return false;
             });
             return _corner;
+        }
+
+        private static Texture2D Vertical()
+        {
+            if (_vertical != null) return _vertical;
+            _vertical = Draw((x, y) =>
+            {
+                int cx = S / 2;
+                if (x == cx && y >= 4 && y <= S - 5) return true;              // shaft
+                int d = Mathf.Abs(x - cx);
+                if (d <= 4 && (y == 4 + d || y == S - 5 - d)) return true;     // heads
+                return false;
+            });
+            return _vertical;
+        }
+
+        // The corner arrow mirrored: top-right to bottom-left.
+        private static Texture2D CornerNesw()
+        {
+            if (_cornerNesw != null) return _cornerNesw;
+            _cornerNesw = Draw((x, y) =>
+            {
+                int m = S - 1 - x;
+                if (m == y && m >= 5 && m <= S - 6) return true;
+                for (int i = 0; i <= 4; i++)
+                {
+                    if (m == 5 && y == 5 + i) return true;
+                    if (y == 5 && m == 5 + i) return true;
+                    if (m == S - 6 && y == S - 6 - i) return true;
+                    if (y == S - 6 && m == S - 6 - i) return true;
+                }
+                return false;
+            });
+            return _cornerNesw;
+        }
+
+        // Both shafts, with shorter heads at all four ends.
+        private static Texture2D FourWay()
+        {
+            if (_move != null) return _move;
+            _move = Draw((x, y) =>
+            {
+                int c = S / 2;
+                if ((y == c || x == c) && x >= 3 && x <= S - 4 && y >= 3 && y <= S - 4) return true;
+                int dy = Mathf.Abs(y - c), dx = Mathf.Abs(x - c);
+                if (dy <= 3 && (x == 3 + dy || x == S - 4 - dy)) return true;
+                if (dx <= 3 && (y == 3 + dx || y == S - 4 - dx)) return true;
+                return false;
+            });
+            return _move;
         }
 
         private static Texture2D TextBeam()

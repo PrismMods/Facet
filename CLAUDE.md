@@ -95,7 +95,11 @@ theme values live in code (`Theme`).
   (a resize edge, a text field). **A host can set the OS cursor instead** (`HostOptions.Cursor`, a
   `Func<Cursors.Kind, bool>`): it is asked first on every enter and clear, and again every frame while
   a kind is held, because the game or another mod may set its own cursor in between; returning false
-  falls back to the drawn one. Facet ships no OS cursor code of its own.
+  falls back to the drawn one. Facet ships no OS cursor code of its own. **A hook must return false for a kind
+  it does not know:** `Kind` is appended to within a minor (0.2 added `Move`, `ResizeVertical`,
+  `ResizeCornerNESW`), and a hook that claims every kind shows its own arrow for the new ones.
+  A drawn shape is written y down and flipped into the texture, whose rows run bottom-up: unflipped, a
+  diagonal came out mirrored (the top-left corner arrow pointed top-right).
 
 ## Wheel and scrolling
 
@@ -256,6 +260,22 @@ it bubbling. Three causes hid behind "scrolling is broken", all found by logging
   `AddArrowSlot` reads, so a card inside that container keeps its own decision). A card of plain rows
   reserves none. A new row control joins the row-edges autotest (`SectionRowEdges`); `SectionArrowSlot`
   pins the slot.
+- **The canvas's chrome is ONE painted element** (`generateVisualContent` over `Content`): outlines, handles,
+  guides, the marquee and the grid, whatever the selection's size; the zoom badge is a `Label` inside it. Never one
+  element per item or per handle: the stage keeps two children with 1 or 12 selected (`SectionCanvasEdit` checks
+  it). It paints in `Theme.For(chrome)`'s roles when it paints (roles only, never `Sizes`/`Looks`, which copy) and
+  `Paint.Repaints` marks it, so `Paint.Apply` repaints it when its surface's theme is replaced or recoloured; a
+  theme captured at attach kept the old colours. A gesture reads the `Sizes` captured when the canvas built (its
+  hairlines are `Sizes.Line`), never `Theme.For` on a move. The pane is a `Controls.Preview` given the row options
+  (`Help` is not shown). A history part holds keys and rects (with no `Key`, the items), the `Items`, `Key`, `Find`
+  and `SetRect` delegates and the `UndoDocument` getter, and re-finds each item by `Find`, then `Key` in `Items()`,
+  then reference, so an undo reaches items the canvas was rebuilt over; no step closure reads the options or the
+  canvas, so History keeps only what those delegates capture. **An undo commits only a canvas on a panel** (`CanvasAll.Live`), INSIDE the apply like a row's
+  relay: the part that wrote the rects has each canvas of its name re-read and raise `Changed`, then `Committed`,
+  with `History.Applying` true; every other canvas re-reads and raises `Changed` after the apply. Off a panel the
+  undo only writes through `SetRect`, so work every undo needs belongs there (`SectionCanvasEdit` checks an undo
+  with the page switched away). **A lost pointer capture ends a gesture like a release** (one step, one
+  `Committed`), as does the surface hiding: the model was written every frame.
 - **A button-only row is found by its button.** An `Action` or `Danger` row with no label is indexed
   under the button's text (English key and as shown), with its tooltip.
 - **The compact rail** (`Nav.Compact`) is an icon strip as wide as an entry's padding, its icon and the

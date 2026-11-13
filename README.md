@@ -158,6 +158,55 @@ The canvas's geometry is plain BCL code (`Facet/Core/CanvasMath.cs`, tested offl
   grid. On an edge the other side grows about the box's centre line rather than from a fixed top or left edge;
   its position stays whole, so it is centred to within half a unit of that line.
 
+`Controls.Canvas<T>(parent, label, o => …)` puts the consumer's items on a stage inside a `Controls.Preview` pane
+(`o.Pane` configures it) and lets the user select, move and resize them. Rects are canvas units, y down; Facet
+reads and writes them only through `GetRect` and `SetRect`, and every consumer delegate runs under `Safe`.
+
+- **Who draws what.** The consumer draws its items into `Canvas.Content`, a layer in canvas units that the zoom
+  scales and the pan moves; it never takes the pointer. Facet paints the chrome over it in stage px, so it keeps
+  its size at any zoom: the selection outlines, the eight handles of a lone resizable item, the snap guides
+  (`Role.Guide`), the marquee and the grid (`ShowGrid`), with `Sizes.Line` hairlines, in the theme the canvas wears
+  when it paints (replacing or recolouring that theme repaints it, no rebuild). The zoom badge is a `Label` over
+  them. `Stage` takes the pointer, in stage px; `Root` is the pane.
+- **The pane** is a `Controls.Preview`: `Id` names its stage (`Id-pane` the pane), and
+  `VisibleWhen`, `EnabledWhen`, `Tooltip`/`TooltipText` and `ContextMenu` act on the pane, as on a preview's.
+  `EnabledWhen` false also stops the stage taking the pointer. `Help` is not shown.
+- **Selection.** A click selects the topmost selectable item, and Ctrl, Cmd or Shift toggles it in or out. A drag
+  on empty stage draws a marquee (a modifier adds to the selection); a click there clears it. `Selection`,
+  `Primary` (the item a drag snaps by), `SelectionVersion`, `Select`, `SelectAll`, `Clear`.
+- **Events.** `SelectionChanged` when the selection changes, including when a `Refresh` maps it onto new objects
+  with the same keys. `Changed` on every frame of a drag: redraw the items from their rects. `Committed` at the
+  end of a gesture that changed something: save. A gesture with no net change records and commits nothing. After
+  an undo or redo see Undo: `Changed` comes once on every canvas on a panel, `Committed` only on the step's.
+- **Undo.** A gesture is one step ("Move" or "Resize"), bound to `UndoDocument` when it is set. It holds each
+  changed item's key with its rect before and after, and finds the item again through `Find`, else by `Key` in
+  `Items()`, else by reference, so an undo still reaches an item after `Items()` switched to another set or the
+  page was rebuilt. After an undo or redo, each canvas on a panel whose name (`Id`, else label) is the step's
+  `Refresh`es and raises `Changed`, then `Committed`, once each, inside the apply: `History.Applying` is true
+  there, as in a row's undo `Committed`, so a handler that also saves from `History.AfterApply` skips the save
+  while `Applying`. Every other canvas on a panel `Refresh`es and raises `Changed` once after the apply
+  (`Applying` false). Off a panel (its page switched away, its window closed) no canvas re-reads or commits: the
+  undo only writes each rect through `SetRect`, with `History.Applying` true. So work that must follow every
+  undo (marking the document for saving, updating what the rects drive) belongs in `SetRect` under
+  `History.Applying`, not only in `Committed`. `Undoable = false` records no steps; the events still fire.
+- **What History keeps.** A canvas step holds each changed item's key and rects (with no `Key`, the item itself),
+  the `Items`, `Key`, `Find` and `SetRect` delegates and the `UndoDocument` getter, and whatever those capture, for
+  as long as History keeps the step (500 steps, session-long); never the canvas, its page or its options. Keep
+  those delegates on the document, not on the page.
+- **`Refresh()`** re-reads `Items` and the rects, keeps the selection by key (now as the new objects, with one
+  `SelectionChanged` if that changed it) and redraws the chrome. Call it after changing the items or their rects
+  outside the canvas; every press calls it first.
+- **`Ghosts`** is only for the companion tab: rects that are snap targets, never hit, selected or moved. A hidden
+  item is not a ghost: keep it in `Items` and draw it dim, so it can still be selected and shown again.
+- **Cursors.** Over a canvas the host's cursor hook (`HostOptions.Cursor`) is asked for `Move` over a movable
+  item and `ResizeHorizontal`, `ResizeVertical`, `ResizeCorner` or `ResizeCornerNESW` over a handle. A hook must
+  return false for a kind it does not know, so Facet draws that one: `Cursors.Kind` is appended to within a minor,
+  and a hook that claims every kind shows its own arrow for the new ones.
+- **A lost pointer capture commits.** Losing the capture, or the canvas's window hiding, ends a gesture as a
+  release does: one step and one `Committed`. A canvas drag has written every frame's rect to the model already,
+  so the loss keeps what the user saw. A drag that changes nothing until its drop (a list reorder) cancels on a
+  lost capture instead: there is nothing on screen yet to keep.
+
 ## API in 0.2
 
 | Area | API |
@@ -165,7 +214,7 @@ The canvas's geometry is plain BCL code (`Facet/Core/CanvasMath.cs`, tested offl
 | Animation | `Anim.Speed` (shared); `Anim.Hover`; `Anim.SmoothScroll` (shared, default off): a wheel step glides there (OutCirc, 200 ms at speed 1) instead of jumping |
 | Wheel | `Input.TickWheel`, once per frame; `HostOptions.WheelSpeed`, panel px per wheel unit, linear on the polled and the panel's own wheel path (default: Facet's own steps) |
 | Fonts | `Fonts.Has`; zh and ja |
-| Theme | `Role.Rail/Line/Off`; `Theme.Sizes`, `Theme.Looks`, `Theme.Notify()`; `Sizes` (with `ControlPad`, `FieldPad`, `ItemHeight`, `RowPadY` above and below a row's text, `TabGap` under a tab row); `Looks` (with `Group`, `Stage`); `Look.SelectedBorder`, `Look.Copy()` |
+| Theme | `Role.Rail/Line/Off/Guide`; `Theme.Sizes`, `Theme.Looks`, `Theme.Notify()`; `Sizes` (with `ControlPad`, `FieldPad`, `ItemHeight`, `RowPadY` above and below a row's text, `TabGap` under a tab row); `Looks` (with `Group`, `Stage`); `Look.SelectedBorder`, `Look.Copy()` |
 | Primitives | `Ui.Caps`; `Window.TitleBarLeft`; `Facet.Tokens` removed |
 | Cards | `ControlOptions.Help`; `Controls.Card`/`CardOptions` (`Actions`; `Note`, an English key, or `NoteText`, re-read and untranslated); `Controls.Advanced`; `Form.Build(…, FormOptions)`; `Field.Help`/`Advanced` |
 | Page layout | `Controls.PageHeader`/`PageHeaderOptions`; `Controls.Columns`/`ColumnsOptions` (with `StackBelow`) |
@@ -176,9 +225,10 @@ The canvas's geometry is plain BCL code (`Facet/Core/CanvasMath.cs`, tested offl
 | Search | `Nav.AddSearchSource` with `SearchIndex.Entry` (`Label`, `Where`, `Open`, `Tip`; `Label` and `Where` are English keys, translated) for pages Facet did not build; `NavItem.OnHit` |
 | Sidebar | Nav draws a rule between groups; a skin gives `Looks.Rule` a colour (on Theme.Dark it is invisible); `Nav.Compact`, an icon strip that widens over the page after a 0.1 s hover; `Nav.CompactButton`, a button at the top of the rail that flips it and raises `Nav.OnCompactChanged`; `Nav.Collapsible` (default true), false for a host whose setting decides whether the rail shows: the handle stops at `MinRail`, `ToggleRail` never shuts the rail, and a shut rail opens |
 | Rail icons | `NavItem.Icon`, a `Background` drawn left of the entry's title and tinted as the title, hover included (default: none); `Sizes.Icon`, its square size (16) |
-| Cursors | `HostOptions.Cursor`, a host hook asked first to set the OS cursor for a kind (and again every frame while held); false falls back to Facet's drawn cursor |
+| Cursors | `HostOptions.Cursor`, a host hook asked first to set the OS cursor for a kind (and again every frame while held); false falls back to Facet's drawn cursor, so a hook returns false for a kind it does not know; `Cursors.Kind.Move`, `ResizeVertical`, `ResizeCornerNESW` (appended) |
+| Canvas | `Controls.Canvas<T>`; `CanvasOptions<T>`: `Items`, `Key`, `Find`, `GetRect`, `SetRect`, `Size`, `Selectable`, `Movable`, `Resizable`, `Ghosts`, `Grid`, `SnapDistance`, `SizeSnap`, `MinSize`, `Limit`, `Snap`, `ShowGrid`, `ShowGuides`, `Pane`, and from `ControlOptions` `Id`, `VisibleWhen`, `EnabledWhen`, `Tooltip`/`TooltipText`, `ContextMenu` (on the pane), `Undoable`, `UndoDocument` (no `Help`); `Canvas<T>`: `Root`, `Stage`, `Content`, `Selection`, `Primary`, `SelectionVersion`, `Select`, `SelectAll`, `Clear`, `Refresh`, `Snap`, `ShowGrid`, `ShowGuides`, `SelectionChanged` (also on a `Refresh` remap), `Changed`, `Committed`; `PreviewOptions.MinHeight`, `MaxHeight` (0: none); `Sizes.CanvasHandle`, `CanvasEdgeLong`, `CanvasEdgeShort`, `CanvasHit`, `CanvasOutline`; `Role.Guide` |
 | Window | `Window.Scale` is clamped to 0.6-2.5 |
-| Undo | `History.Step`, `History.BoundTo`, `History.Snapshot<T>`, `History.Invalidate`; stale steps are skipped; a null key never coalesces; `ControlOptions.Undoable`, `ControlOptions.UndoDocument`; an undo or redo of a row's step raises its `Committed` while the row is on a panel |
+| Undo | `History.Step`, `History.BoundTo`, `History.Snapshot<T>`, `History.Invalidate`; stale steps are skipped; a null key never coalesces; `ControlOptions.Undoable`, `ControlOptions.UndoDocument`; an undo or redo of a row's or canvas's step raises its `Committed` inside the apply (`History.Applying` true) while it is on a panel, and otherwise only writes the bind or `SetRect` |
 
 ## Coexistence
 

@@ -47,6 +47,10 @@ namespace Facet
             foreach (var s in Ui.Stack) if ((int)s.Layer == layer && s.Order >= 0f) s.Order = f(s.Order);
         }
 
+        /// The cancel of the drag in progress (a canvas move or resize), null when none: it puts the start back and
+        /// records nothing. Set by whoever starts the drag and cleared when it ends.
+        internal static Action Gesture;
+
         public static void HoldThisFrame() => _holdFrame[0] = Time.frameCount;
 
         public static bool HeldThisFrame => Time.frameCount == _holdFrame[0];

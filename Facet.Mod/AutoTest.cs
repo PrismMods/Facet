@@ -31,16 +31,30 @@ namespace Facet.Mod
             return r == null ? 0f : r.layout.width / Screen.width;
         }
 
-        // via: an element on the panel to send to, when it is not the Gallery's.
-        void Pointer(EventType type, Vector2 screen, int button = 0, VisualElement via = null)
+        // via: an element on the panel to send to, when it is not the Gallery's. mods: the keys held (Ctrl, Shift, Alt).
+        void Pointer(EventType type, Vector2 screen, int button = 0, VisualElement via = null, EventModifiers mods = EventModifiers.None)
         {
             float k = K();
-            var ev = new Event { type = type, button = button, clickCount = 1,
-                mousePosition = new Vector2(screen.x * k, (Screen.height - screen.y) * k) };
+            PointerAt(type, new Vector2(screen.x * k, (Screen.height - screen.y) * k), via ?? Root, button, mods);
+        }
+
+        // The same at a panel position on root's panel, for a panel whose scale is not the Gallery's.
+        static void PointerAt(EventType type, Vector2 panel, VisualElement root, int button = 0, EventModifiers mods = EventModifiers.None)
+        {
+            var ev = new Event { type = type, button = button, clickCount = 1, mousePosition = panel, modifiers = mods };
             EventBase e = type == EventType.MouseDown ? PointerDownEvent.GetPooled(ev)
                         : type == EventType.MouseUp ? PointerUpEvent.GetPooled(ev)
                         : (EventBase)PointerMoveEvent.GetPooled(ev);
-            using (e) (via ?? Root).panel.visualTree.SendEvent(e);
+            using (e) root.panel.visualTree.SendEvent(e);
+        }
+
+        /* Ends the mouse's pointer capture on root's panel with no release event, as when the capture is lost. The
+           panel sends the capture-out before it dispatches the next pointer event, so a move at `panel` follows. */
+        static void ReleasePointer(VisualElement root, Vector2 panel)
+        {
+            var held = root.panel.GetCapturingElement(PointerId.mousePointerId) as VisualElement;
+            if (held != null) held.ReleasePointer(PointerId.mousePointerId);
+            PointerAt(EventType.MouseMove, panel, root);
         }
 
         IEnumerator Drag(Vector2 from, Vector2 to, int steps = 6, VisualElement via = null)
@@ -137,6 +151,7 @@ namespace Facet.Mod
                 yield return Run("SectionRailButton", SectionRailButton());
                 yield return Run("SectionRailCollapsible", SectionRailCollapsible());
                 yield return Run("SectionSmoothScroll", SectionSmoothScroll());
+                yield return Run("SectionCanvasEdit", SectionCanvasEdit());
                 yield return Run("SectionClose", SectionClose());
                 // Later tasks: yield return Run("Section...", Section...());
             }
@@ -363,7 +378,7 @@ namespace Facet.Mod
         IEnumerator SectionNoStale()
         {
             // No wait for the warm-up window: its Nav has its own index, so it cannot wipe this one.
-            Check(Enum.GetValues(typeof(Role)).Length == 15, "IsRole checks all 15 roles (Rail, Line and Off appended)");
+            Check(Enum.GetValues(typeof(Role)).Length == 16, "IsRole checks all 16 roles (Rail, Line, Off and Guide appended)");
             var t = new Theme();
             var h = Host.Create("NoStale", o => { o.Log = m => Main.Log("[nostale] " + m); o.Theme = t; });
             var s = new Surface(h, "FacetNoStale", Layer.Window);

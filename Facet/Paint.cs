@@ -16,7 +16,7 @@ namespace Facet
         {
             public Role? Bg, Fg, Border, Tint;
             public Look Look;
-            public bool Hover, Pressed, Focus, Selected, Disabled, Hooked, Waiting, Flashing;
+            public bool Hover, Pressed, Focus, Selected, Disabled, Hooked, Waiting, Flashing, Mesh;
             public int Fade = -1;   // the transition duration (ms) set on the element; -1 = none yet
         }
 
@@ -41,6 +41,9 @@ namespace Facet
         /// on it afterwards (style.color, a border colour) survives re-themes, hover, focus and
         /// re-attach. What is drawn now stays until you overwrite it. Paint.Bg/Fg/Look start over.
         public static void Forget(VisualElement e) { if (e != null) Data.Clear<State>(e); }
+
+        /// An element that paints its own mesh (generateVisualContent) in its theme's roles: every re-theme repaints it.
+        internal static void Repaints(VisualElement e) { if (e != null) Data.Get<State>(e).Mesh = true; }
 
         /// The tint of the element's background image (a text field's caret).
         internal static void Tint(VisualElement e, Role r) { if (e != null) { var s = Data.Get<State>(e); s.Tint = r; Draw(e, s); } }
@@ -116,7 +119,7 @@ namespace Facet
         {
             t = Theme.Own(e) ?? t;
             var s = Data.Find<State>(e);
-            if (s != null) Draw(e, s, t);
+            if (s != null) { Draw(e, s, t); if (s.Mesh) e.MarkDirtyRepaint(); }
             var h = e.hierarchy;
             for (int i = 0; i < h.childCount; i++) Walk(h[i], t);
         }

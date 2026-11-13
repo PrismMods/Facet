@@ -26,6 +26,10 @@ namespace Facet
         /// Stage width / height.
         public float Aspect { get; set; } = 16f / 9f;
 
+        /// Bounds on the stage's height, applied after Aspect (0: none).
+        public float MinHeight { get; set; }
+        public float MaxHeight { get; set; }
+
         /// Tick period in ms; 0 = every frame.
         public int EveryMs { get; set; }
 
@@ -136,10 +140,12 @@ namespace Facet
             Ui.SetRadius(stage, sz.Radius);
             stage.style.overflow = Overflow.Hidden;
             stage.style.alignSelf = Align.Stretch;
-            float aspect = o.Aspect > 0f ? o.Aspect : 16f / 9f;
+            float aspect = o.Aspect > 0f ? o.Aspect : 16f / 9f, minH = o.MinHeight, maxH = o.MaxHeight;
             Events.On<GeometryChangedEvent>(stage, _ =>
             {
                 float h = stage.layout.width / aspect;
+                if (minH > 0f && h < minH) h = minH;
+                if (maxH > 0f && h > maxH) h = maxH;
                 if (stage.layout.width > 0f && Mathf.Abs(h - stage.layout.height) > 0.5f) stage.style.height = h;
             });
             if (o.Note != null) { var n = Ui.Muted(o.Note, root); n.style.marginTop = sz.Gap / 2f; }

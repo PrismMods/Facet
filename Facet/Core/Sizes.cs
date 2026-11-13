@@ -30,6 +30,9 @@ namespace Facet
         public float RowPadY = 0f;
         /// Space under a tab row, before its page.
         public float TabGap = 8f;
+        /// A canvas's selection chrome: a corner handle (square), an edge handle's long and short sides, the square a
+        /// handle answers the pointer in, and the outline drawn outside each selected item.
+        public float CanvasHandle = 10f, CanvasEdgeLong = 18f, CanvasEdgeShort = 8f, CanvasHit = 18f, CanvasOutline = 3f;
 
         public Sizes Copy() { return (Sizes)MemberwiseClone(); }
     }

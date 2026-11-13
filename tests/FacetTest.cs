@@ -307,6 +307,7 @@ static class FacetTest {
         MotionHold();
         HistorySteps();
         CanvasGeometry();
+        GuideColour();
 
         Console.WriteLine(_fail == 0 ? "ALL PASS" : _fail + " FAILED");
     }
@@ -554,6 +555,15 @@ static class FacetTest {
         }
         mb = GC.GetAllocatedBytesForCurrentThread() - mb;
         Check(mb == 0, "100000 moves over 108 snap targets allocate nothing", mb + " bytes");
+    }
+
+    // A derived scheme has an entry for every role, and the canvas's guide shows on it. Rail stays clear on purpose.
+    static void GuideColour() {
+        var c = Palette.FromAccent(0.9f, 0.2f, 0.2f, 1f);
+        Check(c.Length == Enum.GetValues(typeof(Role)).Length && Array.TrueForAll(c, x => x != null && x.Length == 4),
+              "every role has a colour in FromAccent", c.Length.ToString());
+        var g = c[(int)Role.Guide];
+        Check(g != null && g[3] > 0f, "Role.Guide has alpha > 0 in FromAccent", Show(g));
     }
 
     // The in-game autotest holds the speed against other mods' per-frame writes.

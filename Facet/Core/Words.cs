@@ -67,6 +67,8 @@ namespace Facet
             { "Advanced", "고급" },
             { "Collapse sidebar", "사이드바 접기" },
             { "Expand sidebar", "사이드바 펼치기" },
+            { "Move", "이동" },
+            { "Resize", "크기 조절" },
         };
     }
 }

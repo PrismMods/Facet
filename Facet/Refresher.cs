@@ -17,8 +17,9 @@ namespace Facet
     {
         private static readonly List<Refresher> _all = new List<Refresher>();
 
-        // Undo and redo re-read every visible surface at once, through History's own hook (Ruling R14).
-        static Refresher() { History.RefreshAll = All; }
+        // Undo and redo re-read every visible surface at once, through History's own hook (Ruling R14). Added to,
+        // not assigned: every canvas on a panel re-reads through the same hook.
+        static Refresher() { History.RefreshAll += All; }
 
         // Each control's refresh with the Safe site it logs under, built once by the control.
         private readonly List<KeyValuePair<string, Action>> _controls = new List<KeyValuePair<string, Action>>();
