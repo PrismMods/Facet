@@ -14,12 +14,14 @@ namespace Facet
             return key != null;
         }
 
-        /// As a menu shows it: ⌘⇧⌥ and the key on a Mac, else Ctrl+Shift+Alt+Key. Text that does not
-        /// parse shows as given.
+        /// As a menu shows it: ⌘⇧⌥ and the key on a Mac, else Ctrl+Shift+Alt+Key. A key no menu names (a key
+        /// row's chord: "Ctrl+Alpha1", "Shift+Space") keeps its modifiers that way too, with AlphaN shown as N.
+        /// Text whose modifiers do not parse shows as given.
         internal static string Display(string s, bool mac)
         {
             bool c, sh, a; string written;
-            if (!Split(s, out c, out sh, out a, out written) || Name(written) == null) return s ?? "";
+            if (!Split(s, out c, out sh, out a, out written)) return s ?? "";
+            if (written.Length == 6 && written.StartsWith("Alpha", System.StringComparison.Ordinal) && char.IsDigit(written[5])) written = written.Substring(5);
             written = char.ToUpperInvariant(written[0]) + written.Substring(1);
             return mac ? (c ? "⌘" : "") + (sh ? "⇧" : "") + (a ? "⌥" : "") + written
                        : (c ? "Ctrl+" : "") + (sh ? "Shift+" : "") + (a ? "Alt+" : "") + written;

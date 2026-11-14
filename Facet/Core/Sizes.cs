@@ -35,6 +35,8 @@ namespace Facet
         public float CanvasHandle = 10f, CanvasEdgeLong = 18f, CanvasEdgeShort = 8f, CanvasHit = 18f, CanvasOutline = 3f;
         /// A dialog card's narrowest and widest (Popup.Confirm); its text wraps within the widest.
         public float DialogMinWidth = 280f, DialogMaxWidth = 420f;
+        /// A card in a card grid (Controls.CardGrid), its thumbnail included.
+        public float CardWidth = 168f;
 
         public Sizes Copy() { return (Sizes)MemberwiseClone(); }
     }

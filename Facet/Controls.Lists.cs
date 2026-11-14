@@ -433,6 +433,14 @@ namespace Facet
         public static Reorder<T> Reorder<T>(VisualElement parent, Action<ReorderOptions<T>> configure) where T : class
             => new Reorder<T>(parent, ControlOptions.Make(parent, "Reorder", configure));
 
+        /* One box per item, keyed: build runs once per new key. Each refresh pass of the surface (and the build) re-reads
+           the items: boxes of new keys are built in place, boxes of gone keys removed, and the rest put in the new order
+           without being rebuilt. Only a box whose place changed moves, and a move takes it off its panel and back, which
+           ends a capture or an edit running inside it. Nothing allocates when the keys did not change. A key twice gets
+           two boxes. */
+        public static VisualElement Repeat<T>(VisualElement parent, Func<IReadOnlyList<T>> items, Func<T, string> key, Action<VisualElement, T> build)
+            => new Repeater<T>(parent, items, key, build).Root;
+
         /* Renaming in place: `shown` gives way to a focused field holding `current`, all selected. Enter, or focus
            leaving, commits a name that is not blank and not `current` through `commit` (under Safe at `site`); Escape
            (the key in the field, or the host's Escape, which blurs it) and anything else cancel. `ended` runs once
@@ -476,6 +484,84 @@ namespace Facet
             // what it hit once its handlers are done, which would blur a field focused now.
             f.schedule.Execute(() => { if (!done) { f.Focus(); f.SelectAll(); } });
             return () => end(false);
+        }
+    }
+
+    internal sealed class Repeater<T>
+    {
+        internal readonly VisualElement Root;
+        private readonly Func<IReadOnlyList<T>> _items;
+        private readonly Func<T, string> _key;
+        private readonly Action<VisualElement, T> _build;
+        private readonly Host _host;
+        private readonly string _site;
+        private readonly Action _pass;
+        private readonly List<string> _keys = new List<string>();
+        private readonly List<VisualElement> _boxes = new List<VisualElement>();
+        private Refresher _joined;
+
+        internal Repeater(VisualElement parent, Func<IReadOnlyList<T>> items, Func<T, string> key, Action<VisualElement, T> build)
+        {
+            _items = items; _key = key; _build = build;
+            Root = new VisualElement { name = "repeat" };
+            if (parent != null) parent.Add(Root);
+            _host = Host.For(Root);
+            _site = "Repeat";
+            _pass = Pass;
+            Events.On<AttachToPanelEvent>(Root, _ => Join());
+            Events.On<DetachFromPanelEvent>(Root, _ => { if (_joined != null) _joined.Remove(_pass); _joined = null; });
+            Safe.Run(_host, _site, _pass);
+            if (Root.panel != null) Join();
+        }
+
+        private void Join()
+        {
+            if (_joined != null) return;
+            _joined = Refresher.Of(Root);
+            if (_joined != null) _joined.Add(_pass, _site);
+        }
+
+        // Under the refresher's Safe (or the build's): the items and keys are read directly; each build is guarded.
+        private void Pass()
+        {
+            var items = _items != null ? _items() : null;
+            int n = items == null ? 0 : items.Count;
+            bool same = n == _keys.Count;
+            for (int i = 0; same && i < n; i++) same = string.Equals(_key(items[i]), _keys[i]);
+            if (same) return;
+            var old = new Dictionary<string, List<VisualElement>>();
+            for (int i = 0; i < _keys.Count; i++)
+            {
+                List<VisualElement> l;
+                if (!old.TryGetValue(_keys[i] ?? "", out l)) old[_keys[i] ?? ""] = l = new List<VisualElement>();
+                l.Add(_boxes[i]);
+            }
+            // Match first, then drop the gone boxes: what stays is then in place unless the order changed.
+            var keys = new string[n];
+            var kept = new VisualElement[n];
+            for (int i = 0; i < n; i++)
+            {
+                keys[i] = _key(items[i]);
+                List<VisualElement> l;
+                if (old.TryGetValue(keys[i] ?? "", out l) && l.Count > 0) { kept[i] = l[0]; l.RemoveAt(0); }
+            }
+            foreach (var l in old.Values) foreach (var gone in l) gone.RemoveFromHierarchy();
+            _keys.Clear(); _boxes.Clear();
+            /* Boxes 0..i-1 are in place, so a new box goes straight to i and an old one moves only when it is not
+               there: a move takes the box off its panel and back, which ends what runs inside it. */
+            for (int i = 0; i < n; i++)
+            {
+                var box = kept[i];
+                if (box == null)
+                {
+                    var it = items[i];
+                    box = new VisualElement { name = "repeat-item" };
+                    Root.Insert(i, box);
+                    if (_build != null) Safe.Run(_host, _site + " build", () => _build(box, it));
+                }
+                else if (Root.IndexOf(box) != i) Root.Insert(i, box);
+                _keys.Add(keys[i]); _boxes.Add(box);
+            }
         }
     }
 }

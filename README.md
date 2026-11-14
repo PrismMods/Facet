@@ -420,6 +420,78 @@ var tabs = Controls.Reorder<Profile>(row, o =>
 - Of the inherited options only `Id` (the group; its parts are `Id-item`, `Id-text`, `Id-mark`, `Id-title`,
   `Id-add`, `Id-drop` and `Id-rename`) and `Tooltip` apply.
 
+### Repeat
+
+`Controls.Repeat<T>(parent, items, key, build)` is one box per item, keyed by `key`: `build(box, item)` runs once per
+new key. Each refresh pass of the surface re-reads `items`; boxes of new keys are built in place, boxes of gone keys
+removed, and the rest put in the new order without being rebuilt. A box whose place did not change stays on its panel
+and its rows keep their state; a box that moves (the order changed) is taken off its panel and put back, which ends a
+key capture or a text edit running inside it. Nothing allocates when the keys did not change. Returns the box that holds them (`repeat`; each box is `repeat-item`).
+
+### Card grid
+
+`Controls.CardGrid<T>(parent, o => …)` is a switcher of cards that wrap, `Sizes.CardWidth` wide: a thumbnail box
+(`ThumbAspect`, 16:9 by default) the consumer draws into through `Thumb`, a title with a ● in the accent colour while
+`Active`, and a note.
+
+```csharp
+var grid = Controls.CardGrid<Layout>(page, o =>
+{
+    o.Id = "layouts"; o.Items = () => Doc.Layouts; o.Key = l => l.Id;
+    o.Title = l => l.Name; o.Note = l => l.Keys + " keys"; o.Active = l => l == Doc.InUse;
+    o.Thumb = (box, l) => DrawMiniature(box, l);
+    o.Click = l => Doc.Open = l; o.DoubleClick = l => Doc.Use(l);
+    o.Menu = l => new List<MenuItem> { new MenuItem { Text = "Rename", Run = () => grid.BeginRename(l) } };
+    o.Rename = (l, name) => l.Name = name;
+    o.AddLabel = "New layout"; o.Add = () => NewLayoutMenu();
+});
+```
+
+- **Refresh.** Cards are rebuilt only when the keys change (`Key`, else the item itself, as in a `Reorder`); `Title`
+  and `Note` (shown as returned, not translated) and `Active` are re-read on every refresh pass and on `Refresh()`.
+- **Thumbnails.** `Thumb(box, item)` draws into the emptied box when the card is built and on `Redraw(item)`, and at
+  no other time: call `Redraw` when the item's look changed. A throwing `Thumb` leaves the box empty and is logged
+  (at most once per 10 s, as every `Safe` site).
+- **Pointer.** A click calls `Click` at once; a second click on the same card within 0.3 s also calls `DoubleClick`.
+  A right-click opens `Menu(item)` at the pointer. With `Add`, a trailing "＋ `AddLabel`" card (an English key, the
+  host translates it) opens `Add()` under it.
+- **Rename.** `BeginRename(item)` (a card menu's "Rename") swaps the title for a focused field, as a `Reorder`'s
+  rename does: Enter commits a changed, non-blank name through `Rename`; Escape, focus leaving with no change, or an
+  empty name cancel. A rebuild while the field is open closes it with no call.
+- Of the inherited options only `Id` (the grid; its parts are `Id-card`, `Id-thumb`, `Id-title`, `Id-mark`,
+  `Id-note`, `Id-add` and `Id-rename`) and `Tooltip` apply.
+
+## Rows: scrub and key capture
+
+- **Scrub.** `Controls.Number(…, o => o.Scrub = true)` makes the row's label a handle (the cursor shows
+  `ResizeHorizontal` over it): a drag sets the value to its start + (pixels / 4) x unit, the unit being `Step`, else
+  `(Max - Min) / 200`, else 1; Shift multiplies by 10 and Alt by 0.1. The value clamps and snaps as a typed one does.
+  Each drag is one undo step, even when the next drag follows within the coalescing window.
+- **Reading a key.** A host's capture poll calls `Input.ReadChord(down, held, chord, mouse)` every frame while a
+  capture runs (`down`/`held` are `UnityEngine.Input.GetKeyDown`/`GetKey`, or the host's own). It returns null until
+  a non-modifier key goes down, then the key as `KeyCode` spells it (`K`, `Alpha1`, `F8`); with `chord` the held
+  modifiers come first as `Ctrl+Shift+Alt+Key` (Command counts as Ctrl), and a modifier pressed and released with no
+  other key returns its own name (`LeftShift`) on the release. Escape returns `Input.ChordCancel`, never "Escape".
+  Mouse buttons count only with `mouse` (`Mouse0`-`Mouse6`), and the left one not while the pointer is over a Facet
+  window; none while a Key row's `Mouse` prompt is up, whose catcher binds them (one bind per press, whichever runs
+  first). The poll after the catcher bound a button returns that button once, so the host's poll ends as it does on a
+  key it read itself.
+- **Key rows.** `KeyOptions.Capture` gets a callback; handing it `Input.ChordCancel` ends the capture as a cancel: no
+  write, and `CancelCapture` runs. `Chord` shows the value the way a menu shows a shortcut (⌘⇧K on a Mac; ⌘1 for `Ctrl+Alpha1`, ⌘Space for `Ctrl+Space`).
+  `Prompt` opens a popup under the row while the capture runs ("Press a key", or "Press a key or chord" with
+  `Chord`) with Cancel; it closes when the capture ends, and Cancel, an outside click or Escape cancel the capture.
+  The row is scrolled into view first and the card placed from where the row is after that scroll (a row with no
+  layout yet, as one a `Live` just rebuilt, is waited for; one that gets none within a few frames, as in a folded
+  section or a tab not shown, has its prompt opened over its window). With `Prompt` and `Mouse`, the prompt's catcher
+  (over every window) binds the button pressed on it, the left one included (`Mouse0`), and nothing beneath sees that
+  press; `CancelCapture` is not called (a bind is no cancel), and the host's next `ReadChord` returns that button
+  once. Only Cancel and Escape cancel then. `Mouse` needs `Prompt`: on its own it does nothing (Facet logs it once),
+  so a click is not bound and also reaches what lies beneath it.
+- **`keyRow.BeginCapture()`** does what clicking the row does, for a "Rebind key" command: false when the row is not a
+  Key row, has no `Capture`, or is off its panel. A row on a page that is not built yet needs it built first. For an
+  editor's "Rebind key": select the item, `Tabs.Select` the tab holding the row, `Surface.Refresh()` (so a `Live`
+  inspector rebuilds for the new selection), then `BeginCapture()` on the row that rebuild made.
+
 ## Dialogs
 
 `Popup.Confirm(owner, title, body, done, o => …)` asks yes or no in a card on the Modal layer, centred over the
@@ -561,6 +633,7 @@ and its 7 px handle, the handle alone with the rail shut, or the icon strip when
 | Toolbar | `Controls.Toolbar`/`Toolbar` (`Search`, `Chips`, `Icon`, `Glyph`, `Button`, `Toggle`, `Label`, `UndoRedo`, `Spacer`); `Controls.Chips<T>`; `Ui.IconButton`; `Paint.Tint` (public) |
 | Inspector | `Bind.Many` (by key), `Bind<T>.Mixed`, `Control<T>.Mixed`, `ColumnsOptions.RightFill`, `Ui.Scroll`, `Controls.Live` |
 | Lists | `Controls.Reorder<T>`/`Reorder<T>` (`Root`, `Refresh`, `BeginRename`), `ReorderOptions<T>` (`Items`, `Key`, `Text`, `Selected`, `Active`, `Select`, `Move`, `Rename`, `Menu`, `Add`, `Title`, `TitleMenu`, `Vertical`, `Scroll`, `Build`) |
+| Switcher and rows | `Controls.CardGrid<T>`/`CardGrid<T>` (`Root`, `Refresh`, `Redraw`, `BeginRename`), `CardGridOptions<T>` (`Items`, `Key`, `Title`, `Note`, `Active`, `Thumb`, `ThumbAspect`, `Click`, `DoubleClick`, `Menu`, `AddLabel`, `Add`, `Rename`); `Sizes.CardWidth` (168); `Controls.Repeat<T>`; `SliderOptions.Scrub`; `KeyOptions.Chord`, `Prompt`, `Mouse`; `Controls.BeginCapture`; `Input.ReadChord`, `Input.ChordCancel` |
 | Dialogs | `Popup.Confirm`, `ConfirmOptions` (`Ok`, `Cancel`, null for a notice, `Danger`); `Sizes.DialogMinWidth`, `DialogMaxWidth` (280, 420) |
 | Status | `Controls.Status`/`StatusLine` (`Root`, `Show(key, role, seconds)`, `Show(func, role, seconds)`, `Clear`); `InfoOptions.Tone` (`Controls.Info` takes `Action<InfoOptions>`; its `Action<ControlOptions>` overload stays, so a mod built against it still loads) |
 | Window | `Window.Scale` is clamped to 0.6-2.5; `Window.HasStoredGeometry` |

@@ -41,6 +41,9 @@ namespace Facet
 
         /// The pointer moving over the catcher, in panel points: a menu bar switches menus as it crosses a title.
         internal Action<Vector2> Moved;
+        /// A press on the catcher, by button: true when it was taken (a key prompt binding a mouse button), so the
+        /// popup stays for whoever took it; else the press closes the popup.
+        internal Func<int, bool> Pressed;
         private readonly Action _onClose;
         private Surface _owner;
         private readonly Theme _theme;
@@ -196,7 +199,11 @@ namespace Facet
                 _catcher.style.left = 0f; _catcher.style.top = 0f;
                 _catcher.style.right = 0f; _catcher.style.bottom = 0f;   // all four, or it sizes to nothing
                 _catcher.pickingMode = PickingMode.Position;
-                Events.On<PointerDownEvent>(_catcher, e => { e.StopPropagation(); Close(); });
+                Events.On<PointerDownEvent>(_catcher, e =>
+                {
+                    e.StopPropagation();
+                    if (Pressed == null || !Pressed(e.button)) Close();
+                });
                 Events.On<PointerMoveEvent>(_catcher, e => { if (Moved != null) Moved(e.position); });
                 root.Add(_catcher);
             }

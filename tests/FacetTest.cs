@@ -601,6 +601,12 @@ static class FacetTest {
         Check(Shortcut.TryParse("Ctrl++", out c, out _, out _, out k) && c && k == "Equals", "plus is the equals key");
         Check(!Shortcut.TryParse("", out _, out _, out _, out _) && !Shortcut.TryParse("Ctrl+", out _, out _, out _, out _), "empty or dangling fails");
         Check(Shortcut.Display("Ctrl+Shift+C", true) == "\u2318\u21E7C" && Shortcut.Display("Ctrl+Shift+C", false) == "Ctrl+Shift+C", "platform display");
+        Check(Shortcut.Display("Ctrl+Alpha1", true) == "\u23181" && Shortcut.Display("Ctrl+Shift+Space", true) == "\u2318\u21E7Space"
+            && Shortcut.Display("Ctrl+Alpha1", false) == "Ctrl+1" && Shortcut.Display("Alt+Mouse3", false) == "Alt+Mouse3",
+            "a chord on a key no menu names still shows its modifiers as a menu does", Shortcut.Display("Ctrl+Alpha1", true));
+        Check(ValueScale.ScrubUnit(0f, float.MinValue, float.MaxValue) == 1f && ValueScale.ScrubUnit(0f, 0f, 100f) == 0.5f
+            && ValueScale.ScrubUnit(2f, 0f, 100f) == 2f && ValueScale.ScrubUnit(0f, 5f, 5f) == 1f,
+            "a scrub unit is finite even when the range overflows a float", ValueScale.ScrubUnit(0f, float.MinValue, float.MaxValue).ToString());
         Check(Shortcut.TryParse("Ctrl+0", out c, out _, out _, out k) && c && k == "Alpha0", "a digit is its Alpha key", k);
         Check(Shortcut.TryParse("[", out _, out _, out _, out k) && k == "LeftBracket" && Shortcut.TryParse("-", out _, out _, out _, out k) && k == "Minus"
               && Shortcut.TryParse("=", out _, out _, out _, out k) && k == "Equals", "[ - = map to LeftBracket, Minus, Equals", k);

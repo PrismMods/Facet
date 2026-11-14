@@ -107,6 +107,7 @@ namespace Facet.Mod
                 yield return Run("SectionWarmUp", SectionWarmUp());   // first: it needs the session's first surface
                 yield return Run("SectionOpen", SectionOpen());
                 yield return Run("SectionPartsPerf", SectionPartsPerf());   // before any section warms the parts
+                yield return Run("SectionEditorPerf", SectionEditorPerf());   // before any section opens the Editor window
                 yield return Run("SharedEscape", SharedEscape());
                 yield return Run("SectionHost", SectionHost());
                 yield return Run("SectionTheme", SectionTheme());
@@ -164,6 +165,8 @@ namespace Facet.Mod
                 yield return Run("SectionHooks", SectionHooks());
                 yield return Run("SectionRegions", SectionRegions());
                 yield return Run("SectionConveniences", SectionConveniences());
+                yield return Run("SectionCardGrid", SectionCardGrid());
+                yield return Run("SectionRows", SectionRows());
                 yield return Run("SectionClose", SectionClose());
                 // Later tasks: yield return Run("Section...", Section...());
             }
@@ -179,9 +182,9 @@ namespace Facet.Mod
             // Hover and focus fades are real transitions now, so a section that reads a resolved colour
             // right after an event would catch it mid-fade: all but the motion-aware ones run at speed 0.
             // Wheel steps land at once; the glide's section holds its own switch.
-            float speed = name == "SectionWarmUp" || name == "SectionOpen" || name == "SectionPartsPerf" || name == "SectionSpeed" || name == "SectionClose" || name == "SectionSmoothScroll" ? 1f : 0f;
+            float speed = name == "SectionWarmUp" || name == "SectionOpen" || name == "SectionPartsPerf" || name == "SectionEditorPerf" || name == "SectionSpeed" || name == "SectionClose" || name == "SectionSmoothScroll" ? 1f : 0f;
             // The canvas and context-menu sections time gestures by pixels and frames: the game's own pointer, wherever it rests, must not reach them.
-            var quiet = name == "SectionCanvasEdit" || name == "SectionCanvasView" || name == "SectionContextMenu" || name == "SectionInspector" || name == "SectionStrip" || name == "SectionDialogStatus" || name == "SectionHooks" || name == "SectionRegions" ? QuietRealPointer() : null;
+            var quiet = name == "SectionCanvasEdit" || name == "SectionCanvasView" || name == "SectionContextMenu" || name == "SectionInspector" || name == "SectionStrip" || name == "SectionDialogStatus" || name == "SectionHooks" || name == "SectionRegions" || name == "SectionCardGrid" || name == "SectionRows" ? QuietRealPointer() : null;
             try
             {
                 using (Motion.Hold(speed, false))

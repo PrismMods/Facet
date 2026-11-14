@@ -333,6 +333,13 @@ namespace Facet
             if (shown) Fire();
         }
 
+        /// The top step takes no more coalescing writes: a drag that has ended is its own step even when the next
+        /// one under the same key follows within CoalesceSeconds.
+        internal static void Seal()
+        {
+            if (_done.Count > 0) _done[_done.Count - 1].At = double.NegativeInfinity;
+        }
+
         /* A row's drag frame: true when a write under key with this check would only move the end of
            the step the row recorded last (the top, whose one redo is redo). The top is touched as a
            coalescing record touches it, and the caller moves what redo restores instead of recording

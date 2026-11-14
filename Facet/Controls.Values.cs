@@ -15,6 +15,9 @@ namespace Facet
         public float Step { get; set; } = 0f;
         public IValueScale Scale { get; set; } = ValueScale.Linear;
         public string Format { get; set; } = "0.##";
+        /// Number only: dragging the row's label changes the value by (pixels / 4) x unit, unit being Step, else
+        /// (Max - Min) / 200, else 1; Shift x10, Alt x0.1; clamped and snapped as typed. Each drag is one undo step.
+        public bool Scrub { get; set; }
     }
 
     public class IntSliderOptions : Options<int>
@@ -70,8 +73,19 @@ namespace Facet
         /// Starts a capture: the host calls back with the next key's name (null or empty for none).
         public Action<Action<string>> Capture { get; set; }
         /// Stops the host's key poll. Called (guarded) when this capture is cancelled: another control
-        /// claimed the capture, the control left its panel, or its surface hid. Not called when a key was captured.
+        /// claimed the capture, the control left its panel, its surface hid, the prompt was cancelled, or the host
+        /// handed back Input.ChordCancel. Never called when a key or mouse button was bound.
         public Action CancelCapture { get; set; }
+        /// The value is a chord ("Ctrl+Shift+K", as Input.ReadChord gives it), shown the way a menu shows a shortcut.
+        public bool Chord { get; set; }
+        /// While the capture runs, a popup under the row asks for a key ("Press a key", or "Press a key or chord"
+        /// with Chord) and offers Cancel. The row is scrolled into view first.
+        public bool Prompt { get; set; }
+        /// With Prompt: mouse buttons bind too. The prompt's catcher covers every window, so a press anywhere off
+        /// the prompt binds that button ("Mouse0" for the left one) and nothing beneath sees it; the host's next
+        /// ReadChord(…, mouse: true) then returns that button once, so its poll ends as on a read of its own.
+        /// Needs Prompt: without it Mouse does nothing (logged once) and a click also reaches what lies beneath.
+        public bool Mouse { get; set; }
     }
 
     /* The value rows. Each is a labelled row bound to a Bind<T> and handed back as a Control<T>;
@@ -105,6 +119,8 @@ namespace Facet
             return o;
         }
         private static int KeySeq;
+        // A Key row with Mouse but no Prompt has been logged (once per Facet copy).
+        internal static bool MouseWarned;
 
         /// Reachable by Tab / NavigationMove, and draws Role.Focus around itself while focused.
         internal static void Ring(VisualElement e)
@@ -377,14 +393,20 @@ namespace Facet
         public static Control<string> Key(VisualElement parent, string label, Bind<string> bind, Action<KeyOptions> configure = null)
         {
             var o = Opts(parent, label, configure);
+            if (o.Mouse && !o.Prompt && !MouseWarned)
+            {
+                MouseWarned = true;
+                Host.For(parent).Log("Key '" + label + "': Mouse needs Prompt; without the prompt's catcher a click is not bound and reaches what lies beneath");
+            }
             var right = Controls.Row(parent, label);
             Control<string> c = null;
             Button b = null;
             // One owner name per control; a claim by another control (any mod, any Facet version) cancels this one.
             string me = "key#" + (++KeySeq) + "@" + Host.For(parent).Name + "/" + typeof(Controls).Assembly.GetName().Name;
-            bool active = false;
+            bool active = false, chord = o.Chord;
             int gen = 0;   // a callback from a cancelled capture arrives late and is ignored
             Surface owner = null;
+            Popup prompt = null;
             Action cancel = null;
             // Ends the capture on the control's side; the host hears about it only when cancelled.
             Action<bool> end = tellHost =>
@@ -393,44 +415,153 @@ namespace Facet
                 active = false; gen++;
                 KeyCapture.Release(me);
                 if (owner != null) { owner.Hidden -= cancel; owner = null; }
+                var p = prompt; prompt = null;
+                if (p != null) p.Close();
                 Paint.Select(b, false);
-                Draw(b, c.Value, c.Mixed);
+                Draw(b, c.Value, c.Mixed, chord);
                 if (tellHost && o.CancelCapture != null) Safe.Run(Host.For(b), "Key CancelCapture", o.CancelCapture);
             };
             cancel = () => end(true);
-            b = Ui.Btn("", () =>
+            // A captured name: ChordCancel is a cancel; anything else is written (empty is unbound).
+            Action<string> got = name =>
             {
-                if (o.Capture == null) return;
+                if (name == Input.ChordCancel) { end(true); return; }
+                end(false);
+                name = name ?? "";
+                if (name != (c.Value ?? "") || c.Mixed) c.Set(name); else Draw(b, name, false, chord);
+            };
+            Func<bool> start = () =>
+            {
+                if (o.Capture == null || b.panel == null) return false;
                 var host = Host.For(b);
                 end(true);   // a second click while waiting restarts cleanly
                 KeyCapture.Claim(me, cancel, host.LogFn);
+                Input.PromptBound(null);   // a button an earlier prompt bound is not this capture's
                 active = true;
                 int mine = ++gen;
                 foreach (var st in Ui.Stack) if (st.Root != null && st.Root.Contains(b)) { owner = st; break; }
                 if (owner != null) owner.Hidden += cancel;
                 Words.Label(b, "press a key…", true);
                 Paint.Select(b, true);
-                bool ok = Safe.Run(host, "Key capture", () => o.Capture(name =>
-                {
-                    if (mine != gen) return;
-                    end(false);
-                    name = name ?? "";
-                    if (name != (c.Value ?? "") || c.Mixed) c.Set(name); else Draw(b, name, false);
-                }));
+                if (o.Prompt) Ask(b, chord, o.Mouse, mine, () => gen, p => prompt = p, cancel, got);
+                bool ok = Safe.Run(host, "Key capture", () => o.Capture(name => { if (mine == gen) got(name); }));
                 if (!ok) end(false);
-            }, right);
+                return active || ok;
+            };
+            b = Ui.Btn("", () => start(), right);
+            Data.Get<KeyStart>(b).Begin = start;
             Events.On<DetachFromPanelEvent>(b, _ => cancel());
             b.style.marginRight = 0f;
             b.style.minWidth = 110f;
-            c = TrackedRow(right.parent, b, parent, label, o, bind, null, (v, mixed) => Draw(b, v, mixed));
+            c = TrackedRow(right.parent, b, parent, label, o, bind, null, (v, mixed) => Draw(b, v, mixed, chord));
             return c;
         }
 
+        internal sealed class KeyStart { public Func<bool> Begin; }
+
+        /// Starts a Key row's capture from code, as a click on it does (a "Rebind key" menu item): false when the row
+        /// is not a Key row, has no Capture, or is not on a panel.
+        public static bool BeginCapture(this Control<string> keyRow)
+        {
+            var k = keyRow == null ? null : Data.Find<KeyStart>(keyRow.Input);
+            return k != null && k.Begin != null && k.Begin();
+        }
+
+        /* The prompt under a capturing Key row: its row scrolled into view first (a capture begun from code may sit
+           off screen), then "Press a key" and Cancel. Closing it any other way than through the row (Cancel, an
+           outside click, Escape) cancels the capture. With mouse, a press on its catcher binds that button, and the
+           host's poll leaves mouse buttons alone only while that catcher is up.
+           A row a Live rebuilt this frame has no layout yet: the scroll and the prompt wait for its first one, or the
+           scroll works from NaN and the card is placed (and scaled) from where the row is not. A row that gets none
+           within a few frames (not displayed: a folded section, another tab) has its prompt opened over its window. */
+        private static void Ask(Button b, bool chord, bool mouse, int mine, Func<int> gen, Action<Popup> opened, Action cancel, Action<string> got)
+        {
+            var row = b.parent != null && b.parent.parent != null ? b.parent.parent : b;
+            bool shown = false;
+            Action<bool> show = over =>
+            {
+                if (shown || mine != gen()) return;
+                shown = true;
+                Func<bool> mp = () => mine == gen();
+                Action<VisualElement> build = box =>
+                {
+                    var sz = Theme.For(box).Sizes;
+                    var l = Ui.Text("", box, sz.Body);
+                    Words.Label(l, chord ? "Press a key or chord" : "Press a key", true);
+                    l.style.marginBottom = sz.Gap;
+                    l.style.marginLeft = sz.ControlPad; l.style.marginRight = sz.ControlPad;
+                    var x = Ui.Btn("Cancel", () => { if (mine == gen()) cancel(); }, box, true);
+                    x.name = "key-prompt-cancel";
+                    x.style.alignSelf = Align.FlexEnd;
+                    x.style.marginRight = 0f;
+                };
+                // Every close lets go of the poll's mouse buttons (the capture ending closes it too).
+                Action closed = () => { if (Input.MousePrompt == mp) Input.MousePrompt = null; if (mine == gen()) cancel(); };
+                Popup p;
+                if (!over)
+                {
+                    for (var e = row.parent; e != null; e = e.parent)
+                        if (e is ScrollView sv) { Reveal(sv, row); break; }
+                    // Placed on the card's first layout, from the row's bounds after this scroll.
+                    p = Popup.Open(b, build, closed);
+                }
+                else
+                {
+                    VisualElement win = row;
+                    foreach (var st in Ui.Stack)
+                        if (st.Root != null && st.Root.Contains(b)) { while (win.parent != null && win.parent != st.Root) win = win.parent; break; }
+                    p = Popup.Open(b, build, closed, true, win.worldBound.center, false);
+                }
+                if (p == null) return;
+                p.Content.name = "key-prompt";
+                if (mouse)
+                {
+                    Input.MousePrompt = mp;
+                    p.Pressed = button => { if (mine == gen()) { Input.PromptBound("Mouse" + button); got("Mouse" + button); } return true; };
+                }
+                opened(p);
+            };
+            if (row.layout.height > 0f && b.layout.height > 0f) { show(false); return; }   // NaN or 0 until laid out
+            EventCallback<GeometryChangedEvent> laid = null;
+            laid = _ =>
+            {
+                if (mine == gen() && !(row.layout.height > 0f && b.layout.height > 0f)) return;
+                Events.Off(row, laid);
+                show(false);
+            };
+            Events.On(row, laid);
+            int ticks = 0;
+            IVisualElementScheduledItem wait = null;
+            wait = b.schedule.Execute(() =>
+            {
+                if (shown || mine != gen()) { wait.Pause(); Events.Off(row, laid); return; }
+                if (++ticks < 4) return;
+                wait.Pause();
+                Events.Off(row, laid);
+                show(true);
+            }).Every(0);
+        }
+
+        /* Scrolls row into sv's viewport at once: ScrollView.ScrollTo may defer to a later frame, after the prompt was
+           placed from the row's old spot. Distances are in world units, the offset in the scroll's own (a window's
+           scale sits between them). */
+        private static void Reveal(ScrollView sv, VisualElement row)
+        {
+            Glide.Stop(sv);   // a glide would carry the row off again
+            var vp = sv.contentViewport.worldBound;
+            var r = row.worldBound;
+            float k = sv.contentViewport.layout.height > 0f ? vp.height / sv.contentViewport.layout.height : 1f;
+            float dy = r.yMax > vp.yMax ? Mathf.Min(r.yMax - vp.yMax, r.yMin - vp.yMin) : r.yMin < vp.yMin ? r.yMin - vp.yMin : 0f;
+            if (dy == 0f || float.IsNaN(dy) || float.IsInfinity(dy) || !(k > 0f)) return;
+            sv.scrollOffset = new Vector2(sv.scrollOffset.x, sv.scrollOffset.y + dy / k);
+        }
+
         // The key's name is data, not a word: set by hand so a relabel leaves it alone. Empty reads "unbound".
-        private static void Draw(Button b, string name, bool mixed)
+        private static void Draw(Button b, string name, bool mixed, bool chord = false)
         {
             if (mixed) Words.Label(b, "Mixed", true);
-            else if (string.IsNullOrEmpty(name)) Words.Label(b, "unbound", true); else b.text = name;
+            else if (string.IsNullOrEmpty(name)) Words.Label(b, "unbound", true);
+            else b.text = chord ? Shortcut.Display(name, Application.platform == RuntimePlatform.OSXPlayer || Application.platform == RuntimePlatform.OSXEditor) : name;
         }
 
         // A number box's text while its row is bound to many items that disagree.
@@ -656,7 +787,49 @@ namespace Facet
                 if (v != c.Value || c.Mixed) c.Set(v);
                 return true;
             }, () => show(c.Value, c.Mixed));
+            if (o.Scrub && !withTrack)
+            {
+                var noted = Data.Find<Noting>(right.parent);
+                float unit = ValueScale.ScrubUnit(o.Step, min, max);
+                if (noted != null && noted.Label != null) Scrub(noted.Label, c, fit, unit);
+            }
             return c;
+        }
+
+        private sealed class Scrubbing { public bool On, Moved; public int Pointer; public float X, From; }
+
+        /* The label as a handle: a press captures the pointer, each move writes start + (dx / 4) x unit (Shift x10,
+           Alt x0.1) as a drag frame, and the release or a lost capture commits once. The step is sealed then, so a
+           second drag soon after is its own undo, not part of this one. */
+        private static void Scrub(Label l, Control<float> c, Func<float, float> fit, float unit)
+        {
+            var s = new Scrubbing();
+            l.pickingMode = PickingMode.Position;
+            Cursors.Set(l, Cursors.Kind.ResizeHorizontal);
+            Events.On<PointerDownEvent>(l, e =>
+            {
+                if (e.button != 0 || s.On) return;
+                s.On = true; s.Moved = false; s.Pointer = e.pointerId; s.X = e.position.x; s.From = c.Value;
+                l.CapturePointer(e.pointerId);
+                e.StopPropagation();
+            });
+            Events.On<PointerMoveEvent>(l, e =>
+            {
+                if (!s.On || e.pointerId != s.Pointer) return;
+                float k = e.shiftKey ? 10f : e.altKey ? 0.1f : 1f;
+                float v = fit(s.From + (e.position.x - s.X) / 4f * unit * k);
+                if (v == c.Value && !c.Mixed) return;
+                s.Moved = true;
+                c.Edit(v);
+            });
+            Action end = () =>
+            {
+                if (!s.On) return;
+                s.On = false;
+                if (s.Moved) { History.Seal(); c.Commit(); }
+            };
+            Events.On<PointerUpEvent>(l, e => { if (s.On && e.pointerId == s.Pointer) { end(); if (l.HasPointerCapture(e.pointerId)) l.ReleasePointer(e.pointerId); } });
+            Events.On<PointerCaptureOutEvent>(l, _ => end());
         }
 
         // The number beside a slider, named <Id>-number.

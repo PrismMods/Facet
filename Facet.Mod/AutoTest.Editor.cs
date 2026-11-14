@@ -1319,5 +1319,450 @@ namespace Facet.Mod
             }
             finally { Popup.CloseAll(); GalleryEditor.Close(); GalleryEditor.Model = new EditorModel(); }
         }
+
+        // ---- card grid, keyed repeats, scrub, chords and the key prompt
+
+        static List<VisualElement> Cards(CardGrid<GalleryTab> g) => g.Root.Query<VisualElement>(g.Root.name + "-card").ToList();
+
+        static string CardTitles(CardGrid<GalleryTab> g)
+        {
+            var t = new List<string>();
+            foreach (var c in Cards(g)) t.Add(c.Q<Label>(g.Root.name + "-title").text);
+            return string.Join(",", t.ToArray());
+        }
+
+        // Which cards show the active mark, as 0/1 per card.
+        static string Marks(CardGrid<GalleryTab> g)
+        {
+            var t = new System.Text.StringBuilder();
+            foreach (var c in Cards(g)) t.Append(Shown(c.Q<Label>(g.Root.name + "-mark")) ? '1' : '0');
+            return t.ToString();
+        }
+
+        static int Thumbs(EditorModel m, string key) { int n; m.Thumbs.TryGetValue(key, out n); return n; }
+
+        // An element by name on any live panel (a popup's contents included).
+        static T LiveNamed<T>(string name) where T : VisualElement
+        {
+            T hit = null;
+            foreach (var d in FindObjectsByType<UIDocument>(FindObjectsSortMode.None))
+                if (d.rootVisualElement != null)
+                {
+                    var e = d.rootVisualElement.Q<T>(name);
+                    if (e != null && e.panel != null) hit = e;
+                }
+            return hit;
+        }
+
+        // The Cards page: two grids, clicks and double-clicks, menus, the add card, thumbnails, the mark, rename.
+        IEnumerator SectionCardGrid()
+        {
+            GalleryEditor.Model = new EditorModel();
+            var win = GalleryEditor.Open(); yield return null; yield return null;
+            try
+            {
+                GalleryEditor.Nav.Go(GalleryEditor.CardsItem); yield return null; yield return null;
+                var m = GalleryEditor.Model;
+                var a = GalleryEditor.GroupA; var b = GalleryEditor.GroupB;
+                var root = win.Root;
+                var ca = a == null ? new List<VisualElement>() : Cards(a);
+                var cb = b == null ? new List<VisualElement>() : Cards(b);
+                var add = a == null ? null : a.Root.Q<VisualElement>("ed-cards-a-add");
+                Check(ca.Count == 3 && cb.Count == 2 && add != null && b.Root.Q<VisualElement>("ed-cards-b-add") == null,
+                    "two grids: Group A with 3 cards and the add card, Group B with 2", ca.Count + " / " + cb.Count);
+                if (ca.Count != 3 || cb.Count != 2 || add == null) yield break;
+                Check(CardTitles(a) == "Card 1,Card 2,Card 3" && CardTitles(b) == "Card B,Hidden", "...each card titled", CardTitles(a) + " / " + CardTitles(b));
+                var sz = Theme.For(a.Root).Sizes;
+                var thumb = ca[0].Q<VisualElement>("ed-cards-a-thumb");
+                Check(Mathf.Abs(ca[0].layout.width - sz.CardWidth) <= 0.5f && thumb != null && Mathf.Abs(thumb.layout.width - ca[0].contentRect.width) <= 0.1f
+                    && Mathf.Abs(thumb.style.height.value.value - thumb.layout.width * 9f / 16f) <= 0.01f && Mathf.Abs(thumb.layout.width / thumb.layout.height - 16f / 9f) <= 0.01f,
+                    "a card is Sizes.CardWidth wide, its thumbnail as wide as its content and set 16:9 from that width (the layout snaps it to pixels)",
+                    ca[0].layout.width + " / " + ca[0].contentRect.width + " / " + (thumb == null ? "none" : thumb.layout.size + " set " + thumb.style.height.value.value));
+                Check(Thumbs(m, "ca1") == 1 && Thumbs(m, "ca2") == 1 && Thumbs(m, "ca3") == 1 && Thumbs(m, "cb1") == 1 && Thumbs(m, "cb2") == 1 && thumb.childCount == 1,
+                    "Thumb drew each card once when it was built");
+                Check(Marks(a) == "100" && Marks(b) == "00", "the mark shows only on the active card", Marks(a) + " " + Marks(b));
+
+                PressAt(ca[1].worldBound.center, root);
+                Check(m.Clicks.Count == 1 && m.Clicks[0] == "Card 2" && m.Doubles.Count == 0, "a click calls Click once, at once", string.Join(",", m.Clicks.ToArray()));
+                yield return new WaitForSecondsRealtime(0.4f);
+                PressAt(ca[2].worldBound.center, root);
+                yield return new WaitForSecondsRealtime(0.2f);
+                PressAt(ca[2].worldBound.center, root); yield return null;
+                Check(m.Clicks.Count == 3 && m.Clicks[2] == "Card 3" && m.Doubles.Count == 1 && m.Doubles[0] == "Card 3",
+                    "two clicks 0.2 s apart call Click twice and DoubleClick once", string.Join(",", m.Clicks.ToArray()) + " / " + string.Join(",", m.Doubles.ToArray()));
+                GalleryEditor.Surface.Refresh();
+                Check(Marks(a) == "001" && ca[2].Q<Label>("ed-cards-a-note").text == "in use", "...the mark follows Active (and the note) after a refresh", Marks(a));
+                // Data changed elsewhere (no click, no grid call): only the surface's refresh carries it to the cards.
+                m.ActiveCard = "ca2"; m.CardsA[1].Name = "Card 2b";
+                GalleryEditor.Surface.Refresh();
+                Check(Marks(a) == "010" && CardTitles(a) == "Card 1,Card 2b,Card 3", "...an Active and a title changed outside the grid show after Surface.Refresh() alone",
+                    Marks(a) + " / " + CardTitles(a));
+                m.ActiveCard = "ca3"; m.CardsA[1].Name = "Card 2";
+                GalleryEditor.Surface.Refresh();
+
+                // A press that did not start on a card is no click on it, even when a stale press on that card came first.
+                var bare = new Vector2(b.Root.worldBound.xMax - 4f, cb[0].worldBound.center.y);
+                bool bareOk = !cb[0].worldBound.Contains(bare) && !cb[1].worldBound.Contains(bare);
+                int clicks0 = m.Clicks.Count, pop0 = OpenPopups();
+                PointerAt(EventType.MouseDown, ca[0].worldBound.center, root); PointerAt(EventType.MouseUp, bare, root); yield return null;
+                PointerAt(EventType.MouseDown, bare, root); PointerAt(EventType.MouseUp, ca[0].worldBound.center, root); yield return null;
+                Check(bareOk && m.Clicks.Count == clicks0, "a press released off its card, then a press elsewhere released on that card, click nothing",
+                    bareOk + " / " + (m.Clicks.Count - clicks0));
+                PointerAt(EventType.MouseDown, bare, root); PointerAt(EventType.MouseUp, add.worldBound.center, root); yield return null; yield return null;
+                Check(LiveLabel("Blank card") == null && OpenPopups() == pop0, "...and a release on the add card after a press elsewhere opens no menu");
+                Popup.CloseAll(); yield return new WaitForSecondsRealtime(0.4f);
+
+                var at = ca[0].worldBound.center;
+                PressAt(at, root, 1); yield return null; yield return null;
+                var ren = LiveLabel("Rename");
+                Check(ren != null && Mathf.Abs(ren.parent.parent.worldBound.xMin - at.x) <= 1f && m.Clicks.Count == 3, "a right-click opens the card's menu at the pointer and clicks nothing");
+                Popup.CloseAll(); yield return null;
+                PressAt(add.worldBound.center, root); yield return null; yield return null;
+                var blank = LiveLabel("Blank card");
+                Check(blank != null && blank.worldBound.yMin >= add.worldBound.yMax, "the add card opens Add() under it");
+                if (blank != null) { Release(blank.parent); yield return null; yield return null; }
+                ca = Cards(a);
+                Check(m.CardAdds == 1 && ca.Count == 4 && Thumbs(m, "ed-cards-a-new1") == 1 && a.Root.IndexOf(add) == a.Root.childCount - 1,
+                    "...its item adds a card, drawn once, before the add card", ca.Count + " cards");
+
+                int t1 = Thumbs(m, "ca1"), t2 = Thumbs(m, "ca2"), t3 = Thumbs(m, "ca3");
+                a.Redraw(m.CardsA[1]);
+                Check(Thumbs(m, "ca2") == t2 + 1 && Thumbs(m, "ca1") == t1 && Thumbs(m, "ca3") == t3, "Redraw(item) calls Thumb once, for that item only");
+
+                m.ThrowThumb = "ca1";
+                long log = LogLength();
+                a.Redraw(m.CardsA[0]); yield return null;
+                int lines = Count(LogSince(log), "Thumb failed on purpose");
+                Check(lines == 1 && ca[0].Q<VisualElement>("ed-cards-a-thumb").childCount == 0, "a throwing Thumb leaves an empty box and logs one line", lines + " lines");
+                m.ThrowThumb = null;
+
+                a.BeginRename(m.CardsA[0]); yield return null; yield return null;
+                var field = a.Root.Q<TextField>("ed-cards-a-rename");
+                Check(field != null && field.value == "Card 1" && !Shown(ca[0].Q<Label>("ed-cards-a-title")), "BeginRename swaps the title for a field holding it");
+                if (field != null) { field.value = "Renamed"; Key(field, KeyCode.Return); yield return null; yield return null; }
+                Check(m.CardRenames == 1 && m.CardsA[0].Name == "Renamed" && a.Root.Q<TextField>("ed-cards-a-rename") == null && CardTitles(a).StartsWith("Renamed,"),
+                    "typing Renamed and Enter calls Rename once and shows it", m.CardRenames + " / " + CardTitles(a));
+                a.BeginRename(m.CardsA[1]); yield return null;
+                field = a.Root.Q<TextField>("ed-cards-a-rename");
+                if (field != null) { field.value = "Typed"; Key(field, KeyCode.Escape); yield return null; }
+                Check(field != null && m.CardRenames == 1 && m.CardsA[1].Name == "Card 2" && a.Root.Q<TextField>("ed-cards-a-rename") == null, "...Escape calls nothing");
+            }
+            finally { Popup.CloseAll(); GalleryEditor.Close(); GalleryEditor.Model = new EditorModel(); }
+        }
+
+        static List<VisualElement> RepeatBoxes(VisualElement repeat)
+        {
+            var l = new List<VisualElement>();
+            foreach (var c in repeat.Children()) l.Add(c);
+            return l;
+        }
+
+        // Controls.Repeat, a scrubbed number, Input.ReadChord, a Key row's prompt and BeginCapture.
+        IEnumerator SectionRows()
+        {
+            var s = new Surface(Gallery.Host, "FacetRows", Layer.Window);
+            var w = new Window(s.Root, "rows", "Rows", new Rect(80, 60, 700, 600));
+            var clock = History.Clock;
+            try
+            {
+                // Repeat: 3 items first.
+                var list = new List<string> { "a", "b", "c" };
+                int builds = 0;
+                var detached = new List<string>();   // a box taken off its panel ends what runs inside it (a capture, an edit)
+                var rep = Controls.Repeat<string>(w.Body, () => list, x => x, (box, x) =>
+                {
+                    builds++; box.Add(new Label(x));
+                    box.RegisterCallback<DetachFromPanelEvent>(_ => detached.Add(x));
+                });
+                yield return null; yield return null;
+                var old = RepeatBoxes(rep);
+                Check(old.Count == 3 && builds == 3, "Repeat builds one box per item: 3 items, 3 builds", old.Count + " / " + builds);
+                s.Refresh();
+                list.Insert(1, "x");
+                s.Refresh();
+                var now = RepeatBoxes(rep);
+                Check(now.Count == 4 && builds == 4 && ReferenceEquals(now[0], old[0]) && ReferenceEquals(now[2], old[1]) && ReferenceEquals(now[3], old[2]),
+                    "inserting one in the middle keeps the old boxes (the same objects); build ran 4 times in all", now.Count + " / " + builds);
+                Check(detached.Count == 0, "...a refresh with the same keys, and that insert, take no box off its panel (the new one is built in place)",
+                    string.Join(",", detached.ToArray()));
+                var x0 = now[1];
+                list.Remove("b");
+                s.Refresh();
+                now = RepeatBoxes(rep);
+                Check(now.Count == 3 && old[1].parent == null && builds == 4 && string.Join(",", detached.ToArray()) == "b", "removing one drops its box, and only its box leaves the panel",
+                    now.Count + " / " + builds + " / " + string.Join(",", detached.ToArray()));
+                list.Reverse();
+                s.Refresh();
+                now = RepeatBoxes(rep);
+                Check(now.Count == 3 && builds == 4 && ReferenceEquals(now[0], old[2]) && ReferenceEquals(now[1], x0) && ReferenceEquals(now[2], old[0]),
+                    "reordering moves the boxes without new builds", builds.ToString());
+
+                // Scrub: Step 1, 0..100; each drag one undo.
+                float v = 0f;
+                History.Clear();
+                var num = Controls.Number(w.Body, "Scrubbed", Bind.To(() => v, x => v = x), o => { o.Id = "rows-scrub"; o.Step = 1f; o.Min = 0f; o.Max = 100f; o.Scrub = true; });
+                yield return null; yield return null;
+                var lbl = num.Root.Q<Label>();
+                Check(lbl != null && lbl.pickingMode == PickingMode.Position, "a Scrub row's label answers the pointer");
+                var p0 = lbl.worldBound.center;
+                yield return DragAt(p0, p0 + new Vector2(40f, 0f), w.Root);
+                Check(v == 10f, "dragging the label +40 px adds 10 with Step 1", v.ToString());
+                yield return ModDrag(p0, 40f, EventModifiers.Alt, w.Root);
+                Check(v == 11f, "...with Alt it adds 1", v.ToString());
+                yield return ModDrag(p0, 40f, EventModifiers.Shift, w.Root);
+                Check(v == 100f, "...with Shift 100, clamped to Max", v.ToString());
+                History.Undo(); bool u1 = v == 11f;
+                History.Undo(); bool u2 = v == 10f;
+                History.Undo(); bool u3 = v == 0f;
+                Check(u1 && u2 && u3 && !History.CanUndo, "each drag is one undo step", v.ToString());
+
+                // ReadChord.
+                Func<KeyCode, bool> none = k => false;
+                Func<KeyCode, bool> heldKs = k => k == KeyCode.K || k == KeyCode.LeftShift || k == KeyCode.LeftControl;
+                string c1 = Input.ReadChord(k => k == KeyCode.K, heldKs, true), c2 = Input.ReadChord(k => k == KeyCode.K, heldKs, false);
+                Check(c1 == "Ctrl+Shift+K" && c2 == "K", "ReadChord with K down and Shift and Ctrl held: Ctrl+Shift+K as a chord, K without", c1 + " / " + c2);
+                yield return null;
+                string l1 = Input.ReadChord(k => k == KeyCode.LeftShift, k => k == KeyCode.LeftShift, true); yield return null;
+                string l2 = Input.ReadChord(none, k => k == KeyCode.LeftShift, true); yield return null;
+                string l3 = Input.ReadChord(none, none, true);
+                Check(l1 == null && l2 == null && l3 == "LeftShift", "...Shift pressed and released alone returns LeftShift on the release frame", l1 + "/" + l2 + "/" + l3);
+                Check(Input.ReadChord(k => k == KeyCode.Escape, none, true) == Input.ChordCancel && Input.ReadChord(k => k == KeyCode.Escape, none, false) == Input.ChordCancel,
+                    "...Escape returns ChordCancel");
+                string m1 = Input.ReadChord(k => k == KeyCode.Mouse3, none, false, true), m2 = Input.ReadChord(k => k == KeyCode.Mouse3, none, false);
+                Check(m1 == "Mouse3" && m2 == null, "...Mouse3 returns Mouse3 with mouse, nothing without", m1 + " / " + m2);
+
+                // Prompt.
+                string key = "F1"; int cancels = 0, captures = 0; Action<string> got = null;
+                var keyRow = Controls.Key(w.Body, "Bound key", Bind.To(() => key, x => key = x), o =>
+                {
+                    o.Id = "rows-key"; o.Prompt = true;
+                    o.Capture = done => { captures++; got = done; };
+                    o.CancelCapture = () => cancels++;
+                });
+                yield return null; yield return null;
+                int open0 = OpenPopups();
+                Submit((Button)keyRow.Input); yield return null; yield return null;
+                var cancel = LiveNamed<Button>("key-prompt-cancel");
+                Check(captures == 1 && OpenPopups() == open0 + 1 && LiveLabel(Words.Own("Press a key", Gallery.Host)) != null && cancel != null,
+                    "a Prompt row's capture opens one popup: Press a key, and Cancel", captures + " / " + (OpenPopups() - open0));
+                if (cancel != null) { Submit(cancel); yield return null; }
+                Check(cancels == 1 && OpenPopups() == open0 && ((Button)keyRow.Input).text == "F1", "...Cancel calls CancelCapture and closes it", cancels + " / " + (OpenPopups() - open0));
+                Submit((Button)keyRow.Input); yield return null; yield return null;
+                if (got != null) got("K");
+                yield return null;
+                Check(captures == 2 && key == "K" && OpenPopups() == open0 && cancels == 1, "...the popup closes when a key is captured", key + " / " + (OpenPopups() - open0));
+
+                // A mouse prompt: a press anywhere off the card binds that button, the left one too.
+                string mk = ""; int mc = 0;
+                var mouseRow = Controls.Key(w.Body, "Mouse key", Bind.To(() => mk, x => mk = x), o =>
+                {
+                    o.Id = "rows-mouse"; o.Prompt = true; o.Mouse = true;
+                    o.Capture = done => { }; o.CancelCapture = () => mc++;
+                });
+                yield return null; yield return null;
+                Submit((Button)mouseRow.Input); yield return null; yield return null;
+                var card = LiveNamed<VisualElement>("key-prompt");
+                var off = new Vector2(w.Root.worldBound.xMin + 12f, w.Root.worldBound.yMin + 12f);
+                // The release goes to the window: the press bound the button and took the prompt (and its panel) away.
+                if (card != null) { PointerAt(EventType.MouseDown, off, card, 0); PointerAt(EventType.MouseUp, off, w.Root, 0); }
+                yield return null;
+                Check(card != null && mk == "Mouse0" && mc == 0 && OpenPopups() == open0, "a Mouse prompt binds a left press off its card as Mouse0, with no CancelCapture", mk + " / " + mc);
+                string after1 = Input.ReadChord(none, none, false, true), after2 = Input.ReadChord(none, none, false, true);
+                Check(after1 == "Mouse0" && after2 == null, "...the host's next poll reads Mouse0 once, so its poll ends as on a read of its own", after1 + " / " + after2);
+                Check(Input.MousePrompt == null, "...and once the capture ended no Mouse prompt is left registered");
+
+                /* The host polls ReadChord(mouse: true) in its Update, before the panel dispatches the same press: one bind,
+                   through the catcher, and the press goes no further (no menu from the window beneath). */
+                int sets = 0; Action<string> hostDone = null;
+                var raceRow = Controls.Key(w.Body, "Race key", Bind.To(() => mk, x => { mk = x; sets++; }), o =>
+                {
+                    o.Id = "rows-race"; o.Prompt = true; o.Mouse = true;
+                    o.Capture = done => hostDone = done;
+                });
+                int menus = 0;
+                var wr = new Window(s.Root, "rows-beneath", "Beneath", new Rect(820, 360, 300, 160));
+                var pad = Ui.Box(wr.Body); pad.style.flexGrow = 1f; pad.pickingMode = PickingMode.Position;
+                var beneath = Ui.Pointer(pad, (at, button) => { if (button != 1) return; menus++; Popup.Context(pad, at, new List<MenuItem> { new MenuItem { Text = "Beneath" } }); });
+                yield return null; yield return null;
+                var hit = pad.worldBound.center;
+                Submit((Button)raceRow.Input); yield return null; yield return null;
+                card = LiveNamed<VisualElement>("key-prompt");
+                string polled = Input.ReadChord(k => k == KeyCode.Mouse1, none, false, true);
+                if (polled != null && hostDone != null) hostDone(polled);
+                // The press lands on whatever is topmost now: the catcher while the prompt is open, else the window.
+                if (card != null && card.panel != null) PointerAt(EventType.MouseDown, hit, card, 1); else PointerAt(EventType.MouseDown, hit, wr.Root, 1);
+                PointerAt(EventType.MouseUp, hit, wr.Root, 1);
+                yield return null; yield return null;
+                Check(card != null && sets == 1 && mk == "Mouse1" && menus == 0 && OpenPopups() == open0,
+                    "...a host poll and the catcher seeing one right press bind it once, and nothing beneath opens a menu", sets + " / " + mk + " / menus " + menus + " / popups " + (OpenPopups() - open0));
+                beneath.Dispose(); Popup.CloseAll(); wr.Root.RemoveFromHierarchy();
+
+                // A Mouse prompt on a row with no layout yet: until its catcher is up, the host's poll still reads mouse buttons.
+                string dk = "";
+                var lateRow = Controls.Key(w.Body, "Late key", Bind.To(() => dk, x => dk = x), o => { o.Prompt = true; o.Mouse = true; o.Capture = done => { }; });
+                bool lateFresh = !(lateRow.Root.layout.height > 0f);
+                bool lateBegun = lateRow.BeginCapture();
+                string latePoll = Input.ReadChord(k => k == KeyCode.Mouse3, none, false, true);
+                Check(lateFresh && lateBegun && latePoll == "Mouse3", "a Mouse prompt not shown yet leaves mouse buttons to the host's poll", lateFresh + " / " + lateBegun + " / " + latePoll);
+                yield return null; yield return null;
+                Popup.CloseAll(); yield return null;
+                Check(Input.MousePrompt == null && OpenPopups() == open0, "...and a cancelled one leaves no Mouse prompt registered");
+
+                // A Prompt row that is not displayed never gets a layout: the prompt opens over its window instead.
+                var hidden = Ui.Box(w.Body); hidden.style.display = DisplayStyle.None;
+                string hk = "F3"; int hc = 0;
+                var hiddenRow = Controls.Key(hidden, "Hidden key", Bind.To(() => hk, x => hk = x), o => { o.Prompt = true; o.Capture = done => { }; o.CancelCapture = () => hc++; });
+                yield return null; yield return null;
+                bool hBegun = hiddenRow.BeginCapture();
+                for (int i = 0; i < 8; i++) yield return null;
+                card = LiveNamed<VisualElement>("key-prompt");
+                var cb = card == null ? Rect.zero : card.worldBound;
+                Check(hBegun && card != null && card.resolvedStyle.visibility == Visibility.Visible && cb.width > 0f && w.Root.worldBound.Overlaps(cb),
+                    "a capture on a row that is not displayed opens its prompt over the row's window", hBegun + " / " + cb + " / window " + w.Root.worldBound);
+                var hx = LiveNamed<Button>("key-prompt-cancel");
+                if (hx != null) { Submit(hx); yield return null; }
+                Check(hc == 1 && OpenPopups() == open0 && Input.MousePrompt == null, "...and its Cancel cancels", hc + " / " + (OpenPopups() - open0));
+                hidden.RemoveFromHierarchy();
+
+                // Mouse without Prompt does nothing on its own: said once in the log.
+                Controls.MouseWarned = false;
+                long mlog = LogLength();
+                Controls.Key(w.Body, "Mouse only 1", Bind.Value(""), o => { o.Mouse = true; o.Capture = done => { }; });
+                Controls.Key(w.Body, "Mouse only 2", Bind.Value(""), o => { o.Mouse = true; o.Capture = done => { }; });
+                yield return null;
+                int mlines = Count(LogSince(mlog), "Mouse needs Prompt");
+                Check(mlines == 1, "a Key row with Mouse but no Prompt logs once that Mouse needs Prompt", mlines + " lines");
+
+                // BeginCapture.
+                string k2 = ""; int c2n = 0; Action<string> got2 = null;
+                var row2 = Controls.Key(w.Body, "Code key", Bind.To(() => k2, x => k2 = x), o => { o.Id = "rows-key2"; o.Capture = d => got2 = d; o.CancelCapture = () => c2n++; });
+                yield return null;
+                var b2 = (Button)row2.Input;
+                bool began = row2.BeginCapture();
+                Check(began && got2 != null && b2.text == Words.Own("press a key…", Gallery.Host), "BeginCapture shows press a key… and starts Capture", b2.text);
+                if (got2 != null) got2("K");
+                Check(k2 == "K" && b2.text == "K" && c2n == 0, "...the callback given K writes the row", k2);
+                got2 = null;
+                row2.BeginCapture();
+                if (got2 != null) got2(Input.ChordCancel);
+                Check(got2 != null && k2 == "K" && b2.text == "K" && c2n == 1, "...given ChordCancel it writes nothing and runs CancelCapture", k2 + " / " + c2n);
+                var text = Controls.Text(w.Body, "Not a key", Bind.Value(""));
+                Check(!text.BeginCapture(), "BeginCapture on a row that is no Key row is false");
+
+                string ch = "Ctrl+Shift+K";
+                var chord = Controls.Key(w.Body, "Chord", Bind.To(() => ch, x => ch = x), o => o.Chord = true);
+                bool mac = Application.platform == RuntimePlatform.OSXPlayer || Application.platform == RuntimePlatform.OSXEditor;
+                Check(((Button)chord.Input).text == (mac ? "⌘⇧K" : "Ctrl+Shift+K"), "a Chord row shows its value as a menu shows a shortcut", ((Button)chord.Input).text);
+
+                /* "Rebind key": a Prompt row below the fold of a scroll, inside a Live; the Live rebuilds and the capture
+                   starts in the same frame, before the new row has a layout. The prompt scrolls it into view first. */
+                var w2 = new Window(s.Root, "rows-scroll", "Scroll", new Rect(820, 60, 360, 260));
+                var sv = Ui.Scroll(w2.Body);
+                var spacer = Ui.Box(sv); spacer.style.height = 900f; spacer.style.flexShrink = 0f;
+                int ver = 0; string deep = "F2"; Control<string> deepRow = null;
+                Controls.Live(sv, () => ver, box => deepRow = Controls.Key(box, "Deep key", Bind.To(() => deep, x => deep = x), o =>
+                {
+                    o.Prompt = true; o.Capture = done => { };
+                }));
+                var spacer2 = Ui.Box(sv); spacer2.style.height = 600f; spacer2.style.flexShrink = 0f;
+                string low = "F4";
+                var lowRow = Controls.Key(sv, "Low key", Bind.To(() => low, x => low = x), o => { o.Prompt = true; o.Capture = done => { }; });
+                yield return null; yield return null; yield return null;
+                ver++;
+                s.Refresh();
+                bool fresh = deepRow != null && !(deepRow.Root.layout.height > 0f);
+                bool begun = deepRow != null && deepRow.BeginCapture();
+                for (int i = 0; i < 6; i++) yield return null;
+                card = LiveNamed<VisualElement>("key-prompt");
+                var vp = sv.contentViewport.worldBound;
+                var rb = deepRow == null ? Rect.zero : deepRow.Root.worldBound;
+                bool inView = rb.height > 0f && rb.yMin >= vp.yMin - 0.5f && rb.yMax <= vp.yMax + 0.5f;
+                // The card sits right under the row's button where it is now, not where the row was before it scrolled.
+                var bb = deepRow == null ? Rect.zero : deepRow.Input.worldBound;
+                bool under = card != null && card.worldBound.yMin >= rb.yMax - 0.5f && Mathf.Abs(card.worldBound.yMin - (bb.yMax + 4f)) <= 1f;
+                Check(fresh && begun && inView && under && !float.IsNaN(sv.scrollOffset.y),
+                    "a capture begun on a Live's new row below the fold scrolls it into view and opens the prompt under it",
+                    "fresh " + fresh + " row " + rb + " button " + bb + " viewport " + vp + " card " + (card == null ? "none" : card.worldBound.ToString()) + " offset " + sv.scrollOffset.y);
+
+                // A row laid out long ago, far below the fold: scrolled in, and the card placed from where it is now.
+                Popup.CloseAll();
+                sv.scrollOffset = Vector2.zero;
+                for (int i = 0; i < 3; i++) yield return null;
+                bool below = lowRow.Root.layout.height > 0f && lowRow.Root.worldBound.yMin > sv.contentViewport.worldBound.yMax;
+                bool lowBegun = lowRow.BeginCapture();
+                for (int i = 0; i < 4; i++) yield return null;
+                card = LiveNamed<VisualElement>("key-prompt");
+                vp = sv.contentViewport.worldBound;
+                rb = lowRow.Root.worldBound; bb = lowRow.Input.worldBound;
+                inView = rb.yMin >= vp.yMin - 0.5f && rb.yMax <= vp.yMax + 0.5f;
+                under = card != null && Mathf.Abs(card.worldBound.yMin - (bb.yMax + 4f)) <= 1f;
+                Check(below && lowBegun && inView && under, "a capture on a laid-out row below the fold scrolls it in and opens the prompt by it",
+                    "below " + below + " row " + rb + " button " + bb + " viewport " + vp + " card " + (card == null ? "none" : card.worldBound.ToString()));
+                Popup.CloseAll(); yield return null;
+                w2.Root.RemoveFromHierarchy();
+
+                /* The editor's canvas under a Mouse prompt: a right click there binds Mouse1, and the canvas never sees the
+                   press, so it opens no menu. */
+                GalleryEditor.Model = new EditorModel();
+                GalleryEditor.Open(); yield return null; yield return null;
+                GalleryEditor.Nav.Go(GalleryEditor.CanvasItem);
+                for (int i = 0; i < 3; i++) yield return null;
+                string ck = ""; int ccancel = 0;
+                var canvasRow = Controls.Key(w.Body, "Canvas key", Bind.To(() => ck, x => ck = x), o =>
+                {
+                    o.Prompt = true; o.Mouse = true; o.Capture = done => { }; o.CancelCapture = () => ccancel++;
+                });
+                yield return null; yield return null;
+                int open1 = OpenPopups();
+                canvasRow.BeginCapture(); yield return null; yield return null;
+                card = LiveNamed<VisualElement>("key-prompt");
+                var on = Cv.Stage.LocalToWorld(Mid(GalleryEditor.Model.Boxes[0].Key));
+                if (card != null) PointerAt(EventType.MouseDown, on, card, 1);
+                PointerAt(EventType.MouseUp, on, GalleryEditor.Surface.Root, 1);
+                yield return null; yield return null;
+                Check(card != null && ck == "Mouse1" && GalleryEditor.Model.MenuFor == null && OpenPopups() == open1 && ccancel == 0,
+                    "a right click on the editor's canvas during a Mouse prompt binds Mouse1 and opens no canvas menu",
+                    ck + " / menu " + GalleryEditor.Model.MenuFor + " / popups " + (OpenPopups() - open1));
+            }
+            finally { History.Clock = clock; History.Clear(); Popup.CloseAll(); s.Dispose(); GalleryEditor.Close(); GalleryEditor.Model = new EditorModel(); }
+        }
+
+        // A label drag of dx panel points with modifiers held on every event.
+        IEnumerator ModDrag(Vector2 from, float dx, EventModifiers mods, VisualElement root)
+        {
+            PointerAt(EventType.MouseDown, from, root, 0, mods); yield return null;
+            for (int i = 1; i <= 4; i++) { PointerAt(EventType.MouseMove, from + new Vector2(dx * i / 4f, 0f), root, 0, mods); yield return null; }
+            PointerAt(EventType.MouseUp, from + new Vector2(dx, 0f), root, 0, mods); yield return null; yield return null;
+        }
+
+        /* The Editor window's first open after the warm-up, on its Canvas page, before any other section opened it:
+           the canvas, menu bar, strip and inspector are warmed by WarmUp's throwaway window. */
+        IEnumerator SectionEditorPerf()
+        {
+            GalleryEditor.Model = new EditorModel();
+            var ms = new long[1];
+            try
+            {
+                yield return TimedEditor(ms);
+                long first = ms[0];
+                GalleryEditor.Close();
+                yield return TimedEditor(ms);
+                Main.Log("[perf] editor first " + first + " ms, second " + ms[0] + " ms");
+                Check(first <= 50, "the Editor window's first open (on its Canvas page) takes <= 50 ms", first + " ms");
+            }
+            finally { GalleryEditor.Close(); GalleryEditor.Model = new EditorModel(); }
+        }
+
+        IEnumerator TimedEditor(long[] ms)
+        {
+            yield return Quiet();
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            GalleryEditor.Open();
+            GalleryEditor.Nav.Go(GalleryEditor.CanvasItem);
+            long build = sw.ElapsedMilliseconds;
+            yield return new WaitForEndOfFrame();
+            ms[0] = sw.ElapsedMilliseconds;
+            Main.Log("[perf] editor open " + ms[0] + " ms (build " + build + " ms; frame " + (Time.unscaledDeltaTime * 1000f).ToString("0") + " ms)");
+        }
     }
 }

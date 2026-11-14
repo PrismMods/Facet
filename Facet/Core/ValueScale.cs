@@ -23,6 +23,14 @@ namespace Facet
             return min + (float)Math.Round((v - min) / step, MidpointRounding.AwayFromZero) * step;
         }
 
+        /* A scrubbed number's value per 4 px of drag: Step, else 1/200 of the range, else 1. A range wider than a
+           float holds (Min and Max near the float limits) gives 1 too, or the first pixel jumps to a bound. */
+        internal static float ScrubUnit(float step, float min, float max)
+        {
+            float span = max - min;
+            return step > 0f ? step : span > 0f && !float.IsInfinity(span) ? span / 200f : 1f;
+        }
+
         private static float Clamp01(float t) { return t < 0f ? 0f : t > 1f ? 1f : t; }
 
         private sealed class LinearScale : IValueScale

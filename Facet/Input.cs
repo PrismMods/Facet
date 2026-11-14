@@ -238,5 +238,82 @@ namespace Facet
                 return;
             }
         }
+
+        // ---- reading a key or chord for a capture
+
+        /// What ReadChord returns for Escape; a Key row's capture cancels on it.
+        public const string ChordCancel = "\u001b";
+
+        private static KeyCode[] _chordKeys;
+        private static KeyCode _lone;      // a modifier pressed alone so far (chord mode): its release returns its name
+        private static int _chordFrame = -2;
+        // Set while a Key row's Mouse prompt is up (its catcher binds every mouse button, so the poll leaves them
+        // alone); the prompt clears it when it closes.
+        internal static Func<bool> MousePrompt;
+        private static string _bound;   // the button a Mouse prompt bound: the host's next poll reads it once
+        private static int _boundFrame;
+
+        // A Mouse prompt bound `name` (null forgets one): the host's poll returns it within the next two frames, so a
+        // host stops polling as it does on a read of its own, with no cancel.
+        internal static void PromptBound(string name) { _bound = name; _boundFrame = Time.frameCount; }
+
+        /* A host's capture poll: null until a non-modifier key goes down this frame, then that key as KeyCode spells
+           it, prefixed by the held modifiers as Ctrl+Shift+Alt+Key when `chord` is set (Command counts as Ctrl).
+           Escape returns ChordCancel. Mouse buttons count only with `mouse`, and the left one not while the pointer is
+           over a Facet window (a click on the prompt's Cancel cancels); none while a Key row's Mouse prompt is up, whose
+           catcher binds them instead (a poll that ran first would close it and let the press reach what lies beneath).
+           The poll after that catcher bound a button returns that button once. With `chord`, a modifier pressed and released
+           with no other key returns its own name on the release. Polled once a frame while a capture runs; a gap of a
+           frame or more forgets a modifier pressed before it. Allocates only the name it returns. */
+        public static string ReadChord(Func<KeyCode, bool> down, Func<KeyCode, bool> held, bool chord, bool mouse = false)
+        {
+            if (down == null || held == null) return null;
+            int f = Time.frameCount;
+            if (_bound != null)
+            {
+                var bound = _bound; _bound = null;
+                if (f <= _boundFrame + 2) return bound;
+            }
+            if (f > _chordFrame + 1) _lone = KeyCode.None;
+            _chordFrame = f;
+            if (down(KeyCode.Escape)) { _lone = KeyCode.None; return ChordCancel; }
+            if (_chordKeys == null) _chordKeys = ChordKeys();
+            foreach (var k in _chordKeys)
+            {
+                if (k >= KeyCode.Mouse0 && k <= KeyCode.Mouse6)
+                {
+                    if (!mouse || !down(k) || (MousePrompt != null && MousePrompt())) continue;
+                    if (k == KeyCode.Mouse0 && PointerOverWindow(UnityEngine.Input.mousePosition)) continue;
+                }
+                else if (!down(k)) continue;
+                _lone = KeyCode.None;
+                if (!chord) return KeyName(k);
+                bool ctrl = held(KeyCode.LeftControl) || held(KeyCode.RightControl) || held(KeyCode.LeftCommand) || held(KeyCode.RightCommand);
+                bool shift = held(KeyCode.LeftShift) || held(KeyCode.RightShift);
+                bool alt = held(KeyCode.LeftAlt) || held(KeyCode.RightAlt) || held(KeyCode.AltGr);
+                return (ctrl ? "Ctrl+" : "") + (shift ? "Shift+" : "") + (alt ? "Alt+" : "") + KeyName(k);
+            }
+            if (!chord) return null;
+            if (_lone != KeyCode.None && !held(_lone)) { var lone = _lone; _lone = KeyCode.None; return KeyName(lone); }
+            for (var m = KeyCode.RightShift; m <= KeyCode.AltGr; m++)
+                if (down(m)) _lone = _lone == KeyCode.None ? m : KeyCode.None;   // a second modifier: none was alone
+            return null;
+        }
+
+        // Every key but the modifiers (RightShift..AltGr), Escape and the joysticks, each value once (KeyCode has aliases).
+        private static KeyCode[] ChordKeys()
+        {
+            var seen = new HashSet<KeyCode>();
+            foreach (KeyCode k in Enum.GetValues(typeof(KeyCode)))
+                if (k != KeyCode.None && k != KeyCode.Escape && (k < KeyCode.RightShift || k > KeyCode.AltGr) && k < KeyCode.JoystickButton0) seen.Add(k);
+            var a = new KeyCode[seen.Count];
+            seen.CopyTo(a);
+            Array.Sort(a);
+            return a;
+        }
+
+        // KeyCode's aliases print as whichever name the runtime picks: the command keys get theirs.
+        private static string KeyName(KeyCode k)
+            => k == KeyCode.LeftCommand ? "LeftCommand" : k == KeyCode.RightCommand ? "RightCommand" : k.ToString();
     }
 }

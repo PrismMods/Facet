@@ -52,6 +52,14 @@ namespace Facet.Mod
         public Layer Layer = Layer.Window;
         public int Size = 20, AfterChanges;
         public bool Outline;
+        /// The Cards page: two card grids, the active card, what Click, DoubleClick and Rename were handed, Thumb's
+        /// runs per key, and the key whose Thumb throws.
+        public List<GalleryTab> CardsA = GalleryTab.Make("ca", "Card", 3),
+            CardsB = new List<GalleryTab> { new GalleryTab("cb1", "Card B"), new GalleryTab("cb2", "Hidden") };
+        public string ActiveCard = "ca1", ThrowThumb;
+        public List<string> Clicks = new List<string>(), Doubles = new List<string>();
+        public Dictionary<string, int> Thumbs = new Dictionary<string, int>();
+        public int CardRenames, CardAdds;
     }
 
     /// A tab in the strip or a row in the Lists page's list.
@@ -128,6 +136,10 @@ namespace Facet.Mod
         public static NavItem ListsItem { get; private set; }
         public static VisualElement ListsPage { get; private set; }
         public static NavItem ApiItem { get; private set; }
+        /// The Cards page's two grids, as last built.
+        public static NavItem CardsItem { get; private set; }
+        public static CardGrid<GalleryTab> GroupA { get; private set; }
+        public static CardGrid<GalleryTab> GroupB { get; private set; }
         /// Snap targets beside the boxes, like another tab's items: drawn dim, never selected.
         public static readonly Rect[] Ghosts = { new Rect(400, 20, 60, 40), new Rect(400, 100, 60, 40) };
 
@@ -140,7 +152,8 @@ namespace Facet.Mod
             _win.CloseRequested += _ => Close();
             _win.OnRaise = () => { if (Surface != null) Surface.BringToFront(); };   // a press raises it, so its shortcuts answer
             Nav = new Nav(_win.Body, new[] { NavItem.Heading(null, UndoItem = new NavItem("Undo", Undo), CanvasItem = new NavItem("Canvas", CanvasPage),
-                ListsItem = new NavItem("Lists", Lists), ApiItem = new NavItem("API", Api), new NavItem("Regions", Regions)) });
+                ListsItem = new NavItem("Lists", Lists), ApiItem = new NavItem("API", Api), new NavItem("Regions", Regions),
+                CardsItem = new NavItem("Cards", Cards)) });
             return _win;
         }
 
@@ -401,6 +414,56 @@ namespace Facet.Mod
             }, o => { o.Ok = "Clear"; o.Danger = true; }), p).name = "ed-clear";
         }
 
+        /// Two card grids: click picks, double-click makes a card active, right-click opens its menu (Rename, Use),
+        /// the add card adds one; each thumbnail is a plain box tinted by its key.
+        static void Cards(VisualElement p)
+        {
+            Ui.Muted("Click a card; double-click it to use it; right-click it to rename it.", p).style.whiteSpace = WhiteSpace.Normal;
+            Ui.Caps("Group A", p);
+            GroupA = CardSet(p, "ed-cards-a", () => Model.CardsA, true);
+            Ui.Caps("Group B", p);
+            GroupB = CardSet(p, "ed-cards-b", () => Model.CardsB, false);
+        }
+
+        static CardGrid<GalleryTab> CardSet(VisualElement p, string id, Func<List<GalleryTab>> list, bool add)
+        {
+            CardGrid<GalleryTab> g = null;
+            g = Controls.CardGrid<GalleryTab>(p, o =>
+            {
+                o.Id = id;
+                o.Items = () => list();
+                o.Key = t => t.Key;
+                o.Title = t => t.Name;
+                o.Note = t => t.Key == Model.ActiveCard ? "in use" : t.Key;
+                o.Active = t => t.Key == Model.ActiveCard;
+                o.Thumb = (box, t) =>
+                {
+                    int n; Model.Thumbs.TryGetValue(t.Key, out n); Model.Thumbs[t.Key] = n + 1;
+                    if (t.Key == Model.ThrowThumb) throw new InvalidOperationException("Thumb failed on purpose");
+                    var fill = Plain(box, Color.HSVToRGB((t.Key.GetHashCode() & 255) / 255f, 0.4f, 0.7f));
+                    fill.style.position = Position.Relative;
+                    fill.style.flexGrow = 1f;
+                };
+                o.Click = t => Model.Clicks.Add(t.Name);
+                o.DoubleClick = t => { Model.Doubles.Add(t.Name); Model.ActiveCard = t.Key; };
+                o.Menu = t => new List<MenuItem>
+                {
+                    new MenuItem { Text = "Rename", Run = () => g.BeginRename(t) },
+                    new MenuItem { Text = "Use", Run = () => Model.ActiveCard = t.Key },
+                };
+                o.Rename = (t, name) => { Model.CardRenames++; t.Name = name; };
+                if (add)
+                {
+                    o.AddLabel = "New card";
+                    o.Add = () => new List<MenuItem>
+                    {
+                        new MenuItem { Text = "Blank card", Run = () => { Model.CardAdds++; Model.Made++; list().Add(new GalleryTab(id + "-new" + Model.Made, "New " + Model.Made)); g.Refresh(); } },
+                    };
+                }
+            });
+            return g;
+        }
+
         // Value-following regions: a group with its switch, a When box, sections with options, a hooked label.
         static bool _more = true, _details;
         static void Regions(VisualElement p)
@@ -575,6 +638,7 @@ namespace Facet.Mod
             Surface = null; Nav = null; _win = null; AmountRow = null; BoundRow = null; Canvas = null; Page = null; Bar = null; MenuItems = null;
             Left = null; Footer = null; Right = null; InspectorScroll = null; Inspector = null; HueRow = null;
             Hands = null; Feet = null; RowList = null; Status = null; ListsItem = null; ListsPage = null;
+            GroupA = null; GroupB = null;
         }
     }
 }

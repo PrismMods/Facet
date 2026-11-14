@@ -100,6 +100,44 @@ namespace Facet
             Controls.ToggleGroup(s, lower, Bind.Value(true));
             Controls.Item(page, upper, lower);
             Form.Build(page, new[] { new Field { Group = rest, Label = lower, Kind = FieldKind.Bool, Get = () => true, Set = _ => { } } });
+            Parts(page, upper, lower, rest);
+        }
+
+        private sealed class Spot { public string Name; public Rect R; }
+
+        /* The editor's parts, as an editor page holds them: a menu bar with its tools, a tab strip, a canvas with two
+           items, a card grid with its add card, a scrolled inspector with a scrubbed number and a chord key row. Without
+           them an editor window opened straight after the warm-up paid their first run in its own frame. */
+        private static void Parts(VisualElement page, string upper, string lower, string rest)
+        {
+            var words = new List<string> { upper, lower };
+            var bar = Controls.MenuBar(page, new List<MenuItem>
+            {
+                new MenuItem { Text = upper, Items = new List<MenuItem> { new MenuItem { Text = lower, Shortcut = "Ctrl+Shift+K", Run = () => { } }, MenuItem.Separator } },
+            });
+            bar.Tools.Label(() => rest);
+            bar.Tools.Toggle(lower, Bind.Value(true), upper);
+            bar.Tools.UndoRedo();
+            Controls.Reorder<string>(page, o => { o.Title = upper; o.Items = () => words; o.Text = x => x; o.Scroll = true; o.Add = () => null; });
+            var spots = new List<Spot> { new Spot { Name = upper, R = new Rect(10f, 10f, 60f, 40f) }, new Spot { Name = lower, R = new Rect(90f, 10f, 60f, 40f) } };
+            Controls.Canvas<Spot>(page, upper, o =>
+            {
+                o.Items = () => spots; o.Key = x => x.Name; o.Find = k => spots.Find(x => x.Name == k);
+                o.GetRect = x => x.R; o.SetRect = (x, r) => x.R = r;
+                o.Size = new Vector2(400f, 200f);
+            });
+            Controls.CardGrid<string>(page, o =>
+            {
+                o.Items = () => words; o.Title = x => x; o.Note = x => rest; o.Active = x => x == upper;
+                o.Thumb = (e, x) => { }; o.AddLabel = lower; o.Add = () => null;
+            });
+            var scroll = Ui.Scroll(page);
+            Controls.Live(scroll, () => 1, p =>
+            {
+                Controls.Number(p, lower, Bind.Value(1f), o => { o.Scrub = true; o.Step = 1f; });
+                Controls.Key(p, upper, Bind.Value("Ctrl+K"), o => o.Chord = true);
+                Controls.Repeat<string>(p, () => words, x => x, (box, x) => Controls.Info(box, x, () => rest));
+            });
         }
     }
 }

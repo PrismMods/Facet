@@ -101,6 +101,8 @@ namespace Facet
             { "Mixed", "혼합" },
             { "OK", "확인" },
             { "Cancel", "취소" },
+            { "Press a key", "키를 누르세요" },
+            { "Press a key or chord", "키 또는 조합 키를 누르세요" },
         };
     }
 }
