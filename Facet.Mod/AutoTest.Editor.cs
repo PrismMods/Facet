@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using UnityEngine;
@@ -140,6 +141,369 @@ namespace Facet.Mod
                 Check(History.Undo() && Near(m.Bound, start) && !History.CanUndo, "...and the drag is one step", m.Bound.ToString());
             }
             finally { History.Clear(); GalleryEditor.Close(); GalleryEditor.Model = new EditorModel(); }
+        }
+
+        // A press and a release at a panel point on the panel `via` sits in, in one frame: a still click.
+        static void PressAt(Vector2 panel, VisualElement via, int button = 0)
+        {
+            PointerAt(EventType.MouseDown, panel, via, button);
+            PointerAt(EventType.MouseUp, panel, via, button);
+        }
+
+        // A release of the left button on `e` itself: how a menu row is picked.
+        static void Release(VisualElement e)
+        {
+            using (var ev = PointerUpEvent.GetPooled(new Event { type = EventType.MouseUp, button = 0 })) { ev.target = e; e.SendEvent(ev); }
+        }
+
+        // The Canvas page's toolbar parts: edges, a toggle, undo/redo, chips, a label, search and an icon button.
+        IEnumerator SectionToolbar()
+        {
+            GalleryEditor.Model = new EditorModel();
+            var win = GalleryEditor.Open(); yield return null; yield return null;
+            VisualElement box = null;
+            try
+            {
+                GalleryEditor.Nav.Go(GalleryEditor.CanvasItem); yield return null; yield return null;
+                History.Clear();
+                box = Ui.Box();
+                GalleryEditor.Page.Insert(0, box);
+                var tb = Controls.Toolbar(box);
+                var card = Controls.Card(box, "Probe card");
+                var crow = Controls.Toggle(card, "Probe row", Bind.Value(false));
+                bool grid = true;
+                var tog = tb.Toggle("Grid", Bind.To(() => grid, v => grid = v), "Show the grid");
+                tb.UndoRedo();
+                int pick = 1;
+                var chips = tb.Chips(Bind.To(() => pick, v => pick = v), new[] { 1, 2, 3 }, v => "Chip " + v);
+                tb.Spacer();
+                string said = "first";
+                var lab = tb.Label(() => said);
+                string searched = null;
+                var search = tb.Search(q => searched = q, "Find");
+                int icons = 0;
+                var icon = tb.Icon(Background.FromTexture2D(Texture2D.whiteTexture), "Probe icon", () => icons++);
+                yield return null; yield return null;
+
+                /* A card's rows sit its border (Line) and then their own padding (Pad) in; the toolbar pads in the
+                   same two steps, so layout rounds both to the same whole pixels at any scale. */
+                var rowText = crow.Root.Q<Label>();
+                var shell = card.parent;   // Controls.Card returns its body; the border is on the body's parent
+                float cardL = rowText.worldBound.xMin - shell.worldBound.xMin, cardR = shell.worldBound.xMax - crow.Input.worldBound.xMax;
+                float barL = tog.worldBound.xMin - tb.Root.worldBound.xMin, barR = tb.Root.worldBound.xMax - icon.worldBound.xMax;
+                Check(Mathf.Abs(barL - cardL) <= 0.5f && Mathf.Abs(barR - cardR) <= 0.5f,
+                    "a toolbar's edges pad as a card pads its rows (±0.5)", barL + " / " + barR + " vs " + cardL + " / " + cardR);
+                float dl = tog.worldBound.xMin - rowText.worldBound.xMin, dr = icon.worldBound.xMax - crow.Input.worldBound.xMax;
+                Check(Mathf.Abs(dl) <= 0.5f && Mathf.Abs(dr) <= 0.5f, "...so its first item starts under a row's label and its last ends on the row's control edge (±0.5)", dl + " / " + dr);
+
+                var accent = Theme.For(tog)[Role.Accent];
+                Check(Near(tog.style.backgroundColor.value, accent), "a toolbar Toggle shows selected while its bind is true");
+                Submit(tog); yield return null;
+                Check(!grid && !Near(tog.style.backgroundColor.value, accent), "...and a click flips the bind and the look", grid.ToString());
+                Check(!History.CanUndo, "...recording nothing in History");
+
+                var undo = tb.Root.Query<Button>().ToList().Find(b => b.text == "↶");
+                var head = win.TitleBarRight.Query<Button>().ToList().Find(b => b.text == "↶");
+                Check(undo != null && head != null && !undo.enabledSelf && !History.CanUndo, "UndoRedo's undo button is disabled while there is nothing to undo");
+                if (undo == null || head == null) yield break;
+                History.Record("Probe step", null, () => { }, () => { });
+                Check(undo.enabledSelf && History.CanUndo && undo.tooltip == head.tooltip && undo.tooltip == "Undo Probe step",
+                    "...enabled once there is a step, with the header's tooltip", undo.tooltip + " / " + head.tooltip);
+                History.Undo();
+                Check(!undo.enabledSelf && !History.CanUndo, "...and disabled again once it is undone");
+                Check(Px(undo.style.fontSize) == Px(head.style.fontSize) && Px(undo.style.width) == Px(head.style.width),
+                    "...drawn as the header's glyph", Px(undo.style.fontSize) + " / " + Px(head.style.fontSize));
+
+                var c2 = chips.Root.Query<Button>().ToList().Find(b => b.text == "Chip 2");
+                Check(c2 != null && chips.Value == 1, "Chips shows one button per value, the bound one first");
+                if (c2 != null) { Submit(c2); yield return null; }
+                Check(pick == 2 && chips.Value == 2 && c2 != null && Near(c2.style.backgroundColor.value, accent), "Chips selects the clicked value", pick.ToString());
+
+                said = "second";
+                Check(lab.text == "first", "a toolbar Label shows its text");
+                GalleryEditor.Surface.Refresh();
+                Check(lab.text == "second", "...and re-reads it on Surface.Refresh()", lab.text);
+
+                search.value = "abc"; yield return null;
+                Check(searched == "abc", "a toolbar Search reports what is typed", searched ?? "null");
+                Submit(icon); yield return null;
+                Check(icons == 1 && icon.tooltip == "Probe icon", "an icon button runs its click and carries its tooltip", icons + " / " + icon.tooltip);
+            }
+            finally { box?.RemoveFromHierarchy(); History.Clear(); GalleryEditor.Close(); GalleryEditor.Model = new EditorModel(); }
+        }
+
+        static int OpenPopups() => ((System.Collections.IList)typeof(Popup).GetField("_open", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null)).Count;
+
+        // A menu row on screen by its text label.
+        static VisualElement MenuRow(string text) => LiveLabel(text)?.parent;
+
+        static int Count(string s, string part)
+        {
+            int n = 0;
+            for (int i = s.IndexOf(part, StringComparison.Ordinal); i >= 0; i = s.IndexOf(part, i + part.Length, StringComparison.Ordinal)) n++;
+            return n;
+        }
+
+        // The Canvas page's menu bar: one popup per title, hover switching, a submenu, disabled and checked rows,
+        // shortcut labels, Escape, a throwing item, and text re-read each time the menu opens.
+        IEnumerator SectionMenus()
+        {
+            GalleryEditor.Model = new EditorModel();
+            var win = GalleryEditor.Open(); yield return null; yield return null;
+            VisualElement probe = null;
+            try
+            {
+                var m = GalleryEditor.Model;
+                GalleryEditor.Nav.Go(GalleryEditor.CanvasItem); yield return null; yield return null;
+                History.Clear();
+                var bar = GalleryEditor.Bar;
+                var file = win.Body.Q<Button>("ed-file"); var edit = win.Body.Q<Button>("ed-edit");
+                Check(bar != null && file != null && edit != null, "the Canvas page has a menu bar with File and Edit");
+                if (bar == null || file == null || edit == null) yield break;
+                int open0 = OpenPopups();
+
+                PressAt(edit.worldBound.center, win.Root); yield return null; yield return null;
+                Check(bar.IsOpen && OpenPopups() == open0 + 1 && LiveLabel("Copy Style") != null && LiveLabel("New") == null,
+                    "clicking Edit opens one popup, Edit's menu", "open " + bar.IsOpen + ", popups +" + (OpenPopups() - open0));
+                var paste = MenuRow("Paste");
+                Check(paste != null, "Edit lists Paste");
+                if (paste != null) { Release(paste); yield return null; }
+                Check(m.Pastes == 0 && bar.IsOpen, "the disabled Paste row does not run on a click", m.Pastes.ToString());
+                var mark = MenuRow("Snap")?.Q<Label>("check");
+                Check(mark != null && mark.text == "✓", "the checked Snap row shows its mark", mark?.text);
+                var keys = MenuRow("Copy")?.Q<Label>("shortcut");
+                string want = Shortcut.Display("Ctrl+C", Application.platform == RuntimePlatform.OSXPlayer);
+                Check(keys != null && keys.text == want, "the Copy row's shortcut label reads " + want, keys?.text);
+                var undoText = MenuRow("Copy")?.parent?.Q("ed-undo")?.Q<Label>("text");
+                Check(undoText != null && undoText.text == "Undo ", "with nothing to undo the Undo row reads \"Undo \"", undoText?.text);
+
+                var card = MenuRow("Copy")?.parent;
+                if (card != null) PointerAt(EventType.MouseMove, file.worldBound.center, card);
+                yield return null; yield return null;
+                Check(bar.IsOpen && LiveLabel("New") != null && LiveLabel("Copy Style") == null && OpenPopups() == open0 + 1,
+                    "hovering File while Edit is open swaps the popup to File's", "popups +" + (OpenPopups() - open0));
+
+                var recent = MenuRow("Recent");
+                Check(recent != null && recent.Q<Label>("sub") != null, "File lists Recent with a submenu arrow");
+                if (recent == null) yield break;
+                PointerAt(EventType.MouseMove, recent.worldBound.center, recent); yield return null; yield return null;
+                var r1 = MenuRow("Recent 1");
+                Check(r1 != null && OpenPopups() == open0 + 2 && r1.parent.worldBound.xMin >= recent.worldBound.xMax - 8f,
+                    "hovering Recent opens its submenu beside it", r1 == null ? "none" : r1.parent.worldBound + " / " + recent.worldBound);
+                if (r1 != null) { Release(r1); yield return null; yield return null; }
+                Check(m.Recents == 1 && !bar.IsOpen && OpenPopups() == open0, "picking the submenu's item runs it once and closes both menus",
+                    m.Recents + " runs, popups +" + (OpenPopups() - open0));
+
+                PressAt(edit.worldBound.center, win.Root); yield return null; yield return null;
+                bool esc = Input.HandleEscape(); yield return null;
+                Check(esc && !bar.IsOpen && OpenPopups() == open0 && GalleryEditor.Surface.Visible, "Escape closes the menu and the window stays open");
+
+                m.Fail = true;
+                long at = LogLength();
+                PressAt(file.worldBound.center, win.Root); yield return null; yield return null;
+                var add = MenuRow("New");
+                if (add != null) { Release(add); yield return null; }
+                int lines = Count(LogSince(at), "Menu 'New'");
+                Check(add != null && lines == 1 && !bar.IsOpen && OpenPopups() == open0, "an item that throws logs one line and the menu closes", lines + " lines");
+
+                bar.Open(1); yield return null;
+                var u1 = MenuRow("Copy")?.parent?.Q("ed-undo")?.Q<Label>("text")?.text;
+                bar.Close();
+                History.Record("Probe step", null, () => { }, () => { });
+                bar.Open(1); yield return null;
+                var u2 = MenuRow("Copy")?.parent?.Q("ed-undo")?.Q<Label>("text")?.text;
+                bar.Close();
+                Check(u1 == "Undo " && u2 == "Undo Probe step", "the Undo row's text changes after a History step", u1 + " -> " + u2);
+                Check(!bar.IsOpen && OpenPopups() == open0, "MenuBar.Open and Close drive the same popup");
+
+                // A command title (no Items) runs from its own click alone, never from a hover while a menu is open.
+                int resets = 0, locked = 0;
+                probe = Ui.Box();
+                GalleryEditor.Page.Insert(0, probe);
+                var bar2 = Controls.MenuBar(probe, new List<MenuItem>
+                {
+                    new MenuItem { Text = "Probe A", Items = new List<MenuItem> { new MenuItem { Text = "Probe A item" } } },
+                    new MenuItem { Text = "Probe B", Items = new List<MenuItem> { new MenuItem { Text = "Probe B item" } } },
+                    new MenuItem { Text = "Probe Reset", Id = "probe-reset", Run = () => resets++ },
+                    new MenuItem { Text = "Probe Locked", Enabled = () => false, Run = () => locked++ },
+                });
+                yield return null; yield return null;
+                var reset = probe.Q<Button>("probe-reset");
+                var titleA = probe.Query<Button>().ToList().Find(b => b.text == "Probe A");
+                bar2.Open(1); yield return null; yield return null;
+                var card2 = MenuRow("Probe B item")?.parent;
+                if (card2 != null && reset != null) PointerAt(EventType.MouseMove, reset.worldBound.center, card2);
+                yield return null; yield return null;
+                Check(card2 != null && reset != null && resets == 0 && bar2.IsOpen && LiveLabel("Probe B item") != null,
+                    "hovering a command title while a menu is open runs nothing and keeps the menu", resets + " runs, open " + bar2.IsOpen);
+                if (card2 != null && card2.panel != null && titleA != null) PointerAt(EventType.MouseMove, titleA.worldBound.center, card2);
+                yield return null; yield return null;
+                Check(LiveLabel("Probe A item") != null && LiveLabel("Probe B item") == null, "...while hovering a title with a menu still switches to it");
+                bar2.Close(); yield return null;
+                if (reset != null) { PressAt(reset.worldBound.center, win.Root); yield return null; }
+                bar2.Open(3); yield return null;
+                Check(resets == 1 && locked == 0 && !bar2.IsOpen, "a click on a command title runs it once; a disabled one does not run", resets + " / " + locked);
+            }
+            finally { Popup.CloseAll(); probe?.RemoveFromHierarchy(); History.Clear(); GalleryEditor.Close(); GalleryEditor.Model = new EditorModel(); }
+        }
+
+        // A row's ContextMenuItems: read at the right-click, opened at the pointer; a canvas pane takes them too.
+        IEnumerator SectionContextMenu()
+        {
+            GalleryEditor.Model = new EditorModel();
+            var win = GalleryEditor.Open(); yield return null; yield return null;
+            VisualElement box = null;
+            try
+            {
+                GalleryEditor.Nav.Go(GalleryEditor.CanvasItem); yield return null; yield return null;
+                int runs = 0;
+                var first = new List<MenuItem> { new MenuItem { Text = "Ctx first", Run = () => runs += 1 } };
+                var second = new List<MenuItem> { new MenuItem { Text = "Ctx second", Run = () => runs += 10 } };
+                var list = first;
+                box = Ui.Box();
+                GalleryEditor.Page.Insert(0, box);
+                var row = Controls.Toggle(box, "Ctx probe", Bind.Value(false), o => { o.Id = "ed-ctx"; o.ContextMenuItems = () => list; });
+                yield return null; yield return null;
+                list = second;
+                var at = row.Root.worldBound.center + new Vector2(-40f, 3f);
+                PressAt(at, win.Root, 1); yield return null; yield return null;
+                var lab = LiveLabel("Ctx second");
+                var card = lab?.parent?.parent;
+                Check(lab != null && LiveLabel("Ctx first") == null, "a right-click on a row opens the list its ContextMenuItems returns at the click");
+                Check(card != null && Mathf.Abs(card.worldBound.xMin - at.x) <= 1f && Mathf.Abs(card.worldBound.yMin - at.y) <= 1f,
+                    "...with the card's top-left within 1 px of the click point", card == null ? "none" : card.worldBound.position + " vs " + at);
+                if (lab != null) { Release(lab.parent); yield return null; }
+                Check(runs == 10 && LiveLabel("Ctx second") == null, "picking its item runs it once and closes the menu", runs.ToString());
+                row.Root.RemoveFromHierarchy();
+
+                var cv = Controls.Canvas<GalleryBox>(box, "Ctx canvas", o =>
+                {
+                    o.Items = () => new List<GalleryBox>();
+                    o.GetRect = b => b.Rect;
+                    o.SetRect = (b, r) => b.Rect = r;
+                    o.Size = new Vector2(400, 100);
+                    o.ContextMenuItems = () => second;
+                });
+                yield return null; yield return null;
+                PressAt(cv.Stage.worldBound.center, win.Root, 1); yield return null; yield return null;
+                Check(LiveLabel("Ctx second") != null, "a right-click on a canvas opens its pane's ContextMenuItems");
+            }
+            finally { Popup.CloseAll(); box?.RemoveFromHierarchy(); GalleryEditor.Close(); GalleryEditor.Model = new EditorModel(); }
+        }
+
+        // Menus.HandleKeys over the editor's menus: chords with their modifiers, never while typing, a capture or a
+        // drag runs, never Ctrl+Z, only for the front window, and nothing allocated on a frame with no key down.
+        IEnumerator SectionMenuKeys()
+        {
+            GalleryEditor.Model = new EditorModel();
+            var win = GalleryEditor.Open(); yield return null; yield return null;
+            bool galleryShown = Gallery.Surface != null && Gallery.Surface.Visible, galleryMade = Gallery.Surface == null;
+            TextField tf = null;
+            Surface modal = null;
+            try
+            {
+                var m = GalleryEditor.Model;
+                GalleryEditor.Nav.Go(GalleryEditor.CanvasItem); yield return null; yield return null;
+                History.Clear();
+                var items = GalleryEditor.MenuItems;
+                Func<KeyCode, bool> c = k => k == KeyCode.C, z = k => k == KeyCode.Z, none = k => false;
+
+                bool ran = Menus.HandleKeys(win.Root, items, c, true, true, false);
+                Check(ran && m.CopyStyles == 1 && m.Copies == 0, "C down with Ctrl and Shift runs Copy Style and not Copy", m.CopyStyles + " / " + m.Copies);
+                ran = Menus.HandleKeys(win.Root, items, c, true, false, false);
+                Check(ran && m.Copies == 1 && m.CopyStyles == 1, "C down with Ctrl alone runs Copy", m.CopyStyles + " / " + m.Copies);
+                ran = Menus.HandleKeys(win.Root, items, c, false, false, false);
+                Check(!ran && m.Copies == 1, "C down with no modifier runs nothing");
+                ran = Menus.HandleKeys(win.Root, items, k => k == KeyCode.Alpha1, true, false, false);
+                Check(ran && m.Recents == 1, "a shortcut inside a submenu runs too", m.Recents.ToString());
+
+                tf = new TextField();
+                GalleryEditor.Page.Insert(0, tf); yield return null;
+                tf.Focus(); yield return null;
+                ran = Menus.HandleKeys(win.Root, items, c, true, true, false);
+                Check(Input.TextFocused && !ran && m.CopyStyles == 1, "with a text field focused it runs nothing", "focused " + Input.TextFocused);
+                tf.Blur(); tf.RemoveFromHierarchy(); tf = null; yield return null;
+
+                KeyCapture.Claim("menu-keys probe", () => { });
+                ran = Menus.HandleKeys(win.Root, items, c, true, true, false);
+                KeyCapture.Release("menu-keys probe");
+                Check(!ran && m.CopyStyles == 1, "while a key capture runs it runs nothing");
+                Input.Gesture = () => { };
+                ran = Menus.HandleKeys(win.Root, items, c, true, true, false);
+                Input.Gesture = null;
+                Check(!ran && m.CopyStyles == 1, "while a drag is in progress it runs nothing");
+
+                History.Record("Probe step", null, () => { }, () => { });
+                ran = Menus.HandleKeys(win.Root, items, z, true, false, false);
+                Check(!ran && m.Undos == 0 && History.NextUndo == "Probe step", "Z down with Ctrl runs nothing and returns false, though Undo shows Ctrl+Z",
+                    "ran " + ran + ", undos " + m.Undos + ", next " + History.NextUndo);
+                int redoZ = 0, redoY = 0, shiftY = 0;
+                var redos = new List<MenuItem>
+                {
+                    new MenuItem { Text = "Probe redo Z", Shortcut = "Ctrl+Shift+Z", Run = () => redoZ++ },
+                    new MenuItem { Text = "Probe redo Y", Shortcut = "Ctrl+Y", Run = () => redoY++ },
+                    new MenuItem { Text = "Probe shift Y", Shortcut = "Ctrl+Shift+Y", Run = () => shiftY++ },
+                };
+                bool rz = Menus.HandleKeys(win.Root, redos, z, true, true, false), ry = Menus.HandleKeys(win.Root, redos, k => k == KeyCode.Y, true, false, false);
+                Check(!rz && !ry && redoZ == 0 && redoY == 0, "...and neither do Ctrl+Shift+Z or Ctrl+Y, though items show them",
+                    "ran " + rz + "/" + ry + ", runs " + redoZ + "/" + redoY);
+                ran = Menus.HandleKeys(win.Root, redos, k => k == KeyCode.Y, true, true, false);
+                Check(ran && shiftY == 1, "...while Ctrl+Shift+Y, outside the undo chord, runs its item", "ran " + ran + ", runs " + shiftY);
+
+                Gallery.Open(); Gallery.Surface.BringToFront(); yield return null;
+                ran = Menus.HandleKeys(win.Root, items, c, true, true, false);
+                Check(!ran && m.CopyStyles == 1, "with a second Gallery window raised above it, the editor's HandleKeys runs nothing");
+                var foot = win.Footer.worldBound;
+                PressAt(new Vector2(foot.xMax - 40f, foot.center.y), win.Root); yield return null;
+                ran = Menus.HandleKeys(win.Root, items, c, true, true, false);
+                Check(ran && m.CopyStyles == 2, "a press in the editor raises it, and its shortcuts answer again", m.CopyStyles.ToString());
+                Gallery.Surface.BringToFront(); yield return null;
+                var bar = win.TitleBarRight.parent.worldBound;
+                PressAt(new Vector2(bar.xMin + 60f, bar.center.y), win.Root); yield return null;
+                ran = Menus.HandleKeys(win.Root, items, c, true, true, false);
+                Check(ran && m.CopyStyles == 3, "...and so does a press on its title bar, whose drag stops the press", m.CopyStyles.ToString());
+
+                GalleryEditor.Bar.Open(1); yield return null;
+                ran = Menus.HandleKeys(win.Root, items, c, true, true, false);
+                bool barOpen = GalleryEditor.Bar.IsOpen;
+                GalleryEditor.Bar.Close(); yield return null;
+                Check(barOpen && !ran && m.CopyStyles == 3, "with the editor's own menu open, its HandleKeys runs nothing", "open " + barOpen + ", " + m.CopyStyles);
+                modal = new Surface(Gallery.Host, "FacetModalProbe", Layer.Modal); yield return null;
+                ran = Menus.HandleKeys(win.Root, items, c, true, true, false);
+                Check(modal.Visible && !ran && m.CopyStyles == 3, "with a modal surface above the editor, its HandleKeys runs nothing", m.CopyStyles.ToString());
+                modal.Dispose(); modal = null; yield return null;
+                ran = Menus.HandleKeys(win.Root, items, c, true, true, false);
+                Check(ran && m.CopyStyles == 4, "...and its shortcuts answer again once the menu and the modal are gone", m.CopyStyles.ToString());
+
+                // The game's runtime reads 0 from the per-thread counter, so this counts heap growth with the collector paused.
+                Menus.HandleKeys(win.Root, items, none, true, false, false);
+                long grew, junk;
+                object keep = null;
+                var mode = GarbageCollector.GCMode;
+                try
+                {
+                    GarbageCollector.GCMode = GarbageCollector.Mode.Disabled;
+                    long a = GC.GetTotalMemory(false);
+                    for (int i = 0; i < 2000; i++) keep = new byte[128];
+                    junk = GC.GetTotalMemory(false) - a;
+                    a = GC.GetTotalMemory(false);
+                    for (int i = 0; i < 10000; i++) Menus.HandleKeys(win.Root, items, none, true, false, false);
+                    grew = GC.GetTotalMemory(false) - a;
+                }
+                finally { GarbageCollector.GCMode = mode; }
+                GC.KeepAlive(keep);
+                Main.Log("[perf] menu shortcuts: heap grew " + grew + " bytes over 10000 HandleKeys rounds with no key down (2000 x 128-byte arrays grew it " + junk + ")");
+                Check(junk > 0, "the heap probe sees allocations", junk + " bytes");
+                Check(grew == 0, "10 000 HandleKeys rounds with no key down allocate nothing", grew + " bytes");
+            }
+            finally
+            {
+                if (tf != null) tf.RemoveFromHierarchy();
+                modal?.Dispose();
+                KeyCapture.Release("menu-keys probe"); Input.Gesture = null;
+                if (galleryMade) Gallery.Close(); else if (!galleryShown && Gallery.Surface != null) Gallery.Surface.Visible = false;
+                History.Clear(); GalleryEditor.Close(); GalleryEditor.Model = new EditorModel();
+            }
         }
 
         static Bind<float> Cell(float[] x) => Bind.To(() => x[0], v => x[0] = v);

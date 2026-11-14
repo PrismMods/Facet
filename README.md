@@ -169,7 +169,7 @@ reads and writes them only through `GetRect` and `SetRect`, and every consumer d
   when it paints (replacing or recolouring that theme repaints it, no rebuild). The zoom badge is a `Label` over
   them. `Stage` takes the pointer, in stage px; `Root` is the pane.
 - **The pane** is a `Controls.Preview`: `Id` names its stage (`Id-pane` the pane), and
-  `VisibleWhen`, `EnabledWhen`, `Tooltip`/`TooltipText` and `ContextMenu` act on the pane, as on a preview's.
+  `VisibleWhen`, `EnabledWhen`, `Tooltip`/`TooltipText`, `ContextMenu` and `ContextMenuItems` act on the pane, as on a preview's.
   `EnabledWhen` false also stops the stage taking the pointer. `Help` is not shown.
 - **Selection.** A click selects the topmost selectable item, and Ctrl, Cmd or Shift toggles it in or out. A drag
   on empty stage draws a marquee (a modifier adds to the selection); a click there clears it. `Selection`,
@@ -207,6 +207,58 @@ reads and writes them only through `GetRect` and `SetRect`, and every consumer d
   so the loss keeps what the user saw. A drag that changes nothing until its drop (a list reorder) cancels on a
   lost capture instead: there is nothing on screen yet to keep.
 
+## Menus
+
+One `MenuItem` list is a menu bar's menus, a context menu and the shortcuts a host's key poll runs.
+
+- **`MenuItem`.** `Text` is an English key, translated by the host of the element the menu opens from; `TextOf` is
+  read each time the menu opens and shown as returned, and wins. `Shortcut` ("Ctrl+Shift+C", "Delete", "[",
+  "Ctrl+0"; Cmd is Ctrl) shows right-aligned on the row, as ⌘⇧⌥ on a Mac and `Ctrl+Shift+Alt+Key` elsewhere.
+  `Enabled` and `Checked` are read when the menu opens: a disabled row fades and does not run, and a menu with any
+  `Checked` item keeps a check column. `Items` makes a submenu, `Danger` paints the text in the Danger role,
+  `MenuItem.Separator` is a rule (a new one on each read), and `Id` names the row.
+- **The card.** Picking a row closes every open menu of its chain, then runs `Run` under `Safe`. A submenu row shows
+  › and opens beside the row on hover or click. Escape closes the newest menu, once per frame.
+- **`Controls.MenuBar(parent, menus)`.** Each top item's `Text` is a title and its `Items` the menu a click opens
+  under it. While a menu is open, moving onto another title with a menu opens that one instead; a top item with no
+  `Items` is a command title, whose `Run` (when `Enabled` allows) runs from its click alone. `Left` holds leading
+  controls before the titles; `Tools` is a `Toolbar` at the right end. `Open(i)`, `Close()`, `IsOpen`.
+- **`Popup.Menu(anchor, items)`** opens the same card under any element.
+- **Context menus.** `ControlOptions.ContextMenuItems` is asked at each right-click on a row (a card, a preview or
+  canvas pane, a tile grid, a toolbar button) and its items open at the pointer; it wins over `ContextMenu`, whose
+  names open there too. `Popup.Context(owner, local, items)` opens the card with its top-left at `local`, a point in
+  `owner`'s own coordinates (a pointer event's `localPosition`), moved inside the panel when it would overflow.
+- **Shortcuts: `Menus.HandleKeys(owner, items, down, ctrlOrCmd, shift, alt)`**, called from the host's per-frame key
+  poll with its `GetKeyDown` and the held modifiers (Cmd counts as Ctrl), runs the first enabled item, submenus
+  included, whose `Shortcut` key went down with exactly those modifiers, and returns true. It acts only while
+  `owner`'s surface is the topmost visible window, menu, popup or modal (so nothing runs under an open menu, dropdown
+  or dialog), never while a text field has focus, a key capture runs or a drag is in progress, and never for Ctrl+Z,
+  Ctrl+Shift+Z or Ctrl+Y, which the undo chord owns (an Undo item may still show Ctrl+Z). A frame with no key down allocates nothing. **A window whose menus answer keys must raise its
+  surface when pressed** (`window.OnRaise = () => surface.BringToFront();`): otherwise a click into it leaves the
+  other window in front, and the keys go on answering there.
+
+## Toolbar
+
+`Controls.Toolbar(parent)` is a row of tools over a canvas or a list, left to right with `Sizes.Gap` between them.
+Its edges pad as a card pads its rows, in the same two steps (`Sizes.Line` on `Root`, then `Sizes.Pad` on an inner
+row that holds the items), so it lines up with the cards around it to the pixel at any scale.
+
+- `Search(changed, placeholder)`: a search field with a clear button (the window header's).
+- `Chips(bind, values, text)`: `Controls.Chips` in the bar.
+- `Icon(icon, tooltip, click)`: `Ui.IconButton`, a square button showing a `Background` at `Sizes.Icon`, tinted as text
+  (`Paint.Tint`) and lit on hover. `Glyph(glyph, tooltip, click)`: a bare text glyph drawn like the header's ↶ ↷.
+  `Button(text, click)`: a button in `Looks.Button`. Their `configure` takes `Id`, `Tooltip`/`TooltipText`,
+  `EnabledWhen`, `VisibleWhen` and the context menus, as a button row does.
+- `Toggle(text, bind, tooltip)`: a button that shows selected while the bind is true and flips it on a click. A view
+  switch (snap, grid): it records nothing in History.
+- `Label(text)`: a `Func<string>` re-read on every refresh and shown as returned (a zoom readout).
+- `UndoRedo()`: the window header's ↶ ↷, with the same tooltips and enablement.
+- `Spacer()`: takes the free width, so what follows sits at the right end.
+
+`Controls.Chips<T>(parent, bind, values, text)` is one segment per value, the bound one selected; a click selects its
+value. `text` names a value (an English key, translated like a label). It has no label to name a step, so it records
+nothing in History: an edit to the document is a labelled row such as `Choice`.
+
 ## API in 0.2
 
 | Area | API |
@@ -226,7 +278,9 @@ reads and writes them only through `GetRect` and `SetRect`, and every consumer d
 | Sidebar | Nav draws a rule between groups; a skin gives `Looks.Rule` a colour (on Theme.Dark it is invisible); `Nav.Compact`, an icon strip that widens over the page after a 0.1 s hover; `Nav.CompactButton`, a button at the top of the rail that flips it and raises `Nav.OnCompactChanged`; `Nav.Collapsible` (default true), false for a host whose setting decides whether the rail shows: the handle stops at `MinRail`, `ToggleRail` never shuts the rail, and a shut rail opens |
 | Rail icons | `NavItem.Icon`, a `Background` drawn left of the entry's title and tinted as the title, hover included (default: none); `Sizes.Icon`, its square size (16) |
 | Cursors | `HostOptions.Cursor`, a host hook asked first to set the OS cursor for a kind (and again every frame while held); false falls back to Facet's drawn cursor, so a hook returns false for a kind it does not know; `Cursors.Kind.Move`, `ResizeVertical`, `ResizeCornerNESW` (appended) |
-| Canvas | `Controls.Canvas<T>`; `CanvasOptions<T>`: `Items`, `Key`, `Find`, `GetRect`, `SetRect`, `Size`, `Selectable`, `Movable`, `Resizable`, `Ghosts`, `Grid`, `SnapDistance`, `SizeSnap`, `MinSize`, `Limit`, `Snap`, `ShowGrid`, `ShowGuides`, `Pane`, and from `ControlOptions` `Id`, `VisibleWhen`, `EnabledWhen`, `Tooltip`/`TooltipText`, `ContextMenu` (on the pane), `Undoable`, `UndoDocument` (no `Help`); `Canvas<T>`: `Root`, `Stage`, `Content`, `Selection`, `Primary`, `SelectionVersion`, `Select`, `SelectAll`, `Clear`, `Refresh`, `Snap`, `ShowGrid`, `ShowGuides`, `SelectionChanged` (also on a `Refresh` remap), `Changed`, `Committed`; `PreviewOptions.MinHeight`, `MaxHeight` (0: none); `Sizes.CanvasHandle`, `CanvasEdgeLong`, `CanvasEdgeShort`, `CanvasHit`, `CanvasOutline`; `Role.Guide` |
+| Canvas | `Controls.Canvas<T>`; `CanvasOptions<T>`: `Items`, `Key`, `Find`, `GetRect`, `SetRect`, `Size`, `Selectable`, `Movable`, `Resizable`, `Ghosts`, `Grid`, `SnapDistance`, `SizeSnap`, `MinSize`, `Limit`, `Snap`, `ShowGrid`, `ShowGuides`, `Pane`, and from `ControlOptions` `Id`, `VisibleWhen`, `EnabledWhen`, `Tooltip`/`TooltipText`, `ContextMenu` and `ContextMenuItems` (on the pane), `Undoable`, `UndoDocument` (no `Help`); `Canvas<T>`: `Root`, `Stage`, `Content`, `Selection`, `Primary`, `SelectionVersion`, `Select`, `SelectAll`, `Clear`, `Refresh`, `Snap`, `ShowGrid`, `ShowGuides`, `SelectionChanged` (also on a `Refresh` remap), `Changed`, `Committed`; `PreviewOptions.MinHeight`, `MaxHeight` (0: none); `Sizes.CanvasHandle`, `CanvasEdgeLong`, `CanvasEdgeShort`, `CanvasHit`, `CanvasOutline`; `Role.Guide` |
+| Menus | `MenuItem`; `Controls.MenuBar`/`MenuBar` (`Root`, `Left`, `Tools`, `IsOpen`, `Open`, `Close`); `Popup.Menu(anchor, IList<MenuItem>)`; `Popup.Context`; `ControlOptions.ContextMenuItems` (at the pointer, read at the right-click; also on a canvas's pane); `Menus.HandleKeys` |
+| Toolbar | `Controls.Toolbar`/`Toolbar` (`Search`, `Chips`, `Icon`, `Glyph`, `Button`, `Toggle`, `Label`, `UndoRedo`, `Spacer`); `Controls.Chips<T>`; `Ui.IconButton`; `Paint.Tint` (public) |
 | Window | `Window.Scale` is clamped to 0.6-2.5 |
 | Undo | `History.Step`, `History.BoundTo`, `History.Snapshot<T>`, `History.Invalidate`; stale steps are skipped; a null key never coalesces; `ControlOptions.Undoable`, `ControlOptions.UndoDocument`; an undo or redo of a row's or canvas's step raises its `Committed` inside the apply (`History.Applying` true) while it is on a panel, and otherwise only writes the bind or `SetRect` |
 

@@ -19,7 +19,7 @@ namespace Facet
     }
 
     /// Id names the stage, and the pane around it Id-pane. VisibleWhen, EnabledWhen, Tooltip/TooltipText
-    /// and ContextMenu act on the pane; hiding it through VisibleWhen runs Hide and stops the tick.
+    /// and ContextMenu(Items) act on the pane; hiding it through VisibleWhen runs Hide and stops the tick.
     /// Help is not shown.
     public sealed class PreviewOptions : ControlOptions
     {

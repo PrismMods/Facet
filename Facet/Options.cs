@@ -22,8 +22,11 @@ namespace Facet
         public Func<bool> EnabledWhen { get; set; }
         public Func<bool> VisibleWhen { get; set; }
 
-        /// A right-click on the row lists these names; picking one runs its action.
+        /// A right-click on the row lists these names at the pointer; picking one runs its action.
         public List<KeyValuePair<string, Action>> ContextMenu { get; set; }
+
+        /// Asked at each right-click on the row; the items open at the pointer (Popup.Context). Wins over ContextMenu.
+        public Func<IList<MenuItem>> ContextMenuItems { get; set; }
 
         /// An English key: a muted line under the row's label, translated like it. Search finds the
         /// row by it, as by Tooltip.

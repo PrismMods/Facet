@@ -23,7 +23,7 @@ namespace Facet {
             try { log("[" + owner + "] " + site + ": " + message); } catch { }
         }
 
-        static void Report(string owner, string site, Exception e, Action<string> log) {
+        internal static void Report(string owner, string site, Exception e, Action<string> log) {
             if (log == null || !Throttle.Allow(owner + "/" + site, _clock.Elapsed.TotalSeconds)) return;
             var first = (e.StackTrace ?? "").Split('\n')[0].Trim();
             try { log("[" + owner + "] " + site + ": " + e.Message + " @ " + first); } catch { }

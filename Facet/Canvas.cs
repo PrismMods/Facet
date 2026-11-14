@@ -11,7 +11,7 @@ namespace Facet
     /// Undoable false records no steps, and the events still fire. Every delegate runs under Safe. An undo raises
     /// Changed and Committed only on a canvas on a panel; off one it only writes through SetRect (History.Applying
     /// true), so work every undo needs belongs there. The pane is a Controls.Preview: Id names its stage (Id-pane the
-    /// pane), and VisibleWhen, EnabledWhen, Tooltip/TooltipText and ContextMenu act on the pane (EnabledWhen false
+    /// pane), and VisibleWhen, EnabledWhen, Tooltip/TooltipText and ContextMenu(Items) act on the pane (EnabledWhen false
     /// also stops the stage taking the pointer). Help is not shown.
     public sealed class CanvasOptions<T> : ControlOptions where T : class
     {
@@ -200,6 +200,7 @@ namespace Facet
                 p.Tooltip = o.Tooltip; p.TooltipText = o.TooltipText;
                 p.EnabledWhen = o.EnabledWhen; p.VisibleWhen = o.VisibleWhen;
                 p.ContextMenu = o.ContextMenu;
+                p.ContextMenuItems = o.ContextMenuItems;
                 p.Aspect = size.y > 0f ? size.x / size.y : 16f / 9f;
                 p.MinHeight = 200f;
                 if (o.Pane != null) o.Pane(p);

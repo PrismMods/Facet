@@ -22,8 +22,13 @@ namespace Facet
 
         public bool IsOpen => _open.Contains(this);
 
-        private readonly VisualElement _catcher;
+        private readonly VisualElement _catcher;   // null for a submenu: the menu it hangs from has one
         private readonly VisualElement _anchor;
+        private readonly Vector2 _at;              // a context menu's top-left (NaN: placed by the anchor)
+        private readonly bool _beside;             // a submenu: beside its row rather than under it
+
+        /// The pointer moving over the catcher, in panel points: a menu bar switches menus as it crosses a title.
+        internal Action<Vector2> Moved;
         private readonly Action _onClose;
         private Surface _owner;
         private readonly Theme _theme;
@@ -33,20 +38,37 @@ namespace Facet
         private static Surface _popups;
         private static readonly List<Popup> _open = new List<Popup>();
 
-        private static readonly Look MenuRow = new Look { HoverBg = Role.RowHover };
+        internal static readonly Look MenuRow = new Look { HoverBg = Role.RowHover };
 
         private const float Gap = 4f;      // between anchor and card
         private const float Margin = 8f;   // kept clear of the screen edge
 
         /// Open a popup under anchor (above it when there is no room below). build fills Content.
         public static Popup Open(VisualElement anchor, Action<VisualElement> build, Action onClose = null)
+            => Open(anchor, build, onClose, true, new Vector2(float.NaN, float.NaN), false);
+
+        /// catcher false: no outside-click catcher (a submenu, under its menu's). at: the card's top-left in
+        /// panel points, else NaN. beside: next to the anchor rather than under it.
+        internal static Popup Open(VisualElement anchor, Action<VisualElement> build, Action onClose, bool catcher, Vector2 at, bool beside)
         {
             if (anchor == null || anchor.panel == null) { Facet.Host.For(anchor).Log("Popup: anchor is not on a panel"); return null; }
             var surface = PopupSurface();
             if (surface == null || surface.Root == null) return null;
-            var p = new Popup(anchor, onClose, surface.Root);
+            var p = new Popup(anchor, onClose, surface.Root, catcher, at, beside);
             if (build != null) Safe.Run(Facet.Host.For(anchor), "Popup.build", () => build(p.Content));
             return p;
+        }
+
+        /// A menu of MenuItems under anchor (a menu bar's title, a toolbar button).
+        public static Popup Menu(VisualElement anchor, IList<MenuItem> items) => Menus.Show(anchor, items, null);
+
+        /// A context menu with its top-left at `local` (a point in owner's own coordinates, as a pointer event's
+        /// localPosition), moved inside the panel when it would overflow. Closes with owner's window, or when owner
+        /// leaves the panel.
+        public static Popup Context(VisualElement owner, Vector2 local, IList<MenuItem> items)
+        {
+            if (owner == null || owner.panel == null) { Facet.Host.For(owner).Log("Popup.Context: owner is not on a panel"); return null; }
+            return Menus.Show(owner, items, null, owner.LocalToWorld(local));
         }
 
         /// A list of choices. The current one is marked; picking closes the menu, then reports.
@@ -88,18 +110,24 @@ namespace Facet
             return menu;
         }
 
-        private Popup(VisualElement anchor, Action onClose, VisualElement root)
+        private Popup(VisualElement anchor, Action onClose, VisualElement root, bool catcher, Vector2 at, bool beside)
         {
             _anchor = anchor;
             _onClose = onClose;
+            _at = at;
+            _beside = beside;
 
-            _catcher = new VisualElement();
-            _catcher.style.position = Position.Absolute;
-            _catcher.style.left = 0f; _catcher.style.top = 0f;
-            _catcher.style.right = 0f; _catcher.style.bottom = 0f;   // all four, or it sizes to nothing
-            _catcher.pickingMode = PickingMode.Position;
-            Events.On<PointerDownEvent>(_catcher, e => { e.StopPropagation(); Close(); });
-            root.Add(_catcher);
+            if (catcher)
+            {
+                _catcher = new VisualElement();
+                _catcher.style.position = Position.Absolute;
+                _catcher.style.left = 0f; _catcher.style.top = 0f;
+                _catcher.style.right = 0f; _catcher.style.bottom = 0f;   // all four, or it sizes to nothing
+                _catcher.pickingMode = PickingMode.Position;
+                Events.On<PointerDownEvent>(_catcher, e => { e.StopPropagation(); Close(); });
+                Events.On<PointerMoveEvent>(_catcher, e => { if (Moved != null) Moved(e.position); });
+                root.Add(_catcher);
+            }
 
             // The anchor's scheme, not the shared popup host's: a menu opened from a Quartz window is Quartz's.
             var theme = Theme.For(anchor);
@@ -160,10 +188,28 @@ namespace Facet
             var screen = Content.panel != null ? Content.panel.visualTree.layout : _popups.Root.layout;
             float w = Content.layout.width * scale, h = Content.layout.height * scale;
 
-            float top = a.yMax + Gap;
-            if (top + h > screen.height - Margin && a.yMin - Gap - h >= Margin) top = a.yMin - Gap - h;
-            top = Mathf.Clamp(top, Margin, Mathf.Max(Margin, screen.height - h - Margin));
-            float left = Mathf.Clamp(a.xMin, Margin, Mathf.Max(Margin, screen.width - w - Margin));
+            float top, left;
+            if (!float.IsNaN(_at.x))
+            {
+                // A context menu: its top-left at the point, moved in only as far as the panel needs.
+                left = Mathf.Clamp(_at.x, 0f, Mathf.Max(0f, screen.width - w));
+                top = Mathf.Clamp(_at.y, 0f, Mathf.Max(0f, screen.height - h));
+            }
+            else if (_beside)
+            {
+                // A submenu: right of its row, its first row level with it; left of the menu when there is no room.
+                left = a.xMax;
+                if (left + w > screen.width - Margin && a.xMin - w >= Margin) left = a.xMin - w;
+                left = Mathf.Clamp(left, Margin, Mathf.Max(Margin, screen.width - w - Margin));
+                top = Mathf.Clamp(a.yMin - Content.resolvedStyle.paddingTop * scale, Margin, Mathf.Max(Margin, screen.height - h - Margin));
+            }
+            else
+            {
+                top = a.yMax + Gap;
+                if (top + h > screen.height - Margin && a.yMin - Gap - h >= Margin) top = a.yMin - Gap - h;
+                top = Mathf.Clamp(top, Margin, Mathf.Max(Margin, screen.height - h - Margin));
+                left = Mathf.Clamp(a.xMin, Margin, Mathf.Max(Margin, screen.width - w - Margin));
+            }
 
             Content.style.left = left;
             Content.style.top = top;
@@ -180,7 +226,7 @@ namespace Facet
             var fc = Content.panel != null ? Content.panel.focusController : null;
             var fe = fc != null ? fc.focusedElement as VisualElement : null;
             if (fe != null && Content.Contains(fe)) fe.Blur();
-            _catcher.RemoveFromHierarchy();
+            if (_catcher != null) _catcher.RemoveFromHierarchy();
             Content.RemoveFromHierarchy();
             if (_open.Count == 0 && _popups != null) _popups.Visible = false;
             if (_onClose != null) Safe.Run(Facet.Host.For(_anchor), "Popup.onClose", _onClose);

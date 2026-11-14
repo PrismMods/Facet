@@ -144,20 +144,8 @@ namespace Facet
         {
             var o = ControlOptions.Make(parent, label, configure);
             var right = Controls.Row(parent, label);
-            var buttons = new List<Button>();
             Control<int> c = null;
-            var items = o.Items;
-            float gap = Theme.For(right).Sizes.Gap;
-            for (int i = 0; i < (items != null ? items.Count : 0); i++)
-            {
-                int idx = i;
-                var b = Ui.Btn(items[i], () => { if (idx != c.Value) c.Set(idx); }, right);
-                // The gap goes before a segment, not after: the last ends on the row's control edge.
-                b.style.marginRight = 0f;
-                if (i > 0) b.style.marginLeft = gap;
-                buttons.Add(b);
-            }
-            Action<int> show = v => { for (int j = 0; j < buttons.Count; j++) Paint.Select(buttons[j], j == v); };
+            var show = Segments(right, o.Items ?? new string[0], i => { if (i != c.Value) c.Set(i); });
             c = TrackedRow(right.parent, right, parent, label, o, bind, show);
             return c;
         }
@@ -381,7 +369,7 @@ namespace Facet
 
         // A button row (or a card) has no value, but takes the same options: a Control over a constant gives
         // it the Id naming, tooltips, EnabledWhen, VisibleWhen and ContextMenu the others have.
-        private static Control<string> Hook(VisualElement row, VisualElement b, string label, ControlOptions o)
+        internal static Control<string> Hook(VisualElement row, VisualElement b, string label, ControlOptions o)
         {
             o.NoRead = true;
             return new Control<string>(row, b, label, Bind.To<string>(() => null, null), null, o);

@@ -135,6 +135,32 @@ namespace Facet
             return b;
         }
 
+        /// Bare until hovered, then lit: the window header's glyphs, icon buttons and menu titles. Selected stays lit.
+        internal static readonly Look Bare = new Look { Text = Role.Text, HoverBg = Role.RowHover, PressedBg = Role.RowAlt, SelectedBg = Role.RowHover };
+
+        /// A square button showing `icon` (Sizes.Icon, tinted as text) on a bare face lit on hover; `tooltip` is
+        /// an English key, translated like a label.
+        public static Button IconButton(VisualElement parent, Background icon, string tooltip, Action click)
+        {
+            var b = Btn("", click, parent);
+            var s = Theme.For(b).Sizes;
+            Paint.Look(b, Bare);
+            SetPadding(b, 0f);
+            b.style.width = s.Icon + 2f * s.ControlPad;
+            b.style.height = s.Icon + 2f * s.ControlPad;
+            b.style.alignItems = Align.Center;
+            b.style.justifyContent = Justify.Center;
+            // A child is safe here: the button has no text whose measure it would drop.
+            var image = new VisualElement { pickingMode = PickingMode.Ignore };
+            image.style.width = s.Icon;
+            image.style.height = s.Icon;
+            image.style.backgroundImage = icon;
+            b.Add(image);
+            Paint.Tint(image, Role.Text);
+            Words.Tip(b, tooltip);
+            return b;
+        }
+
         /* A virtualized list. This is the reason for moving to UI Toolkit at all: ListView recycles
            rows, so a 50k-line log costs the same as a 50-line one. The uGUI framework had to be
            told how many rows to build. */

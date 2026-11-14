@@ -219,12 +219,17 @@ namespace Facet
                 if (!EqualityComparer<T>.Default.Equals(Value, _d.Default)) Set(_d.Default);
                 e.StopPropagation();
             }
-            else if (e.button == 1 && _o.ContextMenu != null && _o.ContextMenu.Count > 0)
+            else if (e.button == 1 && (_o.ContextMenuItems != null || (_o.ContextMenu != null && _o.ContextMenu.Count > 0)))
             {
-                var items = _o.ContextMenu;
-                var names = new string[items.Count];
-                for (int i = 0; i < names.Length; i++) names[i] = items[i].Key;
-                Popup.Menu(Input ?? Root, names, -1, i => Safe.Run(_host, "ContextMenu '" + names[i] + "'", items[i].Value));
+                IList<MenuItem> items;
+                if (_o.ContextMenuItems != null) items = Safe.Get(_host, "ContextMenuItems '" + _name + "'", _o.ContextMenuItems, null);
+                else
+                {
+                    var l = new List<MenuItem>();
+                    foreach (var kv in _o.ContextMenu) l.Add(new MenuItem { Text = kv.Key, Run = kv.Value });
+                    items = l;
+                }
+                if (items != null && items.Count > 0) Popup.Context(Root, e.localPosition, items);
                 e.StopPropagation();
             }
         }

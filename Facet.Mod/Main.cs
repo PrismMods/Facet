@@ -73,6 +73,7 @@ namespace Facet.Mod
         static void Frame()
         {
             if (UnityEngine.Input.GetKeyDown(KeyCode.Escape)) Facet.Input.HandleEscape();
+            GalleryEditor.PollKeys();
             Facet.Input.TickWheel(UnityEngine.Input.mousePosition, UnityEngine.Input.mouseScrollDelta.y);
         }
 

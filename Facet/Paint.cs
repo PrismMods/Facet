@@ -45,8 +45,8 @@ namespace Facet
         /// An element that paints its own mesh (generateVisualContent) in its theme's roles: every re-theme repaints it.
         internal static void Repaints(VisualElement e) { if (e != null) Data.Get<State>(e).Mesh = true; }
 
-        /// The tint of the element's background image (a text field's caret).
-        internal static void Tint(VisualElement e, Role r) { if (e != null) { var s = Data.Get<State>(e); s.Tint = r; Draw(e, s); } }
+        /// The tint of the element's background image (an icon, a text field's caret), re-applied on re-theme.
+        public static void Tint(VisualElement e, Role r) { if (e != null) { var s = Data.Get<State>(e); s.Tint = r; Draw(e, s); } }
 
         /// Drop the element's own text role so it takes its parent's colour: a label inside a row
         /// whose look carries the hover and selected text.

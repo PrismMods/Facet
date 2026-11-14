@@ -29,6 +29,10 @@ namespace Facet.Mod
         public int Tab;
         public object BoxDoc = new object();
         public float Limit = 8000f;
+
+        /// The Canvas page's menus count their runs; Fail makes File › New throw.
+        public int News, Recents, Removes, Undos, Copies, CopyStyles, Pastes;
+        public bool Fail;
     }
 
     /// A plain box on the Canvas page. Not "Box": Core's internal Box struct is visible to this assembly.
@@ -52,8 +56,12 @@ namespace Facet.Mod
         public static Control<float> AmountRow { get; private set; }
         public static Control<float> BoundRow { get; private set; }
         public static NavItem CanvasItem { get; private set; }
-        /// The Canvas page's canvas, as last built.
+        /// The Canvas page's canvas and the page itself, as last built.
         public static Canvas<GalleryBox> Canvas { get; private set; }
+        public static VisualElement Page { get; private set; }
+        /// The Canvas page's menu bar and the menus it shows, as last built.
+        public static MenuBar Bar { get; private set; }
+        public static IList<MenuItem> MenuItems { get; private set; }
         /// Snap targets beside the boxes, like another tab's items: drawn dim, never selected.
         public static readonly Rect[] Ghosts = { new Rect(400, 20, 60, 40), new Rect(400, 100, 60, 40) };
 
@@ -63,8 +71,22 @@ namespace Facet.Mod
             Surface = new Surface(Gallery.Host, "FacetGalleryEditor", Layer.Window);
             _win = new Window(Surface.Root, "editor", "Facet Editor", new Rect(140, 70, 900, 600));
             _win.CloseRequested += _ => Close();
+            _win.OnRaise = () => { if (Surface != null) Surface.BringToFront(); };   // a press raises it, so its shortcuts answer
             Nav = new Nav(_win.Body, new[] { NavItem.Heading(null, UndoItem = new NavItem("Undo", Undo), CanvasItem = new NavItem("Canvas", CanvasPage)) });
             return _win;
+        }
+
+        static readonly Func<KeyCode, bool> KeyDown = UnityEngine.Input.GetKeyDown;
+
+        /// The host's per-frame key poll: the menus' shortcuts, while the menu bar is on screen.
+        public static void PollKeys()
+        {
+            if (Surface == null || !Surface.Visible || Bar == null || MenuItems == null) return;
+            bool ctrl = UnityEngine.Input.GetKey(KeyCode.LeftControl) || UnityEngine.Input.GetKey(KeyCode.RightControl)
+                     || UnityEngine.Input.GetKey(KeyCode.LeftCommand) || UnityEngine.Input.GetKey(KeyCode.RightCommand);
+            bool shift = UnityEngine.Input.GetKey(KeyCode.LeftShift) || UnityEngine.Input.GetKey(KeyCode.RightShift);
+            bool alt = UnityEngine.Input.GetKey(KeyCode.LeftAlt) || UnityEngine.Input.GetKey(KeyCode.RightAlt);
+            Menus.HandleKeys(Bar.Root, MenuItems, KeyDown, ctrl, shift, alt);
         }
 
         static void Undo(VisualElement p)
@@ -73,6 +95,31 @@ namespace Facet.Mod
             AmountRow = Controls.Slider(p, "Amount", Bind.To(() => Model.Amount, v => { Model.Amount = v; Model.AmountWrites++; }), o => o.Id = "ed-amount");
             Controls.Toggle(p, "Quiet", Bind.To(() => Model.Quiet, v => Model.Quiet = v), o => { o.Id = "ed-quiet"; o.Undoable = false; });
             BoundRow = Controls.Slider(p, "Bound", Bind.To(() => Model.Bound, v => Model.Bound = v), o => { o.Id = "ed-bound"; o.UndoDocument = () => Model.Doc; });
+        }
+
+        // File and Edit, with a separator, a submenu, a Danger row, a disabled row and a checked row.
+        static List<MenuItem> BuildMenus(Func<Canvas<GalleryBox>> canvas)
+        {
+            return new List<MenuItem>
+            {
+                new MenuItem { Text = "File", Id = "ed-file", Items = new List<MenuItem>
+                {
+                    new MenuItem { Text = "New", Run = () => { if (Model.Fail) throw new InvalidOperationException("New failed on purpose"); Model.News++; } },
+                    MenuItem.Separator,
+                    new MenuItem { Text = "Recent", Items = new List<MenuItem> { new MenuItem { Text = "Recent 1", Shortcut = "Ctrl+1", Run = () => Model.Recents++ } } },
+                    new MenuItem { Text = "Remove", Danger = true, Run = () => Model.Removes++ },
+                } },
+                new MenuItem { Text = "Edit", Id = "ed-edit", Items = new List<MenuItem>
+                {
+                    new MenuItem { Id = "ed-undo", TextOf = () => "Undo " + History.NextUndoText, Shortcut = "Ctrl+Z", Run = () => { Model.Undos++; History.Undo(); } },
+                    MenuItem.Separator,
+                    new MenuItem { Text = "Copy", Shortcut = "Ctrl+C", Run = () => Model.Copies++ },
+                    new MenuItem { Text = "Copy Style", Shortcut = "Ctrl+Shift+C", Run = () => Model.CopyStyles++ },
+                    new MenuItem { Text = "Paste", Shortcut = "Ctrl+V", Enabled = () => false, Run = () => Model.Pastes++ },
+                    MenuItem.Separator,
+                    new MenuItem { Text = "Snap", Checked = () => canvas() != null && canvas().Snap, Run = () => { var c = canvas(); if (c != null) c.Snap = !c.Snap; } },
+                } },
+            };
         }
 
         /// Four rows of 60 x 40 boxes, 90 apart across and 80 down; box 12 is 83 wide, a width off the grid.
@@ -86,8 +133,11 @@ namespace Facet.Mod
 
         static void CanvasPage(VisualElement p)
         {
+            Page = p;
+            Canvas<GalleryBox> c = null;
+            Bar = Controls.MenuBar(p, MenuItems = BuildMenus(() => c));
             var drawn = new Dictionary<string, VisualElement>();
-            var c = Canvas = Controls.Canvas<GalleryBox>(p, "Canvas", o =>
+            c = Canvas = Controls.Canvas<GalleryBox>(p, "Canvas", o =>
             {
                 o.Id = "ed-canvas";
                 o.Items = () => Model.Tab == 0 ? Model.Boxes : Model.Other;
@@ -100,6 +150,9 @@ namespace Facet.Mod
                 o.UndoDocument = () => Model.BoxDoc;
                 o.Limit = Model.Limit;
             });
+            Bar.Tools.Label(() => c.Selection.Count + " selected");
+            Bar.Tools.Toggle("Snap", Bind.To(() => c.Snap, v => c.Snap = v), "Snap to the canvas centre, the grid and other boxes");
+            Bar.Tools.UndoRedo();
             foreach (var g in Ghosts) Place(Plain(c.Content, new Color(0.6f, 0.6f, 0.65f, 0.25f)), g);
             Action draw = () => Draw(c, drawn);
             c.Changed += draw;
@@ -153,7 +206,7 @@ namespace Facet.Mod
         {
             if (Surface == null) return;
             Surface.Dispose();
-            Surface = null; Nav = null; _win = null; AmountRow = null; BoundRow = null; Canvas = null;
+            Surface = null; Nav = null; _win = null; AmountRow = null; BoundRow = null; Canvas = null; Page = null; Bar = null; MenuItems = null;
         }
     }
 }

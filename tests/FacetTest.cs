@@ -308,6 +308,7 @@ static class FacetTest {
         HistorySteps();
         CanvasGeometry();
         GuideColour();
+        Shortcuts();
 
         Console.WriteLine(_fail == 0 ? "ALL PASS" : _fail + " FAILED");
     }
@@ -564,6 +565,28 @@ static class FacetTest {
               "every role has a colour in FromAccent", c.Length.ToString());
         var g = c[(int)Role.Guide];
         Check(g != null && g[3] > 0f, "Role.Guide has alpha > 0 in FromAccent", Show(g));
+    }
+
+    // Menu shortcut text: modifiers and a key named as Unity's KeyCode, shown the platform's way.
+    static void Shortcuts() {
+        Check(Shortcut.TryParse("Ctrl+Shift+C", out var c, out var s, out var a, out var k) && c && s && !a && k == "C", "a chord parses");
+        Check(Shortcut.TryParse("Cmd+Z", out c, out _, out _, out k) && c && k == "Z", "Cmd counts as Ctrl");
+        Check(Shortcut.TryParse("]", out c, out _, out _, out k) && !c && k == "RightBracket", "brackets map to key names");
+        Check(Shortcut.TryParse("Ctrl++", out c, out _, out _, out k) && c && k == "Equals", "plus is the equals key");
+        Check(!Shortcut.TryParse("", out _, out _, out _, out _) && !Shortcut.TryParse("Ctrl+", out _, out _, out _, out _), "empty or dangling fails");
+        Check(Shortcut.Display("Ctrl+Shift+C", true) == "\u2318\u21E7C" && Shortcut.Display("Ctrl+Shift+C", false) == "Ctrl+Shift+C", "platform display");
+        Check(Shortcut.TryParse("Ctrl+0", out c, out _, out _, out k) && c && k == "Alpha0", "a digit is its Alpha key", k);
+        Check(Shortcut.TryParse("[", out _, out _, out _, out k) && k == "LeftBracket" && Shortcut.TryParse("-", out _, out _, out _, out k) && k == "Minus"
+              && Shortcut.TryParse("=", out _, out _, out _, out k) && k == "Equals", "[ - = map to LeftBracket, Minus, Equals", k);
+        Check(Shortcut.TryParse("Del", out _, out _, out _, out k) && k == "Delete" && Shortcut.TryParse("Delete", out _, out _, out _, out k) && k == "Delete"
+              && Shortcut.TryParse("Backspace", out _, out _, out _, out k) && k == "Backspace", "Del and Delete are Delete; Backspace stays", k);
+        Check(Shortcut.TryParse("Up", out _, out _, out _, out k) && k == "UpArrow" && Shortcut.TryParse("Right", out _, out _, out _, out k) && k == "RightArrow", "arrows take KeyCode's names", k);
+        Check(Shortcut.TryParse("F12", out _, out _, out _, out k) && k == "F12" && !Shortcut.TryParse("F13", out _, out _, out _, out _), "F1 to F12 only", k);
+        Check(Shortcut.TryParse("alt+shift+x", out c, out s, out a, out k) && !c && s && a && k == "X", "modifiers in any order and case; a letter is upper-cased", k);
+        Check(!Shortcut.TryParse("Ctrl+Foo", out _, out _, out _, out _) && !Shortcut.TryParse("C+X", out _, out _, out _, out _), "an unknown key or modifier fails");
+        Check(Shortcut.Display("Alt+Shift+Cmd+]", true) == "\u2318\u21E7\u2325]" && Shortcut.Display("shift+alt+del", false) == "Shift+Alt+Del",
+              "display orders the modifiers and keeps the key as written", Shortcut.Display("Alt+Shift+Cmd+]", true) + " / " + Shortcut.Display("shift+alt+del", false));
+        Check(Shortcut.Display("nonsense+", false) == "nonsense+" && Shortcut.Display(null, true) == "", "text that does not parse shows as given");
     }
 
     // The in-game autotest holds the speed against other mods' per-frame writes.

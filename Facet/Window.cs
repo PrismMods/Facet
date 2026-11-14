@@ -54,16 +54,7 @@ namespace Facet
         {
             if (Search == null) return;
             _searchBox.style.display = DisplayStyle.Flex;
-            // Unity 6 only; Unity 2022 has no placeholder, so it is set by name.
-            var ph = typeof(ITextEdition).GetProperty("placeholder");
-            Action set = () => ph.SetValue(Search.textEdition, Words.T(placeholder, _host), null);
-            if (ph != null) { set(); Words.OnRelabel(Search, set); }
-            Events.On<ChangeEvent<string>>(Search, e =>
-            {
-                _searchClear.style.display = string.IsNullOrEmpty(e.newValue)
-                    ? DisplayStyle.None : DisplayStyle.Flex;
-                if (onChange != null) Safe.Run(_host, "Window.Search", () => onChange(e.newValue));
-            });
+            Controls.WireSearch(Search, _searchClear, placeholder, onChange, _host, "Window.Search");
         }
 
         private VisualElement _searchBox;
@@ -178,30 +169,9 @@ namespace Facet
             label.pickingMode = PickingMode.Ignore;     // clicks on the text still drag the bar
             /* A search box in the header, where the mods already put theirs. Empty and hidden
                until a panel fills it — a window with nothing to search should not show one. */
-            /* Search, with a clear button that appears once there is something to clear — a ✕
-               sitting there permanently is one more thing to read in a header that is mostly
-               chrome. */
-            var searchBox = Ui.Row(bar);
-            searchBox.style.flexGrow = 1f;
-            searchBox.style.maxWidth = 420f;
-            searchBox.style.marginRight = sz.Gap;
-            searchBox.style.display = DisplayStyle.None;
-            _searchBox = searchBox;
-
-            Search = new TextField { value = "" };
-            Search.style.flexGrow = 1f;
-            Skin.When<TextField>(Search, Skin.Field);
-            Cursors.Set(Search, Cursors.Kind.Text);
-            searchBox.Add(Search);
-
-            _searchClear = Ui.Btn("\u2715", () => Search.value = "", searchBox);
-            _searchClear.style.width = 24f;
-            _searchClear.style.marginLeft = -28f;   // sits inside the field's right edge
-            _searchClear.style.marginRight = 4f;
-            Ui.SetPadding(_searchClear, 0f);
-            _searchClear.style.unityTextAlign = TextAnchor.MiddleCenter;
-            Paint.Look(_searchClear, looks.FlatButton);
-            _searchClear.style.display = DisplayStyle.None;
+            Search = Controls.SearchBox(bar, out _searchBox, out _searchClear);
+            _searchBox.style.marginRight = sz.Gap;
+            _searchBox.style.display = DisplayStyle.None;
 
             var spacer = Ui.Box(bar);
             spacer.style.flexGrow = 1f;   // pins the controls right whatever the search box does
@@ -211,21 +181,7 @@ namespace Facet
             /* Undo and redo in the header, where they apply to whatever the window is showing. Bare
                like the ×, so the three read as one set of window controls, and at title size: at body
                size the arrows were specks beside it. */
-            var undo = Glyph(TitleBarRight, "\u21B6", () => History.Undo(), sz.Title + 3f);
-            var redo = Glyph(TitleBarRight, "\u21B7", () => History.Redo(), sz.Title + 3f);
-            Action refreshHistory = () =>
-            {
-                string lang = _host.Language;
-                Enable(undo, History.CanUndo, History.NextUndo == null ? Words.Own("Undo", lang) : Words.OwnF("Undo {0}", lang, History.NextUndoText));
-                Enable(redo, History.CanRedo, History.NextRedo == null ? Words.Own("Redo", lang) : Words.OwnF("Redo {0}", lang, History.NextRedoText));
-            };
-            /* Subscribed only while Root is in a panel: History is static, so a disposed window left
-               subscribed stays reachable forever and keeps redrawing its detached buttons. */
-            Events.On<AttachToPanelEvent>(Root, _ => { History.Changed -= refreshHistory; History.Changed += refreshHistory; refreshHistory(); });
-            Events.On<DetachFromPanelEvent>(Root, _ => History.Changed -= refreshHistory);
-            if (Root.panel != null) History.Changed += refreshHistory;   // already attached: no event comes
-            refreshHistory();
-            Words.OnRelabel(undo, refreshHistory);   // the tooltips are built from parts, so a language switch redoes them
+            Controls.UndoRedo(TitleBarRight, _host, out _, out _);
 
             /* × rather than a "Close" button, matching the mods' own panels. Sized as a square so
                it reads as a window control instead of as another toolbar button. */
@@ -268,33 +224,13 @@ namespace Facet
             _footerHint = Ui.Muted("", Footer);
             _footerHint.style.marginRight = 14f;   // clear of the resize grip
 
-            // Click anywhere in the window to raise it above the other one.
-            Events.On<PointerDownEvent>(Root, _ => { if (OnRaise != null) Safe.Run(_host, "Window.OnRaise", OnRaise); });
+            /* Click anywhere in the window to raise it above the other one. Trickle-down, because the title bar's drag,
+               the resize grip and a Button's clickable stop the press before it would bubble here. */
+            Events.On<PointerDownEvent>(Root, _ => { if (OnRaise != null) Safe.Run(_host, "Window.OnRaise", OnRaise); }, TrickleDown.TrickleDown);
 
             MakeDraggable(bar);
             MakeResizable();
             Apply();
-        }
-
-        /* ↶ and ↷. These live in Arrows, which every OS UI font carries — unlike the pictographic
-           blocks, where a miss is a blank button rather than a wrong-looking one. */
-        private static Button Glyph(VisualElement parent, string glyph, Action onClick, float size)
-        {
-            var b = Ui.Btn(glyph, onClick, parent);
-            Paint.Look(b, GlyphLook);
-            b.style.width = 30f;
-            b.style.height = 26f;
-            b.style.fontSize = size;
-            Ui.SetPadding(b, 0f);
-            b.style.unityTextAlign = TextAnchor.MiddleCenter;
-            return b;
-        }
-
-        // Fades rather than vanishes (Paint.Enable), so the header does not reflow on the first change.
-        private static void Enable(Button b, bool on, string tip)
-        {
-            Paint.Enable(b, on);
-            b.tooltip = on ? tip : null;
         }
 
         /* Each subscriber under its own Safe, so one that throws leaves the rest deciding. With none,
@@ -312,8 +248,6 @@ namespace Facet
 
         // A window control, not a toolbar button: bare until hovered, then Danger.
         private static readonly Look CloseLook = new Look { Text = Role.Text, HoverBg = Role.Danger, PressedBg = Role.Danger };
-        // Undo and redo: bare like the ×, lit on hover.
-        private static readonly Look GlyphLook = new Look { Text = Role.Text, HoverBg = Role.RowHover, PressedBg = Role.RowAlt };
 
         /// Clamped to 0.6-2.5.
         public float Scale
