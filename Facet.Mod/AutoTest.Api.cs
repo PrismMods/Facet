@@ -726,6 +726,25 @@ namespace Facet.Mod
                 if (btn != null) ClickEl(btn);
                 Check(nav.Compact && told == true, "CompactChanged reports the sidebar toggle's flip", nav.Compact + " / " + told);
 
+                // A throwing handler leaves the handlers after it running, on each of the three events.
+                int after = 0;
+                w.Raised += () => throw new InvalidOperationException("raised boom");
+                w.Raised += () => after++;
+                PointerAt(EventType.MouseDown, at, s.Root);
+                PointerAt(EventType.MouseUp, at, s.Root);
+                Check(raised == 2 && after == 1, "a throwing Window.Raised handler leaves the ones after it running", raised + " / " + after);
+                bool? told2 = null;
+                nav.CompactChanged += _ => throw new InvalidOperationException("compact boom");
+                nav.CompactChanged += v => told2 = v;
+                if (btn != null) ClickEl(btn);
+                Check(!nav.Compact && told == false && told2 == false, "a throwing CompactChanged handler leaves the ones after it running", told + " / " + told2);
+                var heard2 = new List<float>();
+                nav.InsetChanged += _ => throw new InvalidOperationException("inset boom");
+                nav.InsetChanged += heard2.Add;
+                nav.ToggleRail();
+                Check(heard2.Count == 2 && heard2[1] == nav.Inset, "a throwing InsetChanged handler leaves the ones after it running", heard2.Count.ToString());
+                nav.ToggleRail();
+
                 // A throwing AfterApply subscriber: logged once, and the undo still shows in the same frame.
                 var input = s.Root.Q("cleanup-flag-input");
                 Func<bool> on = () => input != null && Near(input.style.backgroundColor.value, s.Theme[Role.Accent]);

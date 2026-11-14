@@ -79,7 +79,14 @@ namespace Facet
         /// Raised after an undo or redo has been applied (after Facet's own refresh), for panels to
         /// re-read what they show. Add with +=, so one subscriber never drops another; each handler
         /// runs under its own guard.
-        public static event Action AfterApply;
+        public static event Action AfterApply
+        {
+            add { _afterApply += value; _afterApplyList = Safe.Handlers<Action>(_afterApply); }
+            remove { _afterApply -= value; _afterApplyList = Safe.Handlers<Action>(_afterApply); }
+        }
+        private static Action _afterApply;
+        private static Action[] _afterApplyList;   // rebuilt on add and remove, so an undo hands the handlers out without allocating
+
 
         /* Facet's own re-read of every visible surface (the Refresher sets it; Core cannot see
            Surface). Internal and run before AfterApply's handlers, so no
@@ -107,13 +114,7 @@ namespace Facet
         public static void Record(string label, string key, Action undo, Action redo, Func<string, string> translate = null)
         {
             if (Applying || _suppress > 0 || undo == null || redo == null) return;
-            if (_depth > 0 && Clock() - _openedAt > OpenSeconds)
-            {
-                var lost = _open;
-                Safe.Say("Facet", "History.Step", "a history step stayed open: " + lost.Label, Log);
-                Abandon();
-                if (lost.Undo.Count > 0) Push(lost);
-            }
+            CloseStale();
             if (_open != null) { _open.Undo.Add(undo); _open.Redo.Add(redo); return; }
             var e = Rent(label, key, null, translate);
             e.Undo.Add(undo); e.Redo.Add(redo);
@@ -129,6 +130,7 @@ namespace Facet
            change would otherwise bind the import to the new document, and its undo could never be redone. */
         public static IDisposable Step(string label, string key = null, Func<bool> valid = null, Func<string, string> translate = null)
         {
+            CloseStale();
             if (_depth == 0)
             {
                 _open = Rent(label, key, valid, translate);
@@ -200,7 +202,7 @@ namespace Facet
             if (i < 0) return false;
             var e = _done[i];
             _done.RemoveAt(i);
-            Apply(e.Undo, true, "undo " + e.Label);
+            Apply(e.Undo, true, e.Label);
             _undone.Add(e);
             Fire();
             return true;
@@ -212,7 +214,7 @@ namespace Facet
             if (i < 0) return false;
             var e = _undone[i];
             _undone.RemoveAt(i);
-            Apply(e.Redo, false, "redo " + e.Label);
+            Apply(e.Redo, false, e.Label);
             // Straight back onto the undo stack, and NOT through Record, which would clear the rest
             // of the redo branch — the thing the user is in the middle of walking forward through.
             _done.Add(e);
@@ -229,6 +231,16 @@ namespace Facet
             Abandon();
             _boundDoc = null; _boundRef = null; _bound = null;   // let the last document go
             Fire();
+        }
+
+        // A scope still open OpenSeconds after it opened leaked (a Dispose that never ran): close it, logged, keeping what it recorded.
+        private static void CloseStale()
+        {
+            if (_depth == 0 || Clock() - _openedAt <= OpenSeconds) return;
+            var lost = _open;
+            Safe.Say("Facet", "History.Step", "a history step stayed open: " + lost.Label, Log);
+            Abandon();
+            if (lost.Undo.Count > 0) Push(lost);
         }
 
         private static void Abandon()
@@ -288,7 +300,13 @@ namespace Facet
 
         private static void Push(Entry e)
         {
-            if (e.Valid == Dead) { Return(e); return; }
+            if (e.Valid == Dead)
+            {
+                // Not kept, but the document did change: replaying the redo branch over it would be wrong.
+                Return(e);
+                if (_undone.Count > 0) { _undone.Clear(); Fire(); }
+                return;
+            }
 
             var now = Clock();
             var top = Top(e.Key, e.Valid, now);
@@ -391,7 +409,8 @@ namespace Facet
             return shown ? Words.T(e.Label, e.Translate) : e.Label;
         }
 
-        private static void Apply(List<Action> parts, bool backwards, string what)
+        // backwards is an undo. The label goes into a log line only when something threw: an undo builds no string.
+        private static void Apply(List<Action> parts, bool backwards, string label)
         {
             // One line per apply, rate-limited: a step over a hundred items would log a hundred per keypress.
             int threw = 0;
@@ -406,19 +425,19 @@ namespace Facet
                 }
             }
             finally { Applying = false; }
-            if (threw > 0) Safe.Say("Facet", "History " + what, threw + (threw == 1 ? " part threw: " : " parts threw: ") + first, Log);
+            if (threw > 0) Safe.Say("Facet", "History " + (backwards ? "undo " : "redo ") + label, threw + (threw == 1 ? " part threw: " : " parts threw: ") + first, Log);
 
-            After(RefreshAll, what);
-            var ap = AfterApply;
+            After(RefreshAll, backwards, label);
+            var ap = _afterApplyList;
             if (ap != null)
-                foreach (Action a in ap.GetInvocationList()) Safe.Run("Facet", "History.AfterApply", a, Log);
+                for (int i = 0; i < ap.Length; i++) Safe.Run("Facet", "History.AfterApply", ap[i], Log);
         }
 
-        private static void After(Action a, string what)
+        private static void After(Action a, bool backwards, string label)
         {
             if (a == null) return;
             try { a(); }
-            catch (Exception e) { Log("History: refresh after " + what + " threw: " + e.Message); }
+            catch (Exception e) { Log("History: refresh after " + (backwards ? "undo " : "redo ") + label + " threw: " + e.Message); }
         }
 
         private static void Fire()

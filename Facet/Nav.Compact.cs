@@ -45,7 +45,13 @@ namespace Facet
 
         /// Raised after the Nav's own button flips Compact, with the new value (the host keeps it);
         /// not when the host sets Compact.
-        public event Action<bool> CompactChanged;
+        public event Action<bool> CompactChanged
+        {
+            add { _compactChanged += value; _compactList = Safe.Handlers<Action<bool>>(_compactChanged); }
+            remove { _compactChanged -= value; _compactList = Safe.Handlers<Action<bool>>(_compactChanged); }
+        }
+        private Action<bool> _compactChanged;
+        private Action<bool>[] _compactList;   // each handler under its own guard; a flip allocates nothing for them
 
         /// Where the content pane starts, in the window body: the icon strip when Compact, else the open rail's width
         /// and its handle (7), or the handle alone with the rail shut. Window.SetContentInset takes it as it is.
@@ -162,11 +168,8 @@ namespace Facet
         internal void Flip()
         {
             Compact = !_compact;
-            if (CompactChanged != null) Safe.Run(Host.For(_host), "Nav.CompactChanged", _raiseCompact ?? (_raiseCompact = RaiseCompact));
+            if (_compactList != null) Safe.Each(Host.For(_host), "Nav.CompactChanged", _compactList, _compact);
         }
-
-        private Action _raiseCompact;   // one delegate for every flip
-        private void RaiseCompact() { var e = CompactChanged; if (e != null) e(_compact); }
 
         /* In the window's title bar, just before the title (after any logo put in front of it), sized as its ↶ ↷ ×.
            The window keeps the button and it flips whichever Nav is the window's main one now. It leaves the hover
@@ -181,7 +184,9 @@ namespace Facet
                 b = w.SidebarToggle = Ui.IconButton(w.TitleBarLeft, Background.FromTexture2D(Tex.Sidebar()), "Collapse sidebar", null);
                 b.name = "sidebar-toggle";
                 b[0].style.backgroundSize = new BackgroundSize(BackgroundSizeType.Contain);   // the 4:3 glyph unstretched in the square icon
-                Events.On<ClickEvent>(b, _ => w.MainNav?.Flip());   // as the rail button: a ClickEvent sent to it flips it too
+                // As the rail button: a ClickEvent sent to it flips it too. A main Nav whose host cleared the body without
+                // building another is gone from the window, and a flip of it would only report a change nobody sees.
+                Events.On<ClickEvent>(b, _ => { var n = w.MainNav; if (n != null && w.Body.Contains(n._railScroll)) n.Flip(); });
                 b.style.width = 30f;
                 b.style.height = 26f;
                 b.style.flexShrink = 0f;

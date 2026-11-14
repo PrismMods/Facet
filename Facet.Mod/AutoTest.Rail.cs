@@ -120,6 +120,9 @@ namespace Facet.Mod
                 SidebarToggleProbe(nav, out flips, out sets, out junk);
                 Main.Log("[perf] sidebar toggle: heap grew " + flips + " bytes over 1000 flips, " + sets + " over 1000 host Compact sets (2000 x 128-byte arrays grew it " + junk + ")");
                 Check(junk > 0 && flips <= sets + 8192, "a flip by the toggle allocates nothing beyond the host setting Compact (heap probe, 8 KB slack)", flips + " vs " + sets + " B, junk " + junk);
+                long draws = DrawButtonsProbe(nav);
+                Main.Log("[perf] sidebar toggle redraw: heap grew " + draws + " bytes over 1000 glyph and tip redraws (least of 3)");
+                Check(draws == 0, "redrawing the toggle's glyph and tip allocates nothing (heap probe, least of 3)", draws + " B");
                 nav.Rebuild(); yield return null; yield return null;
                 Check(nav.Compact && w.Root.Q("sidebar-toggle") == btn && rail.Q("rail-button") == null && titles().TrueForAll(l => l.resolvedStyle.opacity == 0f), "a rebuild keeps the strip and its toggle");
 
@@ -156,6 +159,15 @@ namespace Facet.Mod
                 if (toggles.Count > 0) ClickEl(toggles[0]);
                 yield return null;
                 Check(nav3.Compact && told3 == true && nav.Compact == oldCompact, "clicking it flips the new Nav, not the one it replaced", nav3.Compact + " / " + told3 + " / old " + nav.Compact);
+
+                // A host that clears the body and builds no Nav: the toggle no longer flips the Nav that left.
+                told3 = null;
+                bool was3 = nav3.Compact;
+                w.Body.Clear();
+                yield return null;
+                if (toggles.Count > 0) ClickEl(toggles[0]);
+                yield return null;
+                Check(nav3.Compact == was3 && told3 == null, "...and once the body is cleared with no Nav built, clicking it flips nothing", nav3.Compact + " / " + told3);
             }
             finally { s.Dispose(); }
         }
@@ -265,6 +277,26 @@ namespace Facet.Mod
                 finally { GarbageCollector.GCMode = mode; }
             }
             GC.KeepAlive(keep);
+        }
+
+        // Heap growth over 1000 redraws of the buttons' glyph and tip, alternating states, the least of three runs with the collector paused.
+        static long DrawButtonsProbe(Nav nav)
+        {
+            var mode = GarbageCollector.GCMode;
+            long least = long.MaxValue;
+            try
+            {
+                for (int i = 0; i < 200; i++) nav.DrawButtons(i % 2 == 0);
+                GarbageCollector.GCMode = GarbageCollector.Mode.Disabled;
+                for (int run = 0; run < 3; run++)
+                {
+                    long a = GC.GetTotalMemory(false);
+                    for (int i = 0; i < 1000; i++) nav.DrawButtons(i % 2 == 0);
+                    least = Math.Min(least, GC.GetTotalMemory(false) - a);
+                }
+            }
+            finally { GarbageCollector.GCMode = mode; nav.DrawButtons(nav.Compact); }
+            return least;
         }
 
         // Width over height of an image's background as drawn: Contain or Cover keep the texture's shape, anything else fills the box.

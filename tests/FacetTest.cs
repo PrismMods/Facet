@@ -522,6 +522,29 @@ static class FacetTest {
         History.Record("K", null, () => kr = 0, () => kr = 1);
         t += 0.1; kr = 2; History.Record("K", null, () => kr = 1, () => kr = 2);
         Check(History.Undo() && kr == 1 && History.Undo() && kr == 0, "two keyless records 0.1 s apart are two steps", "kr=" + kr);
+        // a Step 5 s after a scope leaked closes the leak first, so the leak's stale check is not ANDed into the new step
+        ol.Clear(); History.Log = ol.Add; Throttle.Reset(); History.Clear(); t = 700; int lk = 0, fr = 0;
+        var leak = History.Step("Leak", "leak", () => false);
+        lk = 1; History.Record("in", "in", () => lk = 0, () => lk = 1);
+        t += 6;
+        using (History.Step("Fresh", "fresh")) { fr = 1; History.Record("f", "f", () => fr = 0, () => fr = 1); }
+        Check(History.NextUndo == "Fresh" && History.Undo() && fr == 0 && ol.Count == 1 && ol[0].Contains("stayed open: Leak"),
+            "a Step 5 s after a scope leaked closes the leak first and keeps its own validity", (History.NextUndo ?? "null") + " / " + string.Join(" | ", ol));
+        leak.Dispose();
+        // a write on a document that cannot be read is still a change: the redo branch ends
+        History.Log = gl.Add; History.Clear(); t = 800; int dr = 1;
+        History.Record("D", "d", () => dr = 0, () => dr = 1); History.Undo();
+        using (History.Step("Gone", "gone", History.BoundTo(() => { throw new Exception("no doc"); }))) History.Record("x", "x", () => { }, () => { });
+        Check(!History.CanRedo, "a write on a document that cannot be read still ends the redo branch");
+        // undo and redo hand AfterApply's handlers out without allocating
+        History.Clear(); t = 900; Action ap1 = () => { }, ap2 = () => { };
+        History.AfterApply += ap1; History.AfterApply += ap2;
+        History.Record("U", "u", nop, nop); History.Undo(); History.Redo();
+        long aa = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 1000; i++) { History.Undo(); History.Redo(); }
+        aa = GC.GetAllocatedBytesForCurrentThread() - aa;
+        History.AfterApply -= ap1; History.AfterApply -= ap2;
+        Check(aa == 0, "1000 undo/redo pairs with two AfterApply handlers allocate nothing", aa + " bytes");
         History.Log = hl.Add;
         History.Log = oldLog; History.Clock = clock; History.Clear();
     }

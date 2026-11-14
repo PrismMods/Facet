@@ -349,12 +349,14 @@ namespace Facet
                 // The first handler starts the count from now; later ones leave a change still to report to the others.
                 if (_insetChanged == null) _lastEventInset = Inset;
                 _insetChanged += value;
+                _insetList = Safe.Handlers<Action<float>>(_insetChanged);
                 float inset = Inset;
                 Safe.Run(Host.For(_host), "Nav.InsetChanged", () => value(inset));
             }
-            remove { _insetChanged -= value; }
+            remove { _insetChanged -= value; _insetList = Safe.Handlers<Action<float>>(_insetChanged); }
         }
         private Action<float> _insetChanged;
+        private Action<float>[] _insetList;   // each handler under its own guard; a drag move allocates nothing for them
         private float _lastEventInset = float.NaN;
 
         private void ReportInset()
@@ -366,11 +368,8 @@ namespace Facet
         private void NotifyInsetChanged()
         {
             _lastEventInset = Inset;
-            Safe.Run(Host.For(_host), "Nav.InsetChanged", _raiseInset ?? (_raiseInset = RaiseInset));
+            Safe.Each(Host.For(_host), "Nav.InsetChanged", _insetList, _lastEventInset);
         }
-
-        private Action _raiseInset;   // one delegate for every change: a flip or a drag move allocates nothing for it
-        private void RaiseInset() { var f = _insetChanged; if (f != null) f(_lastEventInset); }
 
         private void PaintHandle()
         {

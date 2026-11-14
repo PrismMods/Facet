@@ -93,7 +93,13 @@ namespace Facet
 
         /// Raised on any press in the window (title bar, grip and buttons included), for the panel that owns it to
         /// raise its surface: Window has no Surface of its own — it is just the element tree inside one.
-        public event Action Raised;
+        public event Action Raised
+        {
+            add { _raised += value; _raisedList = Safe.Handlers<Action>(_raised); }
+            remove { _raised -= value; _raisedList = Safe.Handlers<Action>(_raised); }
+        }
+        private Action _raised;
+        private Action[] _raisedList;
 
         /// Raised by the close button. With no subscriber the window's surface hides; with any,
         /// only they decide (animate, veto, dispose).
@@ -252,8 +258,7 @@ namespace Facet
                the resize grip and a Button's clickable stop the press before it would bubble here. */
             Events.On<PointerDownEvent>(Root, _ =>
             {
-                var raised = Raised;
-                if (raised != null) Safe.Run(_host, "Window.Raised", raised);
+                Safe.Each(_host, "Window.Raised", _raisedList);
             }, TrickleDown.TrickleDown);
 
             MakeDraggable(bar);

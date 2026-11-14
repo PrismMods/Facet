@@ -166,5 +166,19 @@ namespace Facet {
         public static bool Run(Host h, string site, Action fn) { return Run(h.Name, site, fn, h.LogFn); }
 
         public static T Get<T>(Host h, string site, Func<T> fn, T fallback) { return Get(h.Name, site, fn, fallback, h.LogFn); }
+
+        // Each handler under its own guard, so one that throws leaves the rest to run; no closure per raise.
+        internal static void Each(Host h, string site, Action[] handlers) {
+            if (handlers == null) return;
+            for (int i = 0; i < handlers.Length; i++) Run(h, site, handlers[i]);
+        }
+
+        internal static void Each<T>(Host h, string site, Action<T>[] handlers, T value) {
+            if (handlers == null) return;
+            for (int i = 0; i < handlers.Length; i++) {
+                try { handlers[i](value); }
+                catch (Exception e) { Report(h.Name, site, e, h.LogFn); }
+            }
+        }
     }
 }
