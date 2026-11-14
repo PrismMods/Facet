@@ -422,10 +422,11 @@ namespace Facet
                 if (tellHost && o.CancelCapture != null) Safe.Run(Host.For(b), "Key CancelCapture", o.CancelCapture);
             };
             cancel = () => end(true);
-            // A captured name: ChordCancel is a cancel; anything else is written (empty is unbound).
+            /* A captured name: ChordCancel is a cancel; anything else is written (empty is unbound). The cancel spends
+               the frame's Escape, so a host whose HandleEscape runs after this poll closes no window with it. */
             Action<string> got = name =>
             {
-                if (name == Input.ChordCancel) { end(true); return; }
+                if (name == Input.ChordCancel) { Input.ConsumeEscape(); end(true); return; }
                 end(false);
                 name = name ?? "";
                 if (name != (c.Value ?? "") || c.Mixed) c.Set(name); else Draw(b, name, false, chord);

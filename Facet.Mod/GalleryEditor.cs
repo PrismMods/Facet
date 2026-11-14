@@ -169,15 +169,72 @@ namespace Facet.Mod
         /// key that is both (Delete) runs once.
         /// True when the canvas took the keys.
         internal static bool PollKeys(Func<KeyCode, bool> down, Func<KeyCode, bool> held)
+            => PollKeys(Surface, Canvas, Bar, MenuItems, down, held);
+
+        static bool PollKeys(Surface surface, Canvas<GalleryBox> canvas, MenuBar bar, IList<MenuItem> items, Func<KeyCode, bool> down, Func<KeyCode, bool> held)
         {
-            if (Surface == null || !Surface.Visible) return false;
-            if (Canvas != null && Canvas.PollKeys(down, held)) return true;
-            if (Bar == null || MenuItems == null) return false;
+            if (surface == null || !surface.Visible) return false;
+            if (canvas != null && canvas.PollKeys(down, held)) return true;
+            if (bar == null || items == null) return false;
             bool ctrl = held(KeyCode.LeftControl) || held(KeyCode.RightControl) || held(KeyCode.LeftCommand) || held(KeyCode.RightCommand);
             bool shift = held(KeyCode.LeftShift) || held(KeyCode.RightShift);
             bool alt = held(KeyCode.LeftAlt) || held(KeyCode.RightAlt);
-            Menus.HandleKeys(Bar.Root, MenuItems, down, ctrl, shift, alt);
+            Menus.HandleKeys(bar.Root, items, down, ctrl, shift, alt);
             return false;
+        }
+
+        /// A second, smaller editor window with a canvas of three boxes and an Edit > Delete shortcut of its own: with
+        /// both editors open, only the one pressed last answers the keys. Opened by the autotest only.
+        public static class Second
+        {
+            public static Surface Surface { get; private set; }
+            public static Canvas<GalleryBox> Canvas { get; private set; }
+            public static MenuBar Bar { get; private set; }
+            public static IList<MenuItem> MenuItems { get; private set; }
+            public static readonly List<GalleryBox> Boxes = new List<GalleryBox>();
+            /// Deletes through the canvas's keys, and through the menu's shortcut.
+            public static int Deletes, MenuDeletes;
+
+            public static void Open()
+            {
+                if (Surface != null) { Surface.Visible = true; return; }
+                Boxes.Clear(); Deletes = MenuDeletes = 0;
+                for (int i = 0; i < 3; i++) Boxes.Add(new GalleryBox("b" + (i + 1), "Box B" + (i + 1), new Rect(20 + i * 90, 20, 60, 40)));
+                Surface = new Surface(Gallery.Host, "FacetGalleryEditorB", Layer.Window);
+                var win = new Window(Surface.Root, "editor-b", "Facet Editor B", new Rect(50, 300, 440, 300));   // over the first editor's rail and left column, clear of its canvas
+                win.CloseRequested += _ => Close();
+                win.OnRaise = () => { if (Surface != null) Surface.BringToFront(); };
+                Canvas<GalleryBox> c = null;
+                Bar = Controls.MenuBar(win.Body, MenuItems = new List<MenuItem>
+                {
+                    new MenuItem { Text = "Edit", Items = new List<MenuItem>
+                    {
+                        new MenuItem { Text = "Delete", Shortcut = "Delete", Run = () => { MenuDeletes++; c?.DeleteSelection(); } },
+                    } },
+                });
+                c = Canvas = Controls.Canvas<GalleryBox>(win.Body, "Canvas B", o =>
+                {
+                    o.Id = "edb-canvas";
+                    o.Items = () => Boxes;
+                    o.Key = b => b.Key;
+                    o.GetRect = b => b.Rect;
+                    o.SetRect = (b, r) => b.Rect = r;
+                    o.Size = new Vector2(360, 150);
+                    o.Delete = gone => { Deletes++; Boxes.RemoveAll(b => Has(gone, b)); };
+                });
+                foreach (var b in Boxes) Place(Plain(c.Content, new Color(0.8f, 0.45f, 0.25f, 0.85f)), b.Rect);
+            }
+
+            /// This window's per-frame key poll, in the same order as the first editor's.
+            internal static bool PollKeys(Func<KeyCode, bool> down, Func<KeyCode, bool> held)
+                => GalleryEditor.PollKeys(Surface, Canvas, Bar, MenuItems, down, held);
+
+            public static void Close()
+            {
+                if (Surface == null) return;
+                Surface.Dispose();
+                Surface = null; Canvas = null; Bar = null; MenuItems = null;
+            }
         }
 
         static void Undo(VisualElement p)

@@ -9,7 +9,9 @@ namespace Facet
        [6] string key (assembly full name), [7] Func<int,float[]> orders of its surfaces in a layer,
        [8] Action<int,Func<float,float>> remap its surfaces in a layer,
        [9] Action<float,float,float> wheel(x, y, delta) for this version's topmost visible surface,
-       [10] Func<bool> cancel this version's drag in progress (true when there was one).
+       [10] Func<bool> cancel this version's drag in progress (true when there was one),
+       [11] Func<bool,bool> undo (false) or redo (true) for this version's topmost visible surface: true when a step
+            applied, or when a drag in progress swallowed the chord.
 
        Cross-version contract: every loaded Facet version reads every other version's entry, so
        slots are only ever APPENDED, a reader checks e.Length before reading a slot (an older,
@@ -80,7 +82,6 @@ namespace Facet
            highest top order (>= 0) takes it; false when none. */
         public static bool TakeEscape(List<object[]> entries, Action<string> log)
         {
-            object[] best = null; float top = -1f;
             lock (entries)
                 for (int n = 0; n < entries.Count; n++)
                 {
@@ -89,12 +90,7 @@ namespace Facet
                     if (drag != null)
                         try { if (drag()) return true; } catch (Exception ex) { Threw(e, ex, log); }
                 }
-            lock (entries)
-                for (int n = 0; n < entries.Count; n++)
-                {
-                    var o = Top(entries[n], log);
-                    if (o > top) { top = o; best = entries[n]; }
-                }
+            var best = Topmost(entries, log);
             var take = best == null ? null : Slot<Func<bool>>(best, 1);
             if (take == null) return false;
             try { return take(); } catch (Exception ex) { Threw(best, ex, log); return false; }
@@ -108,6 +104,30 @@ namespace Facet
         {
             if (Math.Abs(delta) < 1e-6f || stamp[0] == frame) return false;
             stamp[0] = frame;
+            var best = Topmost(entries, log);
+            var wheel = best == null ? null : Slot<Action<float, float, float>>(best, 9);
+            if (wheel == null) return false;
+            try { wheel(x, y, delta); return true; } catch (Exception ex) { Threw(best, ex, log); return false; }
+        }
+
+        /* The undo chord, answered once per frame across mods and versions. The stamp is {frame, result}: a second call
+           in the same frame (another mod polling the same keys) calls no slot and gets the first call's result.
+           Otherwise the entry with the highest top runs slot 11; a top entry without it (an older copy) takes the
+           chord by doing nothing, its own callers drive it. */
+        public static bool Undo(List<object[]> entries, int[] stamp, int frame, bool redo, Action<string> log)
+        {
+            if (stamp[0] == frame) return stamp[1] != 0;
+            stamp[0] = frame; stamp[1] = 0;
+            var best = Topmost(entries, log);
+            var undo = best == null ? null : Slot<Func<bool, bool>>(best, 11);
+            if (undo == null) return false;
+            try { if (undo(redo)) stamp[1] = 1; } catch (Exception ex) { Threw(best, ex, log); }
+            return stamp[1] != 0;
+        }
+
+        // The entry with the highest top order (>= 0), null when none.
+        private static object[] Topmost(List<object[]> entries, Action<string> log)
+        {
             object[] best = null; float top = -1f;
             lock (entries)
                 for (int n = 0; n < entries.Count; n++)
@@ -115,9 +135,7 @@ namespace Facet
                     var o = Top(entries[n], log);
                     if (o > top) { top = o; best = entries[n]; }
                 }
-            var wheel = best == null ? null : Slot<Action<float, float, float>>(best, 9);
-            if (wheel == null) return false;
-            try { wheel(x, y, delta); return true; } catch (Exception ex) { Threw(best, ex, log); return false; }
+            return best;
         }
 
         /* Renumber one layer's band across every version, keeping relative stacking order. Returns

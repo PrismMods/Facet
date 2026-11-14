@@ -28,19 +28,35 @@ static void Open()
     Controls.Toggle(window.Body, "Enabled", Bind.To(() => Cfg.Enabled, v => Cfg.Enabled = v));
 }
 
-// Every frame, from your mod's update: Escape closes the topmost window, and the wheel is polled
-// because a runtime panel does not reliably receive WheelEvent. Both are answered once per frame
-// across every mod and Facet version, so every mod can call them.
+// Every frame, from your mod's update: Escape closes the topmost window, Ctrl+Z undoes, and the wheel
+// is polled because a runtime panel does not reliably receive WheelEvent. Each is answered once per
+// frame across every mod and Facet version, so every mod can call them.
 static void Update()
 {
     if (UnityEngine.Input.GetKeyDown(KeyCode.Escape)) Facet.Input.HandleEscape();
+    bool ctrl = UnityEngine.Input.GetKey(KeyCode.LeftControl) || UnityEngine.Input.GetKey(KeyCode.RightControl)
+        || UnityEngine.Input.GetKey(KeyCode.LeftCommand) || UnityEngine.Input.GetKey(KeyCode.RightCommand);
+    bool shift = UnityEngine.Input.GetKey(KeyCode.LeftShift) || UnityEngine.Input.GetKey(KeyCode.RightShift);
+    Facet.Input.HandleUndo(ctrl, shift, UnityEngine.Input.GetKeyDown(KeyCode.Z), UnityEngine.Input.GetKeyDown(KeyCode.Y));
     Facet.Input.TickWheel(UnityEngine.Input.mousePosition, UnityEngine.Input.mouseScrollDelta.y);
 }
 ```
 
 The getter is re-read on every refresh, so replacing `Cfg` wholesale (a profile switch) shows through.
-The host also owns the game's side of input: skip the game's keys while `Facet.Input.BlocksGameInput`
-or `Facet.Input.HeldThisFrame` (the Escape that just closed a window is still down).
+The host also owns the game's side of input: skip the game's keys while `Facet.Input.BlocksGameKeys`
+(a window blocks game input, the Escape that just closed a window is still down, or a text field has focus).
+
+A host's per-frame key order is `Input.HandleEscape`, `Input.HandleUndo`, a canvas's `PollKeys`, then
+`Menus.HandleKeys` only when `PollKeys` returned false, then its own keys. `HandleUndo(ctrlOrCmd, shift, z, y)`
+undoes on Ctrl+Z and redoes on Ctrl+Shift+Z or Ctrl+Y, for the Facet copy whose window is topmost; a second
+host polling the same chord in that frame undoes nothing more and gets the first answer. It returns false,
+spending nothing, without the chord, while a text field has focus (the field keeps its own undo) or while a
+key capture runs; mid-drag it undoes nothing and returns true, and the release records the drag as one step.
+When `HandleUndo` returns true, keep Ctrl+Z and Ctrl+Y from the game this frame, as with `HandleEscape`'s
+return: the press was an undo, so the game must not undo too.
+While a key capture runs, `HandleEscape` takes no window action and returns true: the capture's own poll
+(`Input.ReadChord` gives `Input.ChordCancel`) cancels on the same press. A Key row's cancel spends that frame's
+Escape too, so no window closes on it whether the capture's poll or a host's `HandleEscape` runs first.
 `Facet.Mod/Gallery.cs` has one of every control, `Facet.Mod/GalleryParts.cs` one of every 0.2 part, and
 `Facet.Mod/GalleryEditor.cs` the editor parts, a page each.
 
@@ -64,7 +80,8 @@ every rule takes it: a card's header and rows, the nav's groups, a tab row.
 stops every window's motion; 0 is instant. So is `Anim.SmoothScroll` (0.2 on; unset is off), so one
 setting makes every window glide to where the mouse wheel sends it or step at once. `Input.TickWheel` is
 counted once per frame: the first call with a delta takes the frame, and the topmost open window of any
-version scrolls one notch.
+version scrolls one notch. `Input.HandleUndo` is counted the same way, with the frame's answer kept for a second
+mod's call; a topmost window of a Facet copy older than the undo chord leaves the chord to that copy's own host.
 
 ## Languages
 
@@ -94,7 +111,9 @@ words exactly as `Facet/Core/Words.cs` lists them (its Korean table holds every 
 `History` is one undo stack for the whole session, by value: every value row records how to put its change
 back and how to do it again, and the window header's arrows undo and redo. Changes to one key within
 `CoalesceSeconds` (0.9 s) are one step, keeping the first undo and the last redo, so a slider drag is one
-step; a null key never coalesces.
+step; a null key never coalesces. The undo chord (`Input.HandleUndo`) undoes this Facet copy's one `History`,
+whichever mod recorded the step and whichever mod's window is topmost; for an undo scoped to a window, bind
+its steps with `valid: () => surface.Visible` (the window's `Surface`), so the chord skips them while it is hidden.
 
 - **Steps.** `History.Step(label, key, valid, translate)` opens a scope: everything recorded until it is
   disposed (`Record`, row writes, `Snapshot`) is one step under its label and key. An undo runs the parts

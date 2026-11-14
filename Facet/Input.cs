@@ -31,7 +31,7 @@ namespace Facet
                 (Func<bool>)LocalText, (Func<bool>)LocalBlocks, (Func<float, float, bool>)LocalPointer,
                 typeof(Input).Assembly.FullName,
                 (Func<int, float[]>)LocalOrders, (Action<int, Func<float, float>>)LocalRemap,
-                (Action<float, float, float>)LocalWheel, (Func<bool>)LocalGesture,
+                (Action<float, float, float>)LocalWheel, (Func<bool>)LocalGesture, (Func<bool, bool>)LocalUndo,
             });
         }
 
@@ -68,16 +68,35 @@ namespace Facet
         public static bool PointerOverWindow(Vector2 screen) => Coord.Pointer(Entries, screen.x, screen.y, Host.Fallback.LogFn);
 
         /* Escape, answered once per frame for every loaded version: a drag in progress in any version
-           takes it, else the version whose topmost escapable window sits highest takes it. Returns false when nothing was open, so the caller
+           takes it, else the version whose topmost escapable window sits highest takes it. While a key capture runs it
+           takes no window action and returns true: the capture's own poll cancels on the same press. Returns false when nothing was open, so the caller
            lets the key through to the game. A mod that already spent this frame's Escape --
            cancelling a keybind capture -- says so with ConsumeEscape. */
         public static bool HandleEscape()
         {
             if (_stamp[0] == Time.frameCount) return _stamp[1] != 0f;
             _stamp[0] = Time.frameCount; _stamp[1] = 0f;
+            // A key capture's own poll cancels it on this press: no window acts, and the key is ours.
+            if (KeyCapture.Owner != null) { _stamp[1] = 1f; return true; }
             if (Coord.TakeEscape(Entries, Host.Fallback.LogFn)) _stamp[1] = 1f;
             return _stamp[1] != 0f;
         }
+
+        /* The undo chord, answered once per frame for every loaded version and every mod: the host passes its key reads
+           (Ctrl or Command held; Shift held; Z and Y down this frame). Ctrl+Z undoes, Ctrl+Shift+Z and Ctrl+Y redo, for
+           the version whose topmost window sits highest. A second call in the same frame (another mod's host) undoes
+           nothing more and gets the first call's answer. False, spending nothing, without the chord, while a text field
+           has focus (the field's own undo has it) or while a key capture runs. True when a step applied, or when a drag
+           in progress swallowed the chord (its release records the drag as one step). */
+        public static bool HandleUndo(bool ctrlOrCmd, bool shift, bool z, bool y)
+        {
+            if (!ctrlOrCmd || !(z || y) || KeyCapture.Owner != null || TextFocused) return false;
+            return Coord.Undo(Entries, _undoStamp, Time.frameCount, y || shift, Host.Fallback.LogFn);
+        }
+
+        /// One question for a host's key gate: should the game ignore the keyboard this frame? True while a window
+        /// blocks game input, a window closed on this frame's key, or a text field has focus.
+        public static bool BlocksGameKeys => BlocksGameInput || HeldThisFrame || TextFocused;
 
         /// This frame's Escape is spent (a keybind capture took it) -- HandleEscape will not act on it.
         public static void ConsumeEscape() { _stamp[0] = Time.frameCount; _stamp[1] = 1f; }
@@ -88,6 +107,10 @@ namespace Facet
                 if (Ui.Stack[i].Visible) return Ui.Stack[i].Order;
             return -1f;
         }
+
+        // The undo chord for this copy's History: a drag in progress swallows it (nothing applies, and no other copy's
+        // undo runs on that press); the release records the drag as one step.
+        private static bool LocalUndo(bool redo) => Gesture != null || (redo ? History.Redo() : History.Undo());
 
         /* A drag in progress in this copy takes Escape first, whichever version's host asked: it puts the drag's start
            back and records nothing. */
@@ -197,25 +220,31 @@ namespace Facet
             return false;
         }
 
-        private static readonly int[] _wheelStamp = Open();
-
         private static string _wheelProblem;
+
+        // [frame] of the last wheel, and [frame, result] of the last undo chord, whichever version handled it.
+        private static readonly int[] _wheelStamp = Open("Facet.WheelStamp", 1);
+        private static readonly int[] _undoStamp = Open("Facet.UndoStamp", 2);
 
         // A bad shared value must never break input: fall back to a private stamp and report once
         // (TakeWheelProblem). Never touches Host here: a throw would escape the static initialiser.
-        private static int[] Open()
+        private static int[] Open(string key, int length)
         {
+            Func<int[]> fresh = () => { var a = new int[length]; a[0] = -1; return a; };
+            string problem;
             try
             {
-                var a = Shared.Get<object>("Facet.WheelStamp", () => new[] { -1 }) as int[];
-                if (a != null && a.Length >= 1) return a;
-                _wheelProblem = "Facet.WheelStamp in the shared store is not an int[] of length >= 1; using a private stamp";
+                var a = Shared.Get<object>(key, fresh) as int[];
+                if (a != null && a.Length >= length) return a;
+                problem = key + " in the shared store is not an int[] of length >= " + length + "; using a private stamp";
             }
-            catch (Exception e) { _wheelProblem = "Facet.WheelStamp could not be read (" + e.Message + "); using a private stamp"; }
-            return new[] { -1 };
+            catch (Exception e) { problem = key + " could not be read (" + e.Message + "); using a private stamp"; }
+            _wheelProblem = _wheelProblem == null ? problem : _wheelProblem + "; " + problem;
+            return fresh();
         }
 
-        /// The message to log through the fallback host, once; null when the store was fine.
+        /// The message about a bad shared stamp (wheel or undo) to log through the fallback host, once; null when the
+        /// store was fine.
         internal static string TakeWheelProblem() { var p = _wheelProblem; _wheelProblem = null; return p; }
 
         /// Drive the wheel for the topmost open window of any loaded version, once per frame. The host

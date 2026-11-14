@@ -67,14 +67,26 @@ namespace Facet.Mod
             Frame();
         }
 
-        // The host's per-frame duties: Escape closes the topmost window, and the wheel is polled
-        // because a runtime panel does not reliably receive WheelEvent.
+        // The host's per-frame duties, in Facet's order: Escape closes the topmost window, the undo chord undoes once
+        // for every mod, then the editor's keys; the wheel is polled because a runtime panel does not reliably receive
+        // WheelEvent.
         [MethodImpl(MethodImplOptions.NoInlining)]
         static void Frame()
         {
             if (UnityEngine.Input.GetKeyDown(KeyCode.Escape)) Facet.Input.HandleEscape();
+            if (GalleryEditor.HostKeys) Undo();
             GalleryEditor.PollKeys();
             Facet.Input.TickWheel(UnityEngine.Input.mousePosition, UnityEngine.Input.mouseScrollDelta.y);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static void Undo()
+        {
+            bool ctrl = UnityEngine.Input.GetKey(KeyCode.LeftControl) || UnityEngine.Input.GetKey(KeyCode.RightControl)
+                || UnityEngine.Input.GetKey(KeyCode.LeftCommand) || UnityEngine.Input.GetKey(KeyCode.RightCommand);
+            if (!ctrl) return;
+            bool shift = UnityEngine.Input.GetKey(KeyCode.LeftShift) || UnityEngine.Input.GetKey(KeyCode.RightShift);
+            Facet.Input.HandleUndo(true, shift, UnityEngine.Input.GetKeyDown(KeyCode.Z), UnityEngine.Input.GetKeyDown(KeyCode.Y));
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]

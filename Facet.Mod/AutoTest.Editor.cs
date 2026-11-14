@@ -1646,6 +1646,16 @@ namespace Facet.Mod
                 row2.BeginCapture();
                 if (got2 != null) got2(Input.ChordCancel);
                 Check(got2 != null && k2 == "K" && b2.text == "K" && c2n == 1, "...given ChordCancel it writes nothing and runs CancelCapture", k2 + " / " + c2n);
+                // The capture's poll runs before any host's HandleEscape in the frame: its cancel spends the Escape.
+                yield return null;
+                string shownBefore = ShownSurfaces();
+                got2 = null;
+                row2.BeginCapture();
+                if (got2 != null) got2(Input.ChordCancel);
+                bool escSpent = Input.HandleEscape();
+                Check(got2 != null && c2n == 2 && KeyCapture.Owner == null && escSpent && ShownSurfaces() == shownBefore,
+                    "...a capture cancelled on Escape before any host's HandleEscape spends that Escape: HandleEscape then returns true and closes nothing",
+                    c2n + " / " + escSpent + " / " + shownBefore + " -> " + ShownSurfaces());
                 var text = Controls.Text(w.Body, "Not a key", Bind.Value(""));
                 Check(!text.BeginCapture(), "BeginCapture on a row that is no Key row is false");
 
@@ -1763,6 +1773,194 @@ namespace Facet.Mod
             yield return new WaitForEndOfFrame();
             ms[0] = sw.ElapsedMilliseconds;
             Main.Log("[perf] editor open " + ms[0] + " ms (build " + build + " ms; frame " + (Time.unscaledDeltaTime * 1000f).ToString("0") + " ms)");
+        }
+        // ---- the host's keys across mods and Facet copies: one undo per frame, Escape and the polls standing down
+        // while a key capture runs or a field has focus, and only the pressed editor answering
+
+        // Every box of the Editor's first set, with its rect, in draw order.
+        static string Layout()
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (var b in GalleryEditor.Model.Boxes) sb.Append(b.Key).Append(b.Rect).Append(';');
+            return sb.ToString();
+        }
+
+        // Which surfaces are shown, in stack order.
+        static string ShownSurfaces()
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (var s in Ui.Stack) sb.Append(s.Visible ? '1' : '0');
+            return sb.ToString();
+        }
+
+        static void PressOn(Canvas<GalleryBox> c, VisualElement root, Rect canvasRect)
+        {
+            var at = c.Stage.LocalToWorld(StageOf(canvasRect, c).center);
+            PointerAt(EventType.MouseDown, at, root);
+            PointerAt(EventType.MouseUp, at, root);
+        }
+
+        IEnumerator SectionCrossInput()
+        {
+            GalleryEditor.Model = new EditorModel();
+            var win = GalleryEditor.Open(); yield return null; yield return null;
+            GalleryEditor.HostKeys = false;   // this section drives the keys itself
+            var down = new HashSet<KeyCode>(); var held = new HashSet<KeyCode>();
+            Func<KeyCode, bool> D = k => down.Contains(k), H = k => held.Contains(k) || down.Contains(k);
+            Func<KeyCode, bool> C = k => k == KeyCode.C;
+            const string probe = "cross-input probe";
+            bool galleryShown = Gallery.Surface != null && Gallery.Surface.Visible;
+            try
+            {
+                yield return FreshCanvas();
+                var c = Cv; var m = GalleryEditor.Model;
+
+                // One undo per frame, whoever asks.
+                int v = 0;
+                History.Record("Probe 1", null, () => v = 0, () => v = 1); v = 1;
+                History.Record("Probe 2", null, () => v = 1, () => v = 2); v = 2;
+                yield return null;
+                bool none = Input.HandleUndo(false, false, true, false) || Input.HandleUndo(true, false, false, false);
+                bool u1 = Input.HandleUndo(true, false, true, false), u2 = Input.HandleUndo(true, false, true, false);
+                Check(!none && u1 && u2 && v == 1 && History.NextUndo == "Probe 1",
+                    "Ctrl+Z through HandleUndo twice in one frame returns true both times and undoes one step; Z or Ctrl alone first spends nothing",
+                    none + " / " + u1 + " / " + u2 + " / v " + v + " / " + History.NextUndo);
+                yield return null;
+                bool r1 = Input.HandleUndo(true, true, true, false);
+                yield return null;
+                bool u3 = Input.HandleUndo(true, false, true, false);
+                yield return null;
+                bool r2 = Input.HandleUndo(true, false, false, true);
+                Check(r1 && u3 && r2 && v == 2 && History.NextUndo == "Probe 2", "with Shift it redoes, and so does Ctrl+Y", r1 + " / " + u3 + " / " + r2 + " / v " + v);
+
+                // A text field focused: no undo.
+                yield return Tap(Mid("k6"));
+                GalleryEditor.Surface.Refresh(); yield return null; yield return null;
+                var tab = TabButton("Box");
+                if (tab != null) { Submit(tab); yield return null; }
+                var name = InspectorQ<TextField>("ed-i-name-input");
+                Check(name != null, "the inspector's Text row is built");
+                if (name == null) yield break;
+                name.Focus(); yield return null;
+                bool focusedCanvas = c.Focused;
+                string layout = Layout(), sel = Keys(c), next = History.NextUndo;
+                bool undo = Input.HandleUndo(true, false, true, false);
+                Check(Input.TextFocused && !undo && v == 2 && History.NextUndo == next, "with a text field focused, HandleUndo returns false and History is unchanged",
+                    Input.TextFocused + " / " + undo + " / " + History.NextUndo);
+                // The editor blocks game input by default, which would make this hold without text focus: stand every
+                // window's block down so only the focused field can set the flag.
+                var blocking = new List<Surface>();
+                foreach (var s in Ui.Stack) if (s.BlocksGameInput) { blocking.Add(s); s.BlocksGameInput = false; }
+                try
+                {
+                    yield return null;
+                    bool heldNow = Input.HeldThisFrame, focusedKeys = Input.BlocksGameKeys;
+                    name.Blur(); yield return null;
+                    bool blurredKeys = Input.BlocksGameKeys;
+                    Check(!heldNow && !Input.BlocksGameInput && focusedKeys && !blurredKeys,
+                        "with no window blocking game input, BlocksGameKeys is true while a text field is focused and false after it blurs",
+                        heldNow + " / " + Input.BlocksGameInput + " / " + focusedKeys + " / " + blurredKeys);
+                }
+                finally { foreach (var s in blocking) s.BlocksGameInput = true; }
+                name.Focus(); yield return null;
+
+                // ...and nothing else on the host's path acts either.
+                int copies = m.Copies, deletes = m.Deletes, zs = m.ZSteps;
+                bool polled = false;
+                foreach (var key in new[] { KeyCode.Delete, KeyCode.RightArrow, KeyCode.LeftArrow, KeyCode.UpArrow, KeyCode.DownArrow, KeyCode.RightBracket })
+                {
+                    down.Add(key); polled |= c.PollKeys(D, H); down.Clear(); c.PollKeys(D, H);
+                }
+                bool copied = Menus.HandleKeys(GalleryEditor.Bar.Root, GalleryEditor.MenuItems, C, true, false, false);
+                Check(focusedCanvas && !polled && !copied && Layout() == layout && Keys(c) == sel && History.NextUndo == next && m.Copies == copies && m.Deletes == deletes && m.ZSteps == zs,
+                    "with the inspector's Text row focused over a focused canvas, Delete, the arrows and ] through PollKeys and Ctrl+C through HandleKeys change nothing",
+                    focusedCanvas + " / " + polled + " / " + copied + " / " + Keys(c) + " / " + History.NextUndo);
+                name.Blur(); yield return null;
+
+                // Mid-drag the chord is swallowed; the release records the drag as one step.
+                // A probe step under the drag, so an undo applied mid-drag would show.
+                History.Clear();
+                History.Record("Drag probe", null, () => v = 2, () => v = 4); v = 4;
+                yield return null;
+                var was5 = BoxOf("k5").Rect;
+                yield return Tap(Mid("k5"));
+                var m5 = Mid("k5");
+                Send(EventType.MouseDown, m5); yield return null;
+                Send(EventType.MouseDrag, m5 + new Vector2(20f, 0f)); yield return null;
+                string dragged = Layout();
+                undo = Input.HandleUndo(true, false, true, false);
+                Check(Input.Gesture != null && undo && Layout() == dragged && v == 4 && History.NextUndo == "Drag probe",
+                    "mid-drag, HandleUndo undoes nothing (it returns true, so no other copy undoes) and the dragged rects stay",
+                    undo + " / v " + v + " / " + History.NextUndo);
+                Send(EventType.MouseUp, m5 + new Vector2(20f, 0f)); yield return null;
+                bool one = History.NextUndo == "Move" && History.Undo() && BoxOf("k5").Rect == was5 && History.NextUndo == "Drag probe" && v == 4;
+                Check(one, "...and the release records the drag as one step", History.NextUndo + " / " + BoxOf("k5").Rect);
+
+                // A key capture running: the canvas's keys, the menus, the undo chord and Escape all stand down.
+                History.Clear();
+                History.Record("Probe 3", null, () => v = 2, () => v = 3); v = 3;
+                yield return Tap(Mid("k6"));
+                yield return null;
+                int cancels = 0;
+                KeyCapture.Claim(probe, () => cancels++);
+                layout = Layout(); sel = Keys(c); copies = m.Copies;
+                down.Add(KeyCode.RightArrow); down.Add(KeyCode.Delete); polled = c.PollKeys(D, H); down.Clear(); c.PollKeys(D, H);
+                Check(c.Focused && !polled && Layout() == layout && Keys(c) == sel, "while a key capture runs, PollKeys with Right and Delete down changes nothing",
+                    c.Focused + " / " + polled + " / " + Keys(c));
+                copied = Menus.HandleKeys(GalleryEditor.Bar.Root, GalleryEditor.MenuItems, C, true, false, false);
+                Check(!copied && m.Copies == copies, "...Menus.HandleKeys with Ctrl+C runs nothing");
+                undo = Input.HandleUndo(true, false, true, false);
+                Check(!undo && v == 3 && History.NextUndo == "Probe 3", "...HandleUndo returns false and undoes nothing", undo + " / v " + v);
+                bool esc = Input.HandleEscape();
+                Check(esc && Keys(c) == sel && GalleryEditor.Surface.Visible && cancels == 0,
+                    "...and HandleEscape returns true with the selection kept and the window open: the capture cancels itself", esc + " / " + Keys(c) + " / " + GalleryEditor.Surface.Visible);
+                KeyCapture.Release(probe);
+                yield return null;
+                esc = Input.HandleEscape();
+                Check(esc && Keys(c) == "" && GalleryEditor.Surface.Visible, "after the capture is released, the next frame's Escape clears the selection", esc + " / " + Keys(c));
+                History.Clear(); yield return null;
+
+                // Two editors: only the one pressed last answers the keys. A is open; B opens after it, above it.
+                GalleryEditor.Open(); yield return null;   // shown again should an Escape above have hidden it
+                GalleryEditor.Second.Open(); yield return null; yield return null;
+                var b = GalleryEditor.Second.Canvas;
+                Main.Log("[cross-input] first canvas " + c.Stage.worldBound + ", second canvas " + b.Stage.worldBound);
+                b.Select(new List<GalleryBox> { GalleryEditor.Second.Boxes[1] });
+                yield return Tap(Mid("k7"));
+                bool aFocus = c.Focused, bFocus = b.Focused;
+                int bCount = GalleryEditor.Second.Boxes.Count, aDel = m.Deletes, bDel = GalleryEditor.Second.Deletes, bMenu = GalleryEditor.Second.MenuDeletes;
+                down.Add(KeyCode.Delete);
+                GalleryEditor.PollKeys(D, H); GalleryEditor.Second.PollKeys(D, H);
+                down.Clear(); yield return null;
+                Check(aFocus && !bFocus && m.Deletes == aDel + 1 && BoxOf("k7") == null && GalleryEditor.Second.Boxes.Count == bCount
+                      && GalleryEditor.Second.Deletes == bDel && GalleryEditor.Second.MenuDeletes == bMenu,
+                    "with a second editor opened above it, a press in the first's canvas makes Delete through both windows' polls delete only there",
+                    aFocus + " / " + bFocus + " / " + (m.Deletes - aDel) + " / " + (GalleryEditor.Second.Deletes - bDel) + "+" + (GalleryEditor.Second.MenuDeletes - bMenu));
+                yield return Tap(Mid("k8"));
+                PressOn(b, GalleryEditor.Second.Surface.Root, GalleryEditor.Second.Boxes[1].Rect); yield return null;
+                aFocus = c.Focused; bFocus = b.Focused;
+                aDel = m.Deletes; int aMenu = m.MenuDeletes; bDel = GalleryEditor.Second.Deletes;
+                down.Add(KeyCode.Delete);
+                GalleryEditor.PollKeys(D, H); GalleryEditor.Second.PollKeys(D, H);
+                down.Clear(); yield return null;
+                Check(!aFocus && bFocus && GalleryEditor.Second.Deletes == bDel + 1 && GalleryEditor.Second.Boxes.Count == bCount - 1
+                      && m.Deletes == aDel && m.MenuDeletes == aMenu && BoxOf("k8") != null,
+                    "...then a press in the second's canvas moves the keys there: only it deletes, and the first's canvas is not Focused",
+                    aFocus + " / " + bFocus + " / " + (GalleryEditor.Second.Deletes - bDel) + " / " + (m.Deletes - aDel) + "+" + (m.MenuDeletes - aMenu));
+                GalleryEditor.Second.Close(); History.Clear();
+                GalleryEditor.Close();
+                if (galleryShown) Gallery.Surface.Visible = false;
+                yield return null; yield return null;
+                Check(!Input.AnyWindowOpen && !Input.BlocksGameKeys, "BlocksGameKeys is false with no window open",
+                    Input.AnyWindowOpen + " / " + Input.BlocksGameKeys);
+            }
+            finally
+            {
+                if (galleryShown && Gallery.Surface != null) Gallery.Surface.Visible = true;
+                KeyCapture.Release(probe);
+                GalleryEditor.Second.Close();
+                GalleryEditor.HostKeys = true; Popup.CloseAll(); History.Clear(); GalleryEditor.Close(); GalleryEditor.Model = new EditorModel();
+            }
         }
     }
 }

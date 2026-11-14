@@ -324,8 +324,40 @@ static class FacetTest {
         ManyBinds();
         BindThen();
         Conveniences();
+        UndoChord();
 
         Console.WriteLine(_fail == 0 ? "ALL PASS" : _fail + " FAILED");
+    }
+
+    // The undo chord, answered once per frame across mods and Facet copies by the copy with the topmost window.
+    static void UndoChord() {
+        var logs = new List<string>(); Action<string> lg = logs.Add;
+        Func<string, float, Func<bool, bool>, object[]> mk12 = (key, top, undo) =>
+        { var e = new object[12]; e[0] = (Func<float>)(() => top); e[6] = key; e[11] = undo; return e; };
+        int ua = 0, ub = 0; bool applies = true, lastRedo = false;
+        var es = new List<object[]> {
+            mk12("UndoA", 30001f, r => { ua++; return true; }),
+            mk12("UndoB", 30005f, r => { ub++; lastRedo = r; return applies; }) };
+        var st = new[] { -1, 0 };
+        Check(Coord.Undo(es, st, 5, false, lg) && ub == 1 && ua == 0 && !lastRedo, "the topmost entry takes the undo chord; the lower one is not called", ua + " / " + ub);
+        Check(Coord.Undo(es, st, 5, false, lg) && ub == 1 && ua == 0, "a second call in the same frame calls no slot and says a step applied", ua + " / " + ub);
+        applies = false;
+        Check(!Coord.Undo(es, st, 6, true, lg) && ub == 2 && lastRedo, "the next frame asks again (a redo), false when no step applied", ub + " / " + lastRedo);
+        Check(!Coord.Undo(es, st, 6, true, lg) && ub == 2, "...and a second call in that frame returns false without calling a slot", ub.ToString());
+        var older = new object[11]; older[0] = (Func<float>)(() => 30009f); older[6] = "UndoOlder";   // a copy from before the undo slot
+        es.Add(older);
+        Check(!Coord.Undo(es, st, 7, false, lg) && ub == 2 && ua == 0 && st[0] == 7, "under an older copy's window this copy undoes nothing; its own polls drive it", ua + " / " + ub);
+        es[2] = mk12("UndoThrows", 30010f, r => { throw new InvalidOperationException("undo"); });
+        int l0 = logs.Count;
+        bool t1 = Coord.Undo(es, st, 8, false, lg), t2 = Coord.Undo(es, st, 9, false, lg);
+        Check(!t1 && !t2 && logs.Count == l0 + 1 && ub == 2, "a throwing undo slot returns false and is logged once", t1 + " / " + t2 + " / " + (logs.Count - l0));
+        var q = new List<object[]> { mk12("UndoQ1", 1f, r => false), mk12("UndoQ2", 2f, r => true) };
+        var qs = new[] { -1, 0 };
+        Coord.Undo(q, qs, 0, false, lg); Coord.Undo(q, qs, 0, false, lg);   // JIT first
+        long bytes = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 1; i <= 100000; i++) { Coord.Undo(q, qs, i, (i & 1) == 0, lg); Coord.Undo(q, qs, i, false, lg); }
+        bytes = GC.GetAllocatedBytesForCurrentThread() - bytes;
+        Check(bytes == 0, "100000 frames of Coord.Undo, two calls each, allocate nothing", bytes + " bytes");
     }
 
     // Grouped steps, snapshots, and steps that go stale with the document they were recorded on.
