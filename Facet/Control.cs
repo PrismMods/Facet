@@ -24,6 +24,9 @@ namespace Facet
         /// What the row shows: the last value read or set.
         public T Value { get; private set; }
 
+        /// The bind is a Bind.Many whose items disagree, as last read: the row shows its Mixed look.
+        public bool Mixed { get; private set; }
+
         /// The getter failed three reads in a row. The row is dimmed and no longer read.
         public bool Unavailable { get; private set; }
 
@@ -43,6 +46,7 @@ namespace Facet
 
         private readonly Bind<T> _bind;
         private readonly Action<T> _show;
+        private readonly Action<T, bool> _showMixed;   // a row with a Mixed look draws through this instead
         private readonly ControlOptions _o;
         private readonly Options<T> _d;     // _o, when it can carry a Default
         private readonly VisualElement _dot;
@@ -52,21 +56,24 @@ namespace Facet
         private Host _host;
         private Refresher _refresher;
         private T _got, _pending;
+        private bool _gotMixed;
         private int _fails;
         private bool _enabled = true, _visible = true;
 
-        internal Control(VisualElement root, VisualElement input, string label, Bind<T> bind, Action<T> show, ControlOptions options)
+        internal Control(VisualElement root, VisualElement input, string label, Bind<T> bind, Action<T> show, ControlOptions options,
+                         Action<T, bool> showMixed = null)
         {
             Root = root;
             Input = input;
             _bind = bind;
             _show = show;
+            _showMixed = showMixed;
             _o = options ?? new ControlOptions();
             _d = options as Options<T>;
             _name = _o.Id ?? label;
             _getSite = "Bind.Get '" + _name + "'";
             _refreshSite = "Refresh '" + _name + "'";
-            _read = () => _got = _bind.Get();
+            _read = () => { _got = _bind.Get(); _gotMixed = _bind.Mixed; };
             _write = () => _bind.Set(_pending);
             _refresh = Refresh;
             _host = Host.For(root);
@@ -101,7 +108,7 @@ namespace Facet
             Events.On<AttachToPanelEvent>(Root, _ => Attach());
             Events.On<DetachFromPanelEvent>(Root, _ => Detach());
 
-            if (Safe.Run(_host, _getSite, _read)) Value = _got; else _fails = 1;
+            if (Safe.Run(_host, _getSite, _read)) { Value = _got; Mixed = _gotMixed; } else _fails = 1;
             Show(Value);
             Conditions();
             // Built straight into a live page: the attach event has already gone by.
@@ -127,6 +134,19 @@ namespace Facet
         /// The change in progress is done: Committed with the current value.
         internal void Commit() { Raise(Committed, "Committed"); }
 
+        /// What an undo or redo restored: show it and commit. A Many bind's value and Mixed are read
+        /// again from its items (the step passes only the first captured item's value).
+        internal void Restored(T v)
+        {
+            if (!_bind.CanMix) Mixed = false;
+            else if (Safe.Run(_host, _getSite, _read)) { Mixed = _gotMixed; v = _got; }
+            Show(v);
+            Commit();
+        }
+
+        /// While its text is typed in, a Many row keeps writing the items selected when typing began.
+        internal void Pin(bool on) { _bind.Pin(on); }
+
         /// Re-ask EnabledWhen and VisibleWhen, then read the value and show it if it changed. Skipped
         /// while the row is being edited; does nothing once the row is unavailable.
         public void Refresh()
@@ -140,13 +160,15 @@ namespace Facet
                 return;
             }
             _fails = 0;
-            if (!EqualityComparer<T>.Default.Equals(_got, Value)) Show(_got);
+            // A Mixed flip re-shows too: the value read (the first item's) may be the one already shown.
+            if (!EqualityComparer<T>.Default.Equals(_got, Value) || _gotMixed != Mixed) { Mixed = _gotMixed; Show(_got); }
         }
 
         private void Write(T v)
         {
             _pending = v;
             Safe.Run(_host, _setSite ?? (_setSite = "Bind.Set '" + _name + "'"), _write);
+            Mixed = false;   // a write gave every item v
             Show(v);
         }
 
@@ -155,7 +177,8 @@ namespace Facet
         internal void Show(T v)
         {
             Value = v;
-            if (_show != null) _show(v);
+            if (_showMixed != null) _showMixed(v, Mixed);
+            else if (_show != null) _show(v);
             if (OnShown != null) OnShown(v);
             if (_dot != null)
                 _dot.style.display = EqualityComparer<T>.Default.Equals(v, _d.Default) ? DisplayStyle.None : DisplayStyle.Flex;
@@ -241,7 +264,7 @@ namespace Facet
             if (_refresher != null) return;
             if (_o.NoRead && _o.EnabledWhen == null && _o.VisibleWhen == null) return;   // nothing to poll
             _host = Host.For(Root);
-            for (var e = Root; e != null && _refresher == null; e = e.hierarchy.parent) _refresher = Data.Find<Refresher>(e);
+            _refresher = Refresher.Of(Root);
             if (_refresher != null) _refresher.Add(_refresh, _refreshSite);
         }
 

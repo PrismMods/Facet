@@ -46,7 +46,23 @@ namespace Facet.Mod
     {
         public string Key, Name;
         public Rect Rect;
+        /// What the Canvas page's inspector edits: nothing the canvas itself reads.
+        public float Hue, Size = 1f;
+        public Color Tint = Color.white;
+        public int Shape, Pattern, Weight;
+        public bool Bold;
+        public string Hotkey = "", Note = "";
+        public float[] Values = new float[10];
+        public bool[] Flags = new bool[6];
         public GalleryBox(string key, string name, Rect rect) { Key = key; Name = name; Rect = rect; }
+
+        /// A new object with the same key and values, as an import or a rebuilt document makes.
+        public GalleryBox Copy()
+        {
+            var b = (GalleryBox)MemberwiseClone();
+            b.Values = (float[])Values.Clone(); b.Flags = (bool[])Flags.Clone();
+            return b;
+        }
     }
 
     // The Editor window: one Nav page per editor part, on the Gallery's host.
@@ -67,6 +83,15 @@ namespace Facet.Mod
         public static VisualElement Page { get; private set; }
         /// The Canvas page's menu bar and the menus it shows, as last built.
         public static MenuBar Bar { get; private set; }
+        /// The Canvas page's right column, its inspector scroll and the Live region in it, as last built.
+        public static VisualElement Left { get; private set; }
+        /// The line after the Canvas page's columns.
+        public static Label Footer { get; private set; }
+        public static VisualElement Right { get; private set; }
+        public static ScrollView InspectorScroll { get; private set; }
+        public static VisualElement Inspector { get; private set; }
+        /// The inspector's hue slider, as last built.
+        public static Control<float> HueRow { get; private set; }
         public static IList<MenuItem> MenuItems { get; private set; }
         /// Snap targets beside the boxes, like another tab's items: drawn dim, never selected.
         public static readonly Rect[] Ghosts = { new Rect(400, 20, 60, 40), new Rect(400, 100, 60, 40) };
@@ -75,7 +100,8 @@ namespace Facet.Mod
         {
             if (Surface != null) { Surface.Visible = true; return _win; }
             Surface = new Surface(Gallery.Host, "FacetGalleryEditor", Layer.Window);
-            _win = new Window(Surface.Root, "editor", "Facet Editor", new Rect(140, 70, 900, 600));
+            // Wide enough that the Canvas page's right column (64 of 100) gives the stage about the width a whole page did.
+            _win = new Window(Surface.Root, "editor", "Facet Editor", new Rect(40, 40, 1300, 700));
             _win.CloseRequested += _ => Close();
             _win.OnRaise = () => { if (Surface != null) Surface.BringToFront(); };   // a press raises it, so its shortcuts answer
             Nav = new Nav(_win.Body, new[] { NavItem.Heading(null, UndoItem = new NavItem("Undo", Undo), CanvasItem = new NavItem("Canvas", CanvasPage)) });
@@ -140,14 +166,22 @@ namespace Facet.Mod
             };
         }
 
-        /// Four rows of 60 x 40 boxes, 90 apart across and 80 down; box 12 is 83 wide, a width off the grid.
+        /// Four rows of 60 x 40 boxes, 90 apart across and 80 down; box 12 is 83 wide, a width off the grid. Each box's
+        /// hue, tint, shape, pattern, weight, bold and hotkey differ from its neighbour's.
         internal static List<GalleryBox> NewBoxes()
         {
             var l = new List<GalleryBox>();
             for (int i = 0; i < 12; i++)
-                l.Add(new GalleryBox("k" + (i + 1), "Box " + (i + 1), new Rect(20 + i % 4 * 90, 20 + i / 4 * 80, i == 11 ? 83 : 60, 40)));
+                l.Add(new GalleryBox("k" + (i + 1), "Box " + (i + 1), new Rect(20 + i % 4 * 90, 20 + i / 4 * 80, i == 11 ? 83 : 60, 40))
+                {
+                    Hue = i / 12f, Tint = Color.HSVToRGB(i / 12f, 0.6f, 0.9f), Shape = i % 3, Pattern = i % 4, Weight = i % 10,
+                    Bold = i % 2 == 0, Hotkey = "F" + (i + 1),
+                });
             return l;
         }
+
+        /// The box's number: k7 is 7.
+        static int Number(GalleryBox b) { int n; return int.TryParse(b.Key.Substring(1), out n) ? n : 0; }
 
         /// The 108-box page: a 12 x 9 grid of 60 x 60 boxes, 70 apart.
         internal static List<GalleryBox> ManyBoxes()
@@ -193,14 +227,22 @@ namespace Facet.Mod
             boxes.Clear(); boxes.AddRange(to);
         }
 
+        /* The editor's shape: on the left a note and every shown box with its values, and on the right, pinned to the
+           page's viewport, the menu bar, the canvas and the inspector of what is selected, which scrolls on its own.
+           The box list makes the left column far taller than the viewport, so the page scrolls under the pinned
+           column; a line after the columns shows the pinned column stopping at their bottom. */
         static void CanvasPage(VisualElement p)
         {
             Page = p;
             Canvas<GalleryBox> c = null;
-            Bar = Controls.MenuBar(p, MenuItems = BuildMenus(() => c));
+            VisualElement right;
+            var left = Controls.Columns(p, out right, o => { o.Left = 36f; o.Right = 64f; o.RightFill = true; });
+            Right = right;
+            Ui.Muted("Select boxes on the canvas; the inspector edits every selected box at once.", left).style.whiteSpace = WhiteSpace.Normal;
+            Bar = Controls.MenuBar(right, MenuItems = BuildMenus(() => c));
             var drawn = new Dictionary<string, VisualElement>();
             var order = new List<string>();
-            c = Canvas = Controls.Canvas<GalleryBox>(p, "Canvas", o =>
+            c = Canvas = Controls.Canvas<GalleryBox>(right, "Canvas", o =>
             {
                 o.Id = "ed-canvas";
                 o.Items = () => Model.Tab == 0 ? Model.Boxes : Model.Other;
@@ -227,10 +269,99 @@ namespace Facet.Mod
             {
                 // New objects with the same keys, as an import or an undo that rebuilds its document would make.
                 var l = Model.Tab == 0 ? Model.Boxes : Model.Other;
-                for (int i = 0; i < l.Count; i++) l[i] = new GalleryBox(l[i].Key, l[i].Name, l[i].Rect);
+                for (int i = 0; i < l.Count; i++) l[i] = l[i].Copy();
                 c.Refresh();
                 draw();
-            }, p).name = "ed-replace";
+            }, left).name = "ed-replace";
+            Left = left;
+            Controls.Live(left, () => Shown.Count, BoxList);
+            Footer = Ui.Muted("Edits here change the Gallery's own boxes; nothing is saved.", p);
+            Footer.style.whiteSpace = WhiteSpace.Normal;
+            InspectorScroll = Ui.Scroll(right);
+            InspectorScroll.name = "ed-inspector";
+            Inspector = Controls.Live(InspectorScroll, () => c.SelectionVersion, box => Inspect(box, c));
+        }
+
+        static readonly Func<object> BoxDoc = () => Model.BoxDoc;
+
+        // Four read-only rows per shown box, re-read on every refresh pass; rebuilt when the number of boxes changes.
+        static void BoxList(VisualElement p)
+        {
+            for (int k = 0; k < Shown.Count; k++)
+            {
+                int i = k;
+                Controls.Info(p, "Box " + (i + 1), () => Of(i, b => b.Name + " (" + b.Key + ")"));
+                Controls.Info(p, "Place", () => Of(i, b => b.Rect.x.ToString("0") + ", " + b.Rect.y.ToString("0") + "  " + b.Rect.width.ToString("0") + " x " + b.Rect.height.ToString("0")));
+                Controls.Info(p, "Look", () => Of(i, b => "hue " + b.Hue.ToString("0.##") + ", size " + b.Size.ToString("0.##") + ", #" + ColorUtility.ToHtmlStringRGB(b.Tint)
+                                                            + ", " + Shapes[Mathf.Clamp(b.Shape, 0, Shapes.Length - 1)] + ", " + Patterns[Mathf.Clamp(b.Pattern, 0, Patterns.Length - 1)]
+                                                            + ", weight " + b.Weight + (b.Bold ? ", bold" : "")));
+                Controls.Info(p, "Values", () => Of(i, b =>
+                {
+                    var t = new System.Text.StringBuilder();
+                    foreach (var v in b.Values) t.Append(v.ToString("0.##")).Append(' ');
+                    foreach (var f in b.Flags) t.Append(f ? '1' : '0');
+                    return t.ToString();
+                }));
+            }
+        }
+
+        static string Of(int i, Func<GalleryBox, string> text) { var l = Shown; return i < l.Count ? text(l[i]) : ""; }
+
+        // Every selected box, found again by key in the shown set when an undo or redo comes after a Replace.
+        static Bind<T> Sel<T>(Canvas<GalleryBox> c, Func<GalleryBox, T> get, Action<GalleryBox, T> set)
+            => Bind.Many(() => c.Selection, get, set, b => b.Key, () => Shown);
+
+        static void Inspect(VisualElement box, Canvas<GalleryBox> c)
+        {
+            HueRow = null;
+            var sel = c.Selection;
+            if (sel.Count == 0) { Ui.Muted("Nothing selected.", box); return; }
+            bool even = true;
+            for (int i = 0; i < sel.Count; i++) even &= Number(sel[i]) % 2 == 0;
+            var pages = new List<NavItem> { new NavItem("Box", b => BoxRows(b, c)), new NavItem("Style", b => StyleRows(b, c)) };
+            if (even) pages.Add(new NavItem("Extra", b => ExtraRows(b, c)));
+            Tabs.Pages(box, pages);
+        }
+
+        static readonly string[] Shapes = { "Square", "Round", "Diamond" }, Patterns = { "None", "Stripes", "Dots", "Grid" };
+
+        // Twenty-five rows: one of each kind, then repeats over each box's Values and Flags.
+        static void BoxRows(VisualElement p, Canvas<GalleryBox> c)
+        {
+            HueRow = Controls.Slider(p, "Hue", Sel(c, b => b.Hue, (b, v) => b.Hue = v), o => { o.Id = "ed-i-hue"; o.UndoDocument = BoxDoc; });
+            Controls.Number(p, "Size", Sel(c, b => b.Size, (b, v) => b.Size = v), o => { o.Id = "ed-i-size"; o.UndoDocument = BoxDoc; });
+            Controls.Colour(p, "Tint", Sel(c, b => b.Tint, (b, v) => b.Tint = v), o => { o.Id = "ed-i-tint"; o.UndoDocument = BoxDoc; });
+            Controls.Text(p, "Name", Sel(c, b => b.Name, (b, v) => b.Name = v), o => { o.Id = "ed-i-name"; o.UndoDocument = BoxDoc; });
+            Controls.Choice(p, "Shape", Sel(c, b => b.Shape, (b, v) => b.Shape = v), o => { o.Id = "ed-i-shape"; o.Items = Shapes; o.UndoDocument = BoxDoc; });
+            Controls.Dropdown(p, "Pattern", Sel(c, b => b.Pattern, (b, v) => b.Pattern = v), o => { o.Id = "ed-i-pattern"; o.Items = Patterns; o.UndoDocument = BoxDoc; });
+            Controls.Toggle(p, "Bold", Sel(c, b => b.Bold, (b, v) => b.Bold = v), o => { o.Id = "ed-i-bold"; o.UndoDocument = BoxDoc; });
+            Controls.Key(p, "Hotkey", Sel(c, b => b.Hotkey, (b, v) => b.Hotkey = v), o => { o.Id = "ed-i-hotkey"; o.UndoDocument = BoxDoc; });
+            Controls.IntSlider(p, "Weight", Sel(c, b => b.Weight, (b, v) => b.Weight = v), o => { o.Id = "ed-i-weight"; o.UndoDocument = BoxDoc; });
+            for (int k = 0; k < 10; k++)
+            {
+                int i = k;
+                var bind = Sel(c, b => b.Values[i], (b, v) => b.Values[i] = v);
+                if (i % 2 == 0) Controls.Slider(p, "Value " + (i + 1), bind, o => { o.Id = "ed-i-value" + (i + 1); o.UndoDocument = BoxDoc; });
+                else Controls.Number(p, "Value " + (i + 1), bind, o => { o.Id = "ed-i-value" + (i + 1); o.UndoDocument = BoxDoc; });
+            }
+            for (int k = 0; k < 6; k++)
+            {
+                int i = k;
+                Controls.Toggle(p, "Flag " + (i + 1), Sel(c, b => b.Flags[i], (b, v) => b.Flags[i] = v), o => { o.Id = "ed-i-flag" + (i + 1); o.UndoDocument = BoxDoc; });
+            }
+        }
+
+        static void StyleRows(VisualElement p, Canvas<GalleryBox> c)
+        {
+            Controls.Colour(p, "Tint", Sel(c, b => b.Tint, (b, v) => b.Tint = v), o => { o.Id = "ed-s-tint"; o.UndoDocument = BoxDoc; });
+            Controls.Choice(p, "Shape", Sel(c, b => b.Shape, (b, v) => b.Shape = v), o => { o.Id = "ed-s-shape"; o.Items = Shapes; o.UndoDocument = BoxDoc; });
+            Controls.Toggle(p, "Bold", Sel(c, b => b.Bold, (b, v) => b.Bold = v), o => { o.Id = "ed-s-bold"; o.UndoDocument = BoxDoc; });
+        }
+
+        static void ExtraRows(VisualElement p, Canvas<GalleryBox> c)
+        {
+            Controls.Text(p, "Note", Sel(c, b => b.Note, (b, v) => b.Note = v), o => { o.Id = "ed-x-note"; o.UndoDocument = BoxDoc; });
+            Controls.Key(p, "Hotkey", Sel(c, b => b.Hotkey, (b, v) => b.Hotkey = v), o => { o.Id = "ed-x-hotkey"; o.UndoDocument = BoxDoc; });
         }
 
         static bool Has(IReadOnlyList<GalleryBox> l, GalleryBox b)
@@ -281,6 +412,7 @@ namespace Facet.Mod
             if (Surface == null) return;
             Surface.Dispose();
             Surface = null; Nav = null; _win = null; AmountRow = null; BoundRow = null; Canvas = null; Page = null; Bar = null; MenuItems = null;
+            Left = null; Footer = null; Right = null; InspectorScroll = null; Inspector = null; HueRow = null;
         }
     }
 }

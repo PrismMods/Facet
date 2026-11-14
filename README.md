@@ -308,6 +308,56 @@ row that holds the items), so it lines up with the cards around it to the pixel 
 value. `text` names a value (an English key, translated like a label). It has no label to name a step, so it records
 nothing in History: an edit to the document is a labelled row such as `Choice`.
 
+## Inspector
+
+An editor's inspector edits whatever is selected, one row per property, over every selected item at once.
+
+```csharp
+var left = Controls.Columns(page, out var right, o => { o.Left = 36f; o.Right = 64f; o.RightFill = true; });
+var bar = Controls.MenuBar(right, menus);
+var canvas = Controls.Canvas<Item>(right, "Canvas", o => { /* ... */ });
+var scroll = Ui.Scroll(right);
+Controls.Live(scroll, () => canvas.SelectionVersion, box =>
+{
+    Controls.Slider(box, "Hue", Bind.Many(() => canvas.Selection, i => i.Hue, (i, v) => i.Hue = v,
+                                          key: i => i.Key, all: () => Editor.Doc.Items),
+                    o => o.UndoDocument = () => Editor.Doc);
+});
+```
+
+`Editor.Doc` is a static field, not a local: `all` and `UndoDocument` are held by every step, so they must not
+capture the page's locals (C# gives the lambdas of one scope one shared closure, and `() => canvas.Selection`
+puts the canvas, and with it the page, in that closure).
+
+- **`Bind.Many(items, get, set, key, all)`** reads the first item (`default` with none) and writes every item.
+  `Bind<T>.Mixed` is true while any item's value differs from the first (`EqualityComparer<T>.Default`); it is false
+  for every other bind. A row's write records one step that captures the items it wrote, or with `key` their keys,
+  and each one's own old value: undo puts each value back (a mixed selection comes back mixed) and redo writes the
+  same items again, whatever is selected by then. By key, undo and redo find each key again in `all` (else `items`)
+  and skip a key that has gone, so items the consumer rebuilt (an undone snapshot, an import) still get their
+  values back. Steps coalesce only over the same captured set: two selections' edits are two steps, however close,
+  even when the row was rebuilt between them; a drag over one set is one step and its frames allocate nothing (with
+  `key`, as long as `key` does not). A step holds `set`, `key`, `all` and the captured items or keys, never `items`
+  or the row, so `() => canvas.Selection` does not keep a removed page alive; with `key` and no `all` it finds the
+  keys through `items`, which it then holds. While a `Text`, `Number` or slider number box is focused, the row keeps
+  writing the items selected when it took focus, so a press on another item commits the typing to the first set.
+- **Mixed.** A row over a mixed selection shows it: `Slider`/`IntSlider`/`Number` read "Mixed" (the thumb at the
+  first value), `Colour` shows an `Off` swatch and "Mixed", `Text` is empty, `Choice` selects nothing, `Dropdown` and
+  `Key` read "Mixed", `Toggle` draws an off track with the knob centred. Any write sets every item (a click on a
+  mixed toggle sets them all on); leaving a mixed `Text` without typing writes nothing.
+- **`ColumnsOptions.RightFill`**: the right column is as tall as the page's viewport (less whatever sits above the
+  columns while it is still in view) and stays pinned to its top while the left column scrolls, until the columns'
+  bottom reaches it: then it scrolls up with them, so what follows the columns stays uncovered. Its children stack;
+  a `Ui.Scroll` (a skinned vertical `ScrollView`, `flexGrow` 1, `minHeight` 0) takes the height that is left, and the
+  wheel over it scrolls it, not the page. Stacked (below `StackBelow`) the column is its content's height again.
+- **`Controls.Live(parent, key, build)`** builds once, then rebuilds whenever `key()` changes (`object.Equals`; a
+  `Func<int>` key such as a selection's version is compared by value and allocates nothing per pass),
+  checked on every refresh pass and every `Surface.Refresh()`. A rebuild runs in the context of the first build (its
+  Nav page and tab), so a `Tabs.Pages` inside keeps its chosen tab while the new tabs still have that name and falls
+  back to the first otherwise. Rows built inside, including a tab's rows built later on a click, have the rebuild
+  count of every enclosing Live region in their history key: rows of two builds never coalesce, even over one
+  object.
+
 ## API in 0.2
 
 | Area | API |
@@ -330,6 +380,7 @@ nothing in History: an edit to the document is a labelled row such as `Choice`.
 | Canvas | `Controls.Canvas<T>`; `CanvasOptions<T>`: `Items`, `Key`, `Find`, `GetRect`, `SetRect`, `Size`, `Selectable`, `Movable`, `Resizable`, `Ghosts`, `Grid`, `SnapDistance`, `SizeSnap`, `MinSize`, `Limit`, `Snap`, `ShowGrid`, `ShowGuides`, `Pane`, `Menu`, `Delete`, `ZOrder`, and from `ControlOptions` `Id`, `VisibleWhen`, `EnabledWhen`, `Tooltip`/`TooltipText`, `ContextMenu` and `ContextMenuItems` (on the pane), `Undoable`, `UndoDocument` (no `Help`); `Canvas<T>`: `Root`, `Stage`, `Content`, `Selection`, `Primary`, `SelectionVersion`, `Select`, `SelectAll`, `Clear`, `Refresh`, `Snap`, `ShowGrid`, `ShowGuides`, `SelectionChanged` (also on a `Refresh` remap), `Changed`, `Committed`, `Zoom`, `Pan`, `ZoomBy`, `Fit`, `Centre`, `ResetView`, `StageToCanvas`, `CanvasToStage`, `ViewCentre`, `HitTest`, `Nudge`, `DeleteSelection`, `StepZ`, `Focused`, `Hovered`, `PollKeys`, `ViewChanged`, `Activated`; `PreviewOptions.MinHeight`, `MaxHeight` (0: none); `Sizes.CanvasHandle`, `CanvasEdgeLong`, `CanvasEdgeShort`, `CanvasHit`, `CanvasOutline`; `Role.Guide` |
 | Menus | `MenuItem`; `Controls.MenuBar`/`MenuBar` (`Root`, `Left`, `Tools`, `IsOpen`, `Open`, `Close`); `Popup.Menu(anchor, IList<MenuItem>)`; `Popup.Context`; `ControlOptions.ContextMenuItems` (at the pointer, read at the right-click; also on a canvas's pane, around its stage); `Menus.HandleKeys` |
 | Toolbar | `Controls.Toolbar`/`Toolbar` (`Search`, `Chips`, `Icon`, `Glyph`, `Button`, `Toggle`, `Label`, `UndoRedo`, `Spacer`); `Controls.Chips<T>`; `Ui.IconButton`; `Paint.Tint` (public) |
+| Inspector | `Bind.Many` (by key), `Bind<T>.Mixed`, `Control<T>.Mixed`, `ColumnsOptions.RightFill`, `Ui.Scroll`, `Controls.Live` |
 | Window | `Window.Scale` is clamped to 0.6-2.5 |
 | Undo | `History.Step`, `History.BoundTo`, `History.Snapshot<T>`, `History.Invalidate`; stale steps are skipped; a null key never coalesces; `ControlOptions.Undoable`, `ControlOptions.UndoDocument`; an undo or redo of a row's or canvas's step raises its `Committed` inside the apply (`History.Applying` true) while it is on a panel, and otherwise only writes the bind or `SetRect` |
 

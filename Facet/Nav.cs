@@ -856,6 +856,20 @@ namespace Facet
 
         private string _tab;
 
+        /// The tab being built, as InTab left it (null outside a tab page).
+        internal string Tab => _tab;
+
+        /// Build again inside the context a region was first built in: Active is this Nav and the tab is `tab`
+        /// exactly, so a Controls.Live rebuild keys its rows and tabs as its first build did.
+        internal void Within(string tab, Action build)
+        {
+            var was = Active; var wasTab = _tab;
+            Active = this;
+            _tab = tab;
+            try { build(); }
+            finally { Active = was; _tab = wasTab; }
+        }
+
         /// Build a tab page of the open page (Tabs.Pages): Active is this Nav and PageTitle names the tab.
         internal void InTab(string tab, Action build)
         {

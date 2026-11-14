@@ -158,6 +158,7 @@ namespace Facet.Mod
                 yield return Run("SectionMenus", SectionMenus());
                 yield return Run("SectionContextMenu", SectionContextMenu());
                 yield return Run("SectionMenuKeys", SectionMenuKeys());
+                yield return Run("SectionInspector", SectionInspector());
                 yield return Run("SectionClose", SectionClose());
                 // Later tasks: yield return Run("Section...", Section...());
             }
@@ -174,18 +175,36 @@ namespace Facet.Mod
             // right after an event would catch it mid-fade: all but the motion-aware ones run at speed 0.
             // Wheel steps land at once; the glide's section holds its own switch.
             float speed = name == "SectionWarmUp" || name == "SectionOpen" || name == "SectionPartsPerf" || name == "SectionSpeed" || name == "SectionClose" || name == "SectionSmoothScroll" ? 1f : 0f;
-            using (Motion.Hold(speed, false))
-                while (true)
-                {
-                    try { if (!section.MoveNext()) yield break; }
-                    catch (Exception ex)
+            // The canvas and context-menu sections time gestures by pixels and frames: the game's own pointer, wherever it rests, must not reach them.
+            var quiet = name == "SectionCanvasEdit" || name == "SectionCanvasView" || name == "SectionContextMenu" || name == "SectionInspector" ? QuietRealPointer() : null;
+            try
+            {
+                using (Motion.Hold(speed, false))
+                    while (true)
                     {
-                        var st = (ex.StackTrace ?? "").Split('\n')[0].Trim();
-                        Check(false, name + " threw", ex.Message + " @ " + st);
-                        yield break;
+                        try { if (!section.MoveNext()) yield break; }
+                        catch (Exception ex)
+                        {
+                            var st = (ex.StackTrace ?? "").Split('\n')[0].Trim();
+                            Check(false, name + " threw", ex.Message + " @ " + st);
+                            yield break;
+                        }
+                        yield return section.Current;
                     }
-                    yield return section.Current;
-                }
+            }
+            finally { if (quiet != null) quiet(); }
+        }
+
+        /* While the game has focus, its uGUI EventSystem forwards the real pointer to a panel that holds pointer capture:
+           the frame after a synthetic press, the stage that captured it hears a move to wherever the real pointer rests,
+           and a few-pixel gesture becomes a drag. Switches the EventSystem off and returns what switches it back. */
+        static Action QuietRealPointer()
+        {
+            var type = System.Type.GetType("UnityEngine.EventSystems.EventSystem, UnityEngine.UI");
+            var es = type?.GetProperty("current", BindingFlags.Public | BindingFlags.Static)?.GetValue(null) as Behaviour;
+            if (es == null || !es.enabled) return null;
+            es.enabled = false;
+            return () => { if (es != null) es.enabled = true; };
         }
 
 
@@ -727,7 +746,7 @@ namespace Facet.Mod
             var right = Controls.Row(w.Body, "Unequal");
             // Control's constructor is internal; a test reaches it as Task 10's Controls will.
             typeof(Control<Unequal>).GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance)[0]
-                .Invoke(new object[] { right.parent, right, "Unequal", Bind.To(() => new Unequal(), v => { }), null, null });
+                .Invoke(new object[] { right.parent, right, "Unequal", Bind.To(() => new Unequal(), v => { }), null, null, null });
             bool flag = false;
             var after = Controls.Toggle(w.Body, "After it", Bind.To(() => flag, v => flag = v));
             yield return null; yield return null;

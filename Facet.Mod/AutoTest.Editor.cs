@@ -79,6 +79,17 @@ namespace Facet.Mod
                     "alive " + weak.IsAlive + ", next " + History.NextUndo);
                 Check(History.Undo() && held[0] == 0f, "...and its undo restores the field", held[0].ToString());
 
+                // A Many row's step keeps neither the row nor the page its items delegate reads through (a canvas's selection).
+                History.Clear();
+                var manyItems = new List<GalleryBox> { new GalleryBox("w1", "W1", new Rect(0, 0, 1, 1)), new GalleryBox("w2", "W2", new Rect(0, 0, 1, 1)) };
+                var weakPage = RemovedManyRow(win.Body, manyItems);
+                yield return null;
+                GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+                Check(!weakPage.IsAlive && History.NextUndo == "Held hue",
+                    "a step on a removed Many row whose items delegate captures its page lets the page be collected, and stays undoable",
+                    "alive " + weakPage.IsAlive + ", next " + History.NextUndo);
+                Check(History.Undo() && manyItems.TrueForAll(b => b.Hue == 0f), "...and its undo restores every item");
+
                 History.Clear();
                 var quiet = win.Body.Q("ed-quiet-input");
                 Check(quiet != null, "the Undo page has its Undoable = false row, ed-quiet-input");
@@ -509,7 +520,395 @@ namespace Facet.Mod
             }
         }
 
+        // ---- the Canvas page's inspector: Bind.Many rows, the Mixed look, Live, tab memory, RightFill
+
+        static T InspectorQ<T>(string name) where T : VisualElement => GalleryEditor.Inspector?.Q<T>(name);
+
+        static List<GalleryBox> Boxes(params int[] n)
+        {
+            var l = new List<GalleryBox>();
+            foreach (var i in n) l.Add(BoxOf("k" + i));
+            return l;
+        }
+
+        // Select boxes on the canvas, then let one refresh pass rebuild the inspector.
+        static IEnumerator Pick(params int[] n)
+        {
+            Cv.Select(Boxes(n));
+            GalleryEditor.Surface.Refresh(); yield return null; yield return null;
+        }
+
+        static bool Selected(VisualElement e) => e != null && Near(e.style.backgroundColor.value, Theme.For(e)[Role.Accent]);
+
+        static Button TabButton(string name) => GalleryEditor.Inspector?.Query<Button>().ToList().Find(b => b.text == name);
+
+        IEnumerator SectionInspector()
+        {
+            GalleryEditor.Model = new EditorModel();
+            var win = GalleryEditor.Open(); yield return null; yield return null;
+            GalleryEditor.HostKeys = false;
+            Surface probe = null, live = null;
+            try
+            {
+                GalleryEditor.Nav.Go(GalleryEditor.CanvasItem);
+                History.Clear();
+                for (int i = 0; i < 3; i++) yield return null;
+                var m = GalleryEditor.Model;
+                float[] hue0 = new float[13];
+                for (int i = 1; i <= 12; i++) hue0[i] = BoxOf("k" + i).Hue;
+                var box = TabButton("Box");
+                if (box != null) { Submit(box); yield return null; }
+
+                // Mixed
+                yield return Pick(1, 2, 3);
+                var num = InspectorQ<TextField>("ed-i-hue-number");
+                var sl = InspectorQ<Slider>("ed-i-hue-input");
+                Check(num != null && num.value == "Mixed" && sl != null && Mathf.Abs(sl.value - hue0[1]) < 1e-3f,
+                    "boxes with different hues show Mixed in the slider's value text, its thumb at the first box's hue", num?.value + " / " + sl?.value);
+                var tint = InspectorQ<VisualElement>("ed-i-tint");
+                var mixedSwatch = InspectorQ<VisualElement>("ed-i-tint-swatch")?.Q("mixed");
+                Check(tint != null && tint.Query<Label>().ToList().Exists(l => l.text == "Mixed") && mixedSwatch != null && mixedSwatch.style.display == DisplayStyle.Flex,
+                    "...the Colour row shows Mixed over an Off swatch");
+                var name = InspectorQ<TextField>("ed-i-name-input");
+                Check(name != null && name.value == "", "...the Text field is empty", name?.value);
+                var shape = InspectorQ<VisualElement>("ed-i-shape-input");
+                Check(shape != null && !shape.Query<Button>().ToList().Exists(Selected), "...Choice has no segment selected");
+                var pat = InspectorQ<Button>("ed-i-pattern-input");
+                Check(pat != null && pat.text == "Mixed", "...the Dropdown reads Mixed", pat?.text);
+                var bold = InspectorQ<VisualElement>("ed-i-bold-input");
+                var knob = bold?.childCount > 0 ? bold[0] : null;
+                Check(bold != null && !Selected(bold) && knob != null && Mathf.Abs(knob.worldBound.center.x - bold.worldBound.center.x) <= 1f,
+                    "...and the Toggle is indeterminate: off track, knob centred", knob == null ? "none" : knob.worldBound.center.x + " vs " + bold.worldBound.center.x);
+                var key = InspectorQ<Button>("ed-i-hotkey-input");
+                Check(key != null && key.text == "Mixed", "...and the Key row reads Mixed", key?.text);
+                yield return Pick(2);
+                num = InspectorQ<TextField>("ed-i-hue-number"); name = InspectorQ<TextField>("ed-i-name-input"); pat = InspectorQ<Button>("ed-i-pattern-input");
+                bold = InspectorQ<VisualElement>("ed-i-bold-input"); shape = InspectorQ<VisualElement>("ed-i-shape-input");
+                Check(num != null && num.value == hue0[2].ToString("0.##") && name != null && name.value == "Box 2" && pat != null && pat.text == "Stripes"
+                      && !Selected(bold) && shape != null && Selected(shape.Query<Button>().ToList()[1]),
+                    "one box shows its own values", num?.value + " / " + name?.value + " / " + pat?.text);
+                BoxOf("k4").Hue = 0.4f; BoxOf("k5").Hue = 0.4f;
+                yield return Pick(4, 5);
+                num = InspectorQ<TextField>("ed-i-hue-number");
+                Check(num != null && num.value == 0.4f.ToString("0.##"), "two boxes sharing a hue show it, not Mixed", num?.value);
+                BoxOf("k4").Hue = hue0[4]; BoxOf("k5").Hue = hue0[5];
+
+                // Writes: every selected box, one step, undone to each box's own hue.
+                yield return Pick(1, 2, 3);
+                History.Clear();
+                var row = GalleryEditor.HueRow; sl = InspectorQ<Slider>("ed-i-hue-input");
+                Check(row != null && sl != null, "the inspector's hue row is built");
+                if (row == null || sl == null) yield break;
+                int changed = 0, committed = 0;
+                Action<float> onC = _ => changed++, onK = _ => committed++;
+                sl.value = 0.5f; yield return null;
+                Check(Boxes(1, 2, 3).TrueForAll(b => Mathf.Abs(b.Hue - 0.5f) < 1e-4f) && BoxOf("k4").Hue == hue0[4], "moving the slider writes every selected box, and no other");
+                Check(History.NextUndo == "Hue", "...as one step under the row's label", History.NextUndo);
+                GalleryEditor.Surface.Refresh(); yield return null;
+                num = InspectorQ<TextField>("ed-i-hue-number");
+                Check(num != null && num.value == 0.5f.ToString("0.##"), "...and the three boxes, now equal, show the value, not Mixed", num?.value);
+                row.Changed += onC; row.Committed += onK;
+                History.Undo(); yield return null;
+                row.Changed -= onC; row.Committed -= onK;
+                Check(BoxOf("k1").Hue == hue0[1] && BoxOf("k2").Hue == hue0[2] && BoxOf("k3").Hue == hue0[3], "one undo restores each box's own old hue");
+                num = InspectorQ<TextField>("ed-i-hue-number");
+                Check(num != null && num.value == "Mixed", "...so Mixed comes back", num?.value);
+                Check(committed == 1 && changed == 0, "...and the slider's Committed fired once, Changed not at all", committed + " / " + changed);
+
+                History.Clear();
+                name = InspectorQ<TextField>("ed-i-name-input");
+                bool tookFocus = false, gaveUp = false;
+                if (name != null)
+                {
+                    name.Focus(); yield return null;
+                    tookFocus = Within(name.focusController?.focusedElement as VisualElement, name);
+                    sl.Focus(); yield return null;
+                    gaveUp = !Within(name.focusController?.focusedElement as VisualElement, name);
+                }
+                Check(tookFocus && gaveUp, "the mixed Text field takes focus, then gives it up", tookFocus + " / " + gaveUp);
+                Check(name != null && BoxOf("k1").Name == "Box 1" && BoxOf("k3").Name == "Box 3" && !History.CanUndo, "focusing the mixed Text field and leaving it without typing writes nothing");
+
+                // Replace: an undo by key reaches the new objects.
+                History.Clear();
+                sl.value = 0.25f; yield return null;
+                var olds = Boxes(1, 2, 3);
+                var replace = win.Body.Q<Button>("ed-replace");
+                Check(replace != null, "the Canvas page has its Replace button");
+                if (replace != null) { Submit(replace); yield return null; }
+                GalleryEditor.Surface.Refresh(); yield return null;
+                var news = Boxes(1, 2, 3);
+                Check(!ReferenceEquals(olds[0], news[0]) && news[0].Hue == 0.25f, "Replace makes new objects that keep the edited hue");
+                History.Undo(); yield return null;
+                Check(news[0].Hue == hue0[1] && news[1].Hue == hue0[2] && news[2].Hue == hue0[3] && olds[0].Hue == 0.25f,
+                    "after Replace, an undo gives the new objects their old hues back and leaves the dropped ones", news[0].Hue + " / " + olds[0].Hue);
+
+                // Two selections edited within the coalescing window are two steps.
+                History.Clear();
+                yield return Pick(1, 2, 3);
+                var t0 = Time.realtimeSinceStartup;
+                InspectorQ<Slider>("ed-i-hue-input").value = 0.6f; yield return null;
+                yield return Pick(4, 5);
+                InspectorQ<Slider>("ed-i-hue-input").value = 0.7f; yield return null;
+                float took = Time.realtimeSinceStartup - t0;
+                Check(took < History.CoalesceSeconds, "the two edits are inside the coalescing window", took + " s");
+                History.Undo(); yield return null;
+                Check(BoxOf("k4").Hue == hue0[4] && BoxOf("k5").Hue == hue0[5] && Boxes(1, 2, 3).TrueForAll(b => b.Hue == 0.6f) && History.CanUndo,
+                    "editing boxes 1-3 then 4-5 quickly: the first undo restores only 4-5");
+                History.Undo(); yield return null;
+                Check(BoxOf("k1").Hue == hue0[1] && BoxOf("k3").Hue == hue0[3] && BoxOf("k4").Hue == hue0[4], "...and the second only 1-3");
+
+                /* Rows a tab click builds inside a rebuilt inspector are a new step too: Style is built by a click on
+                   both selections, so only the shared step number keeps the two Bold edits apart. */
+                History.Clear();
+                bool[] bold0 = new bool[6];
+                for (int i = 1; i <= 5; i++) bold0[i] = BoxOf("k" + i).Bold;
+                yield return Pick(1, 2, 3);
+                var styleTab = TabButton("Style");
+                if (styleTab != null) { Submit(styleTab); yield return null; }
+                var sb1 = InspectorQ<VisualElement>("ed-s-bold-input");
+                float tb = Time.realtimeSinceStartup;
+                if (sb1 != null) ClickEl(sb1);
+                yield return null;
+                bool b13 = BoxOf("k1").Bold;
+                yield return Pick(4, 5);
+                box = TabButton("Box"); if (box != null) { Submit(box); yield return null; }
+                styleTab = TabButton("Style"); if (styleTab != null) { Submit(styleTab); yield return null; }
+                var sb2 = InspectorQ<VisualElement>("ed-s-bold-input");
+                if (sb2 != null) ClickEl(sb2);
+                yield return null;
+                bool b45 = BoxOf("k4").Bold;
+                float tookTabs = Time.realtimeSinceStartup - tb;
+                Check(tookTabs < History.CoalesceSeconds, "the two Bold clicks are inside the coalescing window", tookTabs + " s");
+                Check(sb1 != null && sb2 != null && (b13 != bold0[1] || b13 != bold0[2] || b13 != bold0[3]) && (b45 != bold0[4] || b45 != bold0[5]), "clicking Style's Bold on boxes 1-3, then on 4-5 after a tab click, writes both");
+                History.Undo(); yield return null;
+                Check(BoxOf("k4").Bold == bold0[4] && BoxOf("k5").Bold == bold0[5] && BoxOf("k1").Bold == b13 && History.CanUndo,
+                    "rows built by a tab click after a rebuild record their own step: the first undo restores only 4-5",
+                    BoxOf("k1").Bold + " / " + BoxOf("k4").Bold + " / " + History.CanUndo);
+                History.Undo(); yield return null;
+                Check(BoxOf("k1").Bold == bold0[1] && BoxOf("k2").Bold == bold0[2] && BoxOf("k3").Bold == bold0[3], "...and the second restores 1-3");
+                box = TabButton("Box"); if (box != null) { Submit(box); yield return null; }
+
+                // Typed text commits to the boxes the typing began on, though a press on another box moves the selection first.
+                History.Clear();
+                yield return Pick(1, 2, 3);
+                name = InspectorQ<TextField>("ed-i-name-input");
+                if (name != null) { name.Focus(); yield return null; name.value = "Lead"; }
+                yield return Tap(Mid("k4")); yield return null;
+                Check(name != null && Boxes(1, 2, 3).TrueForAll(b => b.Name == "Lead") && BoxOf("k4").Name == "Box 4" && Keys(Cv) == "k4",
+                    "a name typed with boxes 1-3 selected, then a press on box 4, names boxes 1-3 and leaves box 4",
+                    BoxOf("k1").Name + " / " + BoxOf("k4").Name + " / " + Keys(Cv));
+                Check(History.Undo() && BoxOf("k1").Name == "Box 1" && BoxOf("k3").Name == "Box 3", "...and its undo restores their names", BoxOf("k1").Name);
+
+                // Tabs keep their pick through a rebuild, and fall back when it is gone.
+                yield return Pick(1);
+                var style = TabButton("Style");
+                if (style != null) { Submit(style); yield return null; }
+                Check(InspectorQ<VisualElement>("ed-s-tint") != null, "choosing Style shows its rows");
+                yield return Pick(3);
+                Check(InspectorQ<VisualElement>("ed-s-tint") != null && InspectorQ<VisualElement>("ed-i-hue") == null, "selecting another box rebuilds the inspector still on Style");
+                yield return Pick(2, 4);
+                var extra = TabButton("Extra");
+                Check(extra != null, "every selected box even-numbered: the Extra tab is there");
+                if (extra != null) { Submit(extra); yield return null; }
+                Check(InspectorQ<VisualElement>("ed-x-note") != null, "...and shows its rows");
+                yield return Pick(1, 2);
+                Check(TabButton("Extra") == null && InspectorQ<VisualElement>("ed-i-hue") != null, "a set without Extra while on Extra opens the first tab");
+                box = TabButton("Box");
+
+                // RightFill: the right column pinned to the viewport while the left scrolls.
+                var right = GalleryEditor.Right;
+                var sv = right?.GetFirstAncestorOfType<ScrollView>();
+                if (sv != null)
+                {
+                    var v0 = sv.contentViewport.worldBound;
+                    Check(Mathf.Abs(right.worldBound.yMax - v0.yMax) <= 1f, "unscrolled, the right column reaches from its place down to the viewport's bottom (±1)",
+                        right.worldBound + " vs " + v0);
+                }
+                // The box list makes the left column at least 500 px taller than the viewport, so the page scrolls under the pinned column.
+                var leftCol = GalleryEditor.Left;
+                Check(sv != null && leftCol != null && leftCol.layout.height >= sv.contentViewport.layout.height + 500f && sv.verticalScroller.highValue >= 500f,
+                    "the Canvas page's box list makes its left column 500 px taller than the viewport, so the page scrolls",
+                    sv == null || leftCol == null ? "none" : leftCol.layout.height + " vs " + sv.contentViewport.layout.height + ", scrolls " + sv.verticalScroller.highValue);
+                if (sv == null) yield break;
+                sv.scrollOffset = new Vector2(0f, 500f); yield return null; yield return null;
+                var vp = sv.contentViewport.worldBound;
+                Check(Mathf.Abs(right.worldBound.yMin - vp.yMin) <= 1f, "with the left column scrolled 500 px the right column's top is the viewport's (±1)", right.worldBound.yMin + " vs " + vp.yMin);
+                Check(Mathf.Abs(right.worldBound.height - vp.height) <= 1f, "...and its height the viewport's (±1)", right.worldBound.height + " vs " + vp.height);
+                var ins = GalleryEditor.InspectorScroll;
+                Check(ins != null && ins.verticalScroller.highValue > 0f && ins.worldBound.yMax <= vp.yMax + 1f, "the inspector scroll takes the rest of the column and can scroll");
+                if (ins != null)
+                {
+                    float page0 = sv.scrollOffset.y, ins0 = ins.scrollOffset.y;
+                    var ev = new Event { type = EventType.ScrollWheel, delta = new Vector2(0f, 3f), mousePosition = ins.worldBound.center };
+                    using (var e = WheelEvent.GetPooled(ev)) GalleryEditor.Surface.Root.panel.visualTree.SendEvent(e);
+                    yield return null; yield return null;
+                    Check(ins.scrollOffset.y > ins0 && sv.scrollOffset.y == page0, "a wheel over the inspector scrolls it and not the page", (ins.scrollOffset.y - ins0) + " / " + (sv.scrollOffset.y - page0));
+                }
+                // Scrolled to the end: the pinned column stops at the columns' bottom and leaves the line after them uncovered.
+                sv.scrollOffset = new Vector2(0f, sv.verticalScroller.highValue); yield return null; yield return null;
+                var cols = right.parent.worldBound;
+                var foot = GalleryEditor.Footer;
+                Check(right.worldBound.yMax <= cols.yMax + 1f && foot != null && foot.worldBound.yMin >= right.worldBound.yMax - 1f,
+                    "scrolled to the end, the right column ends at the columns' bottom, above the line after them (±1)",
+                    right.worldBound.yMax + " vs columns " + cols.yMax + ", line " + (foot == null ? "none" : foot.worldBound.yMin.ToString()));
+                var wr = win.Rect;
+                win.Rect = new Rect(wr.x, wr.y, 520f, wr.height); yield return null; yield return null; yield return null;
+                float kids = 0f;
+                for (int i = 0; i < right.childCount; i++) kids = Mathf.Max(kids, right[i].layout.yMax + right[i].resolvedStyle.marginBottom);
+                Check(right.style.translate.value.y == 0f && Mathf.Abs(right.layout.height - kids) <= 1f && right.parent.resolvedStyle.flexDirection == FlexDirection.Column,
+                    "narrowed below StackBelow the columns stack, and the right column is its content's height, unpinned", right.layout.height + " vs " + kids);
+                win.Rect = wr; sv.scrollOffset = Vector2.zero; yield return null; yield return null;
+
+                // Perf: a rebuild of the 25-row Box tab, and a refresh pass over 30 Many rows on 108 boxes.
+                yield return Pick(1, 2, 3);
+                box = TabButton("Box");
+                if (box != null) { Submit(box); yield return null; }
+                Check(InspectorQ<VisualElement>("ed-i-flag6") != null, "the Box tab holds its 25 rows");
+                var sw = new System.Diagnostics.Stopwatch();
+                double sum = 0;
+                for (int r = 0; r < 12; r++)
+                {
+                    Cv.Select(r % 2 == 0 ? Boxes(4, 5) : Boxes(6));
+                    sw.Reset(); sw.Start();
+                    GalleryEditor.Surface.Refresh();
+                    sw.Stop();
+                    if (r >= 2) sum += sw.Elapsed.TotalMilliseconds;   // two warm-ups
+                    yield return null;
+                }
+                double rebuild = sum / 10;
+                Main.Log("[perf] inspector rebuild " + rebuild.ToString("0.00") + " ms (mean of 10, 25 rows under Tabs.Pages)");
+                Check(rebuild <= 16.0, "rebuilding the Live inspector with 25 rows takes at most 16 ms", rebuild.ToString("0.00"));
+
+                probe = new Surface(Gallery.Host, "FacetManyPerf", Layer.Window);
+                var pw = new Window(probe.Root, "manyperf", "Many", new Rect(60, 60, 600, 500));
+                var many = GalleryEditor.ManyBoxes();
+                Func<IReadOnlyList<GalleryBox>> all = () => many;
+                for (int k = 0; k < 10; k++)
+                {
+                    int i = k;
+                    Controls.Slider(pw.Body, "S" + i, Bind.Many(all, b => b.Values[i], (b, v) => b.Values[i] = v, b => b.Key), o => { if (i == 0) o.Id = "many-s0"; });
+                    Controls.Number(pw.Body, "N" + i, Bind.Many(all, b => b.Values[i], (b, v) => b.Values[i] = v, b => b.Key));
+                }
+                for (int k = 0; k < 6; k++) { int i = k; Controls.Toggle(pw.Body, "F" + i, Bind.Many(all, b => b.Flags[i], (b, v) => b.Flags[i] = v, b => b.Key)); }
+                Controls.Text(pw.Body, "Name", Bind.Many(all, b => b.Name, (b, v) => b.Name = v, b => b.Key));
+                Controls.Choice(pw.Body, "Shape", Bind.Many(all, b => b.Shape, (b, v) => b.Shape = v, b => b.Key), o => o.Items = new[] { "A", "B", "C" });
+                Controls.Colour(pw.Body, "Tint", Bind.Many(all, b => b.Tint, (b, v) => b.Tint = v, b => b.Key));
+                Controls.Key(pw.Body, "Hotkey", Bind.Many(all, b => b.Hotkey, (b, v) => b.Hotkey = v, b => b.Key));
+                yield return null; yield return null;
+                for (int r = 0; r < 3; r++) probe.Refresh();
+                foreach (var mb in many) mb.Values[0] = 0.77f;
+                probe.Refresh();
+                var s0 = pw.Body.Q<TextField>("many-s0-number");
+                int joinedRows = Refresher.Of(pw.Body)?.Count ?? 0;
+                Check(s0 != null && s0.value == 0.77f.ToString("0.##") && joinedRows >= 30, "the 30 Many rows are on the probe's refresher, and one pass shows a changed value",
+                    s0?.value + " / " + joinedRows + " refreshed");
+                sum = 0;
+                for (int r = 0; r < 20; r++)
+                {
+                    sw.Reset(); sw.Start();
+                    probe.Refresh();
+                    sw.Stop();
+                    sum += sw.Elapsed.TotalMilliseconds;
+                }
+                double pass = sum / 20;
+                Main.Log("[perf] many refresh " + pass.ToString("0.000") + " ms (mean of 20 passes, 30 Bind.Many rows over 108 boxes)");
+                Check(pass <= 1.0, "a refresh pass over 30 Many rows with 108 items averages at most 1 ms", pass.ToString("0.000"));
+
+                /* A drag on a Many row over 108 boxes: past the step's first write, its frames allocate nothing (the row's
+                   own bind, so the slider's drawing is left out; heap growth with the collector paused, as above). */
+                History.Clear();
+                var dragRow = Controls.Slider(pw.Body, "Drag", Bind.Many(all, b => b.Hue, (b, v) => b.Hue = v, b => b.Key));
+                var dragBind = typeof(Control<float>).GetField("_bind", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(dragRow) as Bind<float>;
+                Check(dragBind != null, "the Many drag row's bind is reachable for the allocation probe");
+                if (dragBind == null) yield break;
+                dragBind.Set(0.1f); dragBind.Set(0.11f); dragBind.Set(0.12f);
+                long mgrew, mjunk;
+                object mkeep = null;
+                var gmode = GarbageCollector.GCMode;
+                try
+                {
+                    GarbageCollector.GCMode = GarbageCollector.Mode.Disabled;
+                    long a = GC.GetTotalMemory(false);
+                    for (int i = 0; i < 2000; i++) mkeep = new byte[128];
+                    mjunk = GC.GetTotalMemory(false) - a;
+                    a = GC.GetTotalMemory(false);
+                    for (int i = 0; i < 2000; i++) dragBind.Set(0.2f + (i % 100) * 0.005f);
+                    mgrew = GC.GetTotalMemory(false) - a;
+                }
+                finally { GarbageCollector.GCMode = gmode; }
+                GC.KeepAlive(mkeep);
+                Main.Log("[perf] many slider drag: heap grew " + mgrew + " bytes over 2000 coalescing writes to 108 boxes (2000 x 128-byte arrays grew it " + mjunk + ")");
+                Check(mgrew == 0, "a Many slider drag's coalescing writes over 108 boxes allocate nothing", mgrew + " bytes");
+                Check(History.Undo() && !History.CanUndo && many.TrueForAll(b => b.Hue == 0f), "...and the drag is one step, undone to every box's hue");
+
+                /* A Live region inside another one's build: an outer rebuild makes a new inner region, whose own count
+                   starts again at 0, so only the outer count in the key keeps edits either side of it apart. */
+                live = new Surface(Gallery.Host, "FacetLiveProbe", Layer.Window);
+                var lw = new Window(live.Root, "liveprobe", "Live", new Rect(60, 60, 500, 300));
+                int[] outer = { 0 };
+                float[] cell = { 0f };
+                Controls.Live(lw.Body, () => outer[0], ob => Controls.Live(ob, () => 0, ib => Controls.Slider(ib, "Nested", Cell(cell), o => o.Id = "live-nested")));
+                yield return null; yield return null;
+                History.Clear();
+                float tn = Time.realtimeSinceStartup;
+                var nested = lw.Body.Q<Slider>("live-nested-input");
+                if (nested != null) { nested.value = 0.3f; yield return null; }
+                outer[0]++; live.Refresh(); yield return null;
+                var nested2 = lw.Body.Q<Slider>("live-nested-input");
+                if (nested2 != null) { nested2.value = 0.6f; yield return null; }
+                float tookNested = Time.realtimeSinceStartup - tn;
+                Check(nested != null && nested2 != null && !ReferenceEquals(nested, nested2) && tookNested < History.CoalesceSeconds,
+                    "an outer Live rebuild makes the inner region's row anew, inside the coalescing window", tookNested + " s");
+                Check(History.Undo() && Mathf.Abs(cell[0] - 0.3f) < 1e-4f && History.CanUndo,
+                    "a row in a Live region nested in another: edits either side of an outer rebuild are two steps", cell[0] + " / " + History.CanUndo);
+
+                /* A Live region keyed on an int compares it by value: its refresh check allocates nothing. The same key
+                   through the object overload boxes it on every pass, measured beside it as the probe's own check. */
+                lw.Body.Clear();
+                int[] ver = { 0 }, built = { 0 };
+                Controls.Live(lw.Body, () => ver[0] + 1000, vb => built[0]++);
+                yield return null;
+                ver[0]++; live.Refresh();
+                Check(built[0] == 2, "the int-keyed Live region rebuilds on its probe's refresh pass when the number moves", built[0].ToString());
+                live.Refresh();
+                long lgrew = LiveHeap(live, out long ljunk);
+                lw.Body.Clear();
+                Controls.Live(lw.Body, (Func<object>)(() => ver[0] + 1000), vb => { });
+                yield return null;
+                live.Refresh();
+                long ogrew = LiveHeap(live, out long _);
+                Main.Log("[perf] live int key: heap grew " + lgrew + " bytes over 100000 refresh passes; the same key as an object grew it " + ogrew
+                         + " (100000 boxed ints grew it " + ljunk + ")");
+                Check(ljunk > 0 && ogrew > 0 && lgrew == 0, "a refresh pass over a Live region keyed on an int allocates nothing (an object key's boxing shows)", lgrew + " / " + ogrew + " bytes");
+            }
+            finally { probe?.Dispose(); live?.Dispose(); GalleryEditor.HostKeys = true; History.Clear(); GalleryEditor.Close(); GalleryEditor.Model = new EditorModel(); }
+        }
+
         static Bind<float> Cell(float[] x) => Bind.To(() => x[0], v => x[0] = v);
+
+        /* Heap growth over 100000 refresh passes of `s` with the collector paused; `junk` is 100000 boxed ints' growth,
+           the size a boxed key would take. Many passes: the heap's partly free blocks take a few thousand small objects
+           before any growth shows. */
+        static long LiveHeap(Surface s, out long junk)
+        {
+            object keep = null;
+            var mode = GarbageCollector.GCMode;
+            try
+            {
+                GarbageCollector.GCMode = GarbageCollector.Mode.Disabled;
+                long a = GC.GetTotalMemory(false);
+                for (int i = 0; i < 100000; i++) keep = i;
+                junk = GC.GetTotalMemory(false) - a;
+                a = GC.GetTotalMemory(false);
+                for (int i = 0; i < 100000; i++) s.Refresh();
+                long grew = GC.GetTotalMemory(false) - a;
+                GC.KeepAlive(keep);
+                return grew;
+            }
+            finally { GarbageCollector.GCMode = mode; }
+        }
+
+        static bool Within(VisualElement focused, VisualElement e) => focused != null && (focused == e || e.Contains(focused));
 
         /* A hidden page under body with one row whose tooltip func captures the row, as consumers' options
            often do; the row is set to 0.3 once, then the page is removed. Its own method, so the section
@@ -526,5 +925,21 @@ namespace Facet.Mod
             page.RemoveFromHierarchy();
             return new WeakReference(c);
         }
+
+        // The same for a Many row, keyed with an all list, whose items delegate reads through its page.
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static WeakReference RemovedManyRow(VisualElement body, List<GalleryBox> items)
+        {
+            var page = new VisualElement { userData = items };
+            page.style.display = DisplayStyle.None;
+            body.Add(page);
+            var c = Controls.Slider(page, "Held hue", Bind.Many(() => (List<GalleryBox>)page.userData, b => b.Hue, (b, v) => b.Hue = v, b => b.Key, AllOf(items)),
+                                    o => o.Id = "ed-held-many");
+            c.Set(0.3f);
+            page.RemoveFromHierarchy();
+            return new WeakReference(page);
+        }
+
+        static Func<IReadOnlyList<GalleryBox>> AllOf(List<GalleryBox> l) => () => l;
     }
 }

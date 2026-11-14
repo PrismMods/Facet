@@ -13,6 +13,13 @@ namespace Facet
         /// The right column follows the viewport top while the page scrolls.
         public bool Sticky { get; set; } = true;
 
+        /// The right column is as tall as the enclosing ScrollView's viewport (less what sits above the columns
+        /// while that is still in view) and stays pinned to its top while the left column scrolls, whatever
+        /// either column holds, until the columns' bottom reaches it: then it scrolls up with them, so what
+        /// follows the columns is never covered. Its children stack; put a Ui.Scroll in it to take the height that is left.
+        /// Ignored while stacked.
+        public bool RightFill { get; set; }
+
         /// Below this width the right column stacks under the left (no sticky then); it unstacks again
         /// at StackBelow + 40, so a parent that shrink-wraps the columns cannot flip them every frame.
         public float StackBelow { get; set; } = 560f;
@@ -66,7 +73,7 @@ namespace Facet
             foreach (var c in new[] { l, r }) { c.style.minWidth = 0f; c.style.flexShrink = 1f; }
             r.style.alignSelf = Align.FlexStart;   // its own height, so there is slack to slide in
 
-            bool stacked = false;
+            bool stacked = false, fill = o.RightFill;
             Action layout = () =>
             {
                 root.style.flexDirection = stacked ? FlexDirection.Column : FlexDirection.Row;
@@ -78,6 +85,7 @@ namespace Facet
                 r.style.alignSelf = stacked ? Align.Stretch : Align.FlexStart;
                 if (stacked) { l.style.flexBasis = StyleKeyword.Auto; r.style.flexBasis = StyleKeyword.Auto; }
                 else { l.style.flexBasis = 0f; r.style.flexBasis = 0f; }
+                if (fill && stacked) r.style.height = StyleKeyword.Null;   // its content's height again
             };
             layout();
 
@@ -88,7 +96,19 @@ namespace Facet
                 float w = root.layout.width;
                 if (w > 0f && (stacked ? w >= unstackAt : w < stackAt)) { stacked = !stacked; layout(); }
                 float y = 0f;
-                if (o.Sticky && !stacked && sv != null)
+                if (fill && !stacked && sv != null)
+                {
+                    /* Pinned at the viewport top once the columns' top has scrolled past it, as tall as the viewport
+                       below that, and never past the columns' bottom: what follows the columns stays uncovered. */
+                    float top = root.WorldToLocal(sv.contentViewport.worldBound.position).y, vh = sv.contentViewport.layout.height;
+                    if (!float.IsNaN(top) && vh > 0f)
+                    {
+                        float h = vh - Mathf.Max(0f, -top);
+                        y = Mathf.Clamp(top, 0f, Mathf.Max(0f, root.layout.height - h));
+                        if (Mathf.Abs(h - r.resolvedStyle.height) > 0.5f) r.style.height = h;
+                    }
+                }
+                else if (o.Sticky && !stacked && sv != null)
                 {
                     float top = root.WorldToLocal(sv.contentViewport.worldBound.position).y;
                     float room = root.layout.height - r.layout.height;
@@ -105,12 +125,20 @@ namespace Facet
             EventCallback<AttachToPanelEvent> attach = _ =>
             {
                 sv = root.GetFirstAncestorOfType<ScrollView>();
-                if (sv != null) sv.verticalScroller.valueChanged += scrolled;
+                if (sv != null)
+                {
+                    sv.verticalScroller.valueChanged += scrolled;
+                    if (fill) Events.On(sv.contentViewport, geo);   // a taller window: a taller column
+                }
                 place();
             };
             EventCallback<DetachFromPanelEvent> detach = _ =>
             {
-                if (sv != null) sv.verticalScroller.valueChanged -= scrolled;
+                if (sv != null)
+                {
+                    sv.verticalScroller.valueChanged -= scrolled;
+                    if (fill) Events.Off(sv.contentViewport, geo);
+                }
                 sv = null;
             };
             Events.On(root, geo); Events.On(r, geo);

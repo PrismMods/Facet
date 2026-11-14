@@ -76,10 +76,10 @@ namespace Facet
         {
             var o = ControlOptions.Make(parent, label, configure);
             var right = Controls.Row(parent, label);
-            Action<bool> show;
+            Action<bool, bool> show;
             Control<bool> c = null;
-            var track = Switch(right, out show, () => c.Set(!c.Value));
-            c = TrackedRow(right.parent, track, parent, label, o, bind, show);
+            var track = Switch(right, out show, () => c.Set(c.Mixed || !c.Value));   // from mixed, a click sets them all on
+            c = TrackedRow(right.parent, track, parent, label, o, bind, null, show);
             return c;
         }
 
@@ -112,28 +112,28 @@ namespace Facet
             Ring(s);   // once in the row, so it finds the row's theme
 
             Control<int> c = null;
-            Action<int> show = v =>
+            Action<int, bool> show = (v, mixed) =>
             {
                 s.SetValueWithoutNotify(v);
                 Skin.SetFill(fill, s);
-                field.SetValueWithoutNotify(v.ToString(CultureInfo.CurrentCulture));
+                field.SetValueWithoutNotify(mixed ? MixedText(field) : v.ToString(CultureInfo.CurrentCulture));
             };
-            c = TrackedRow(right.parent, s, parent, label, o, bind, show);
+            c = TrackedRow(right.parent, s, parent, label, o, bind, null, show);
 
             var drag = Watch(s, c);
             Events.On<ChangeEvent<int>>(s, e =>
             {
-                if (e.newValue == c.Value) return;
+                if (e.newValue == c.Value && !c.Mixed) return;
                 if (drag.On) c.Edit(e.newValue); else c.Set(e.newValue);
             });
-            OnTyped(field, text =>
+            OnTyped(field, c, text =>
             {
                 int v;
                 if (!int.TryParse(text, NumberStyles.Integer, CultureInfo.CurrentCulture, out v)) return false;
                 v = Math.Max(o.Min, Math.Min(o.Max, v));
-                if (v != c.Value) c.Set(v);
+                if (v != c.Value || c.Mixed) c.Set(v);
                 return true;
-            }, () => field.SetValueWithoutNotify(c.Value.ToString(CultureInfo.CurrentCulture)));
+            }, () => show(c.Value, c.Mixed));
             return c;
         }
 
@@ -145,8 +145,8 @@ namespace Facet
             var o = ControlOptions.Make(parent, label, configure);
             var right = Controls.Row(parent, label);
             Control<int> c = null;
-            var show = Segments(right, o.Items ?? new string[0], i => { if (i != c.Value) c.Set(i); });
-            c = TrackedRow(right.parent, right, parent, label, o, bind, show);
+            var select = Segments(right, o.Items ?? new string[0], i => { if (i != c.Value || c.Mixed) c.Set(i); });
+            c = TrackedRow(right.parent, right, parent, label, o, bind, null, (v, mixed) => select(mixed ? -1 : v));   // mixed: none selected
             return c;
         }
 
@@ -162,7 +162,7 @@ namespace Facet
                loses its text measure (UI Toolkit drops it on Insert), so it shrank to its padding and a
                long item overflowed instead of widening it. */
             var cell = Ui.Box(right);
-            b = Ui.Btn("", () => Popup.Menu(b, items, c.Value, i => c.Set(i), o.ItemFont), cell);
+            b = Ui.Btn("", () => Popup.Menu(b, items, c.Mixed ? -1 : c.Value, i => c.Set(i), o.ItemFont), cell);
             var t = Theme.For(b); var sz = t.Sizes;
             Paint.Look(b, t.Looks.Field);
             b.style.marginRight = 0f;   // the box fills its cell, so the arrow is pinned inside the box's border
@@ -176,8 +176,12 @@ namespace Facet
             arrow.style.right = sz.ControlPad; arrow.style.top = 0f; arrow.style.bottom = 0f;
             arrow.style.unityTextAlign = TextAnchor.MiddleCenter;
             // An item's English key, translated like any label; out of range shows blank.
-            Action<int> show = v => Words.Label(b, v >= 0 && v < items.Count ? items[v] : "");
-            c = TrackedRow(right.parent, b, parent, label, o, bind, show);
+            Action<int, bool> show = (v, mixed) =>
+            {
+                if (mixed) Words.Label(b, "Mixed", true);
+                else Words.Label(b, v >= 0 && v < items.Count ? items[v] : "");
+            };
+            c = TrackedRow(right.parent, b, parent, label, o, bind, null, show);
             return c;
         }
 
@@ -191,10 +195,15 @@ namespace Facet
             f.style.fontSize = Theme.For(right).Sizes.Small;
             Cursors.Set(f, Cursors.Kind.Text);
             right.Add(f);
-            var c = TrackedRow(right.parent, f, parent, label, o, bind, v => f.SetValueWithoutNotify(v ?? ""));
-            // On commit, not per keystroke: a setter that persists to disk should not run once per
-            // character typed.
-            OnTyped(f, text => { if (text != (c.Value ?? "")) c.Set(text); return true; }, null);
+            var c = TrackedRow(right.parent, f, parent, label, o, bind, null, (v, mixed) => f.SetValueWithoutNotify(mixed ? "" : v ?? ""));
+            /* On commit, not per keystroke: a setter that persists to disk should not run once per
+               character typed. Mixed shows empty, and leaving it empty writes nothing: only typing does. */
+            OnTyped(f, c, text =>
+            {
+                text = text ?? "";
+                if (c.Mixed ? text.Length > 0 : text != (c.Value ?? "")) c.Set(text);
+                return true;
+            }, null);
             return c;
         }
 
@@ -218,7 +227,7 @@ namespace Facet
             Data.Get<Noting>(root).Label = picker.Title;   // a help line goes under the picker's name
             if (o.Id != null) picker.Swatch.name = o.Id + "-swatch";
             AddArrowSlot(root);
-            c = TrackedRow(root, inner, parent, label, o, bind, picker.SetColour);
+            c = TrackedRow(root, inner, parent, label, o, bind, null, (v, mixed) => { picker.SetColour(v); picker.SetMixed(mixed); });
             // The dot sits in the flow before the picker: level it with the header, not the whole picker.
             var dot = root.Q("changed");
             if (dot != null) dot.style.marginTop = (sz.RowHeight - 6f) / 2f;
@@ -249,7 +258,7 @@ namespace Facet
                 KeyCapture.Release(me);
                 if (owner != null) { owner.Hidden -= cancel; owner = null; }
                 Paint.Select(b, false);
-                Draw(b, c.Value);
+                Draw(b, c.Value, c.Mixed);
                 if (tellHost && o.CancelCapture != null) Safe.Run(Host.For(b), "Key CancelCapture", o.CancelCapture);
             };
             cancel = () => end(true);
@@ -270,22 +279,26 @@ namespace Facet
                     if (mine != gen) return;
                     end(false);
                     name = name ?? "";
-                    if (name != (c.Value ?? "")) c.Set(name); else Draw(b, name);
+                    if (name != (c.Value ?? "") || c.Mixed) c.Set(name); else Draw(b, name, false);
                 }));
                 if (!ok) end(false);
             }, right);
             Events.On<DetachFromPanelEvent>(b, _ => cancel());
             b.style.marginRight = 0f;
             b.style.minWidth = 110f;
-            c = TrackedRow(right.parent, b, parent, label, o, bind, v => Draw(b, v));
+            c = TrackedRow(right.parent, b, parent, label, o, bind, null, (v, mixed) => Draw(b, v, mixed));
             return c;
         }
 
         // The key's name is data, not a word: set by hand so a relabel leaves it alone. Empty reads "unbound".
-        private static void Draw(Button b, string name)
+        private static void Draw(Button b, string name, bool mixed)
         {
-            if (string.IsNullOrEmpty(name)) Words.Label(b, "unbound", true); else b.text = name;
+            if (mixed) Words.Label(b, "Mixed", true);
+            else if (string.IsNullOrEmpty(name)) Words.Label(b, "unbound", true); else b.text = name;
         }
+
+        // A number box's text while its row is bound to many items that disagree.
+        private static string MixedText(VisualElement e) { return Words.Own("Mixed", Host.For(e)); }
 
         /// Read-only text beside a label that wraps when long, instead of a TextField that cuts it off.
         public static Control<string> Info(VisualElement parent, string label, Func<string> value, Action<ControlOptions> configure = null)
@@ -382,6 +395,15 @@ namespace Facet
         /// and goes no further, so every switch answers the keyboard as well as the pointer.
         internal static VisualElement Switch(VisualElement host, out Action<bool> show, Action toggle)
         {
+            Action<bool, bool> look;
+            var track = Switch(host, out look, toggle);
+            show = v => look(v, false);
+            return track;
+        }
+
+        /// The same switch with an indeterminate look for a row over many items that disagree: the off track, the knob centred.
+        internal static VisualElement Switch(VisualElement host, out Action<bool, bool> show, Action toggle)
+        {
             var t = Theme.For(host); var s = t.Sizes; var k = t.Looks;
             var track = new VisualElement();
             track.style.width = s.SwitchWidth;
@@ -411,11 +433,13 @@ namespace Facet
             /* A knob with no layout yet resolves `left` to 0, not NaN, so Anim.Move would slide every new
                on-switch in from off (a page rebuilt into a shown window builds on a live panel). Until the
                knob is laid out, place it; only a change after that slides. */
-            show = v =>
+            float mid = (on + off) / 2f;
+            show = (v, mixed) =>
             {
-                Paint.Select(track, v);
-                if (knob.panel == null || !(knob.layout.width > 0f)) knob.style.left = v ? on : off;
-                else Anim.Move(knob, v ? on : off, Anim.Fast);
+                Paint.Select(track, v && !mixed);
+                float to = mixed ? mid : v ? on : off;
+                if (knob.panel == null || !(knob.layout.width > 0f)) knob.style.left = to;
+                else Anim.Move(knob, to, Anim.Fast);
             };
             return track;
         }
@@ -443,12 +467,13 @@ namespace Facet
             Func<float, float> fit = v => { v = ValueScale.Snap(v, o.Step, min); return max > min ? Math.Max(min, Math.Min(max, v)) : v; };
             Func<float, string> text = v => v.ToString(o.Format, CultureInfo.CurrentCulture);
 
-            Action<float> show = v =>
+            // Mixed: the thumb at the first item's value, "Mixed" in the number box.
+            Action<float, bool> show = (v, mixed) =>
             {
                 if (s != null) { s.SetValueWithoutNotify(scale.ToT(v, min, max)); Skin.SetFill(fill, s); }
-                field.SetValueWithoutNotify(text(v));
+                field.SetValueWithoutNotify(mixed ? MixedText(field) : text(v));
             };
-            var c = TrackedRow(right.parent, s ?? (VisualElement)field, parent, label, o, bind, show);
+            var c = TrackedRow(right.parent, s ?? (VisualElement)field, parent, label, o, bind, null, show);
 
             if (s != null)
             {
@@ -456,18 +481,18 @@ namespace Facet
                 Events.On<ChangeEvent<float>>(s, e =>
                 {
                     float v = fit(scale.FromT(e.newValue, min, max));
-                    if (v == c.Value) { show(v); return; }   // snapped back onto the value it had
+                    if (v == c.Value && !c.Mixed) { show(v, false); return; }   // snapped back onto the value it had
                     if (drag.On) c.Edit(v); else c.Set(v);
                 });
             }
-            OnTyped(field, typed =>
+            OnTyped(field, c, typed =>
             {
                 float v;
                 if (!float.TryParse(typed, NumberStyles.Float, CultureInfo.CurrentCulture, out v) || float.IsNaN(v) || float.IsInfinity(v)) return false;
                 v = fit(v);
-                if (v != c.Value) c.Set(v);
+                if (v != c.Value || c.Mixed) c.Set(v);
                 return true;
-            }, () => field.SetValueWithoutNotify(text(c.Value)));
+            }, () => show(c.Value, c.Mixed));
             return c;
         }
 
@@ -489,15 +514,18 @@ namespace Facet
         /* Commit typed text on Enter or when focus leaves; `commit` says whether the text was good
            (it only matters to callers; restore runs either way). Bad text puts the shown value back — silently keeping it is worse than refusing it.
            FocusOut, not Blur: focus sits on the field's inner input, and Blur neither fires on the
-           TextField nor bubbles. */
-        private static void OnTyped(TextField f, Func<string, bool> commit, Action restore)
+           TextField nor bubbles. A Many row is pinned to its items while focused: a press on another
+           item moves the selection before this field's FocusOut runs, and the commit belongs to the
+           items the typing began on. */
+        private static void OnTyped<T>(TextField f, Control<T> c, Func<string, bool> commit, Action restore)
         {
             Action apply = () =>
             {
                 commit(f.value);
                 if (restore != null) restore();   // bad text goes back; good text shows the way the row formats it
             };
-            Events.On<FocusOutEvent>(f, _ => apply());
+            Events.On<FocusInEvent>(f, _ => c.Pin(true));
+            Events.On<FocusOutEvent>(f, _ => { try { apply(); } finally { c.Pin(false); } });
             Events.On<KeyDownEvent>(f, e =>
             {
                 if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) apply();
@@ -527,10 +555,11 @@ namespace Facet
            History outlives pages, and an entry holding the row would keep its removed page alive. An
            undo meanwhile restores the value only; a row back on a panel is refilled and its refresher
            reads the value, and a rebuilt page has new rows. */
-        private static Control<T> TrackedRow<T>(VisualElement root, VisualElement input, VisualElement at, string label, ControlOptions o, Bind<T> bind, Action<T> show)
+        private static Control<T> TrackedRow<T>(VisualElement root, VisualElement input, VisualElement at, string label, ControlOptions o, Bind<T> bind, Action<T> show,
+                                                Action<T, bool> showMixed = null)
         {
             var row = new Control<T>[1];
-            var c = new Control<T>(root, input, label, Tracked(at, label, o, bind, row), show, o);
+            var c = new Control<T>(root, input, label, Tracked(at, label, o, bind, row), show, o, showMixed);
             if (!o.Undoable) return c;
             Events.On<AttachToPanelEvent>(c.Root, _ => row[0] = c);
             Events.On<DetachFromPanelEvent>(c.Root, _ => row[0] = null);
@@ -539,17 +568,13 @@ namespace Facet
         }
 
         /* Undo. The bind handed to Control is wrapped so every write — a click, a drag frame, the
-           middle-click reset — records, and an undo writes the raw bind once, then shows the value
-           and raises Committed (Applying is true, Changed is not raised). The previous value is read
-           INSIDE the setter, not captured from an enclosing variable, or the undo closure would see
-           whatever the value had become by the time it ran. Dragging is one step: History coalesces
-           by key. With UndoDocument each write is a step bound to the document it was made on.
-
-           A drag frame allocates nothing: when History says the write only moves the end of the
-           step this row recorded last, the row moves what that step's redo restores (end) instead of
-           recording again. The closures are made in record, never in the setter, because a lambda
-           capturing v would make its closure on every write. No lambda here reads o: every step would
-           then hold the options, whose delegates (a tooltip func, a menu action) often capture the row. */
+           middle-click reset — records through the bind (Bind.SetRecorded): a plain bind records the
+           value it had, read inside the write, and a Many bind each item's own. An undo writes the raw
+           bind once, then shows the value and raises Committed (Applying is true, Changed is not
+           raised). Dragging is one step: History coalesces by key, and a plain bind's drag frame
+           allocates nothing. With UndoDocument each write is a step bound to the document it was made
+           on. No lambda here reads o: every step would then hold the options, whose delegates (a
+           tooltip func, a menu action) often capture the row. */
         private static Bind<T> Tracked<T>(VisualElement at, string label, ControlOptions o, Bind<T> b, Control<T>[] row)
         {
             if (!o.Undoable) return b;
@@ -557,38 +582,20 @@ namespace Facet
             var tr = Words.Translator(at);   // fixed at build: the recorder's host, or Facet's own table
             var nav = Nav.Active;
             // Per control, never the label alone: two "Enabled" rows on different pages are two steps.
-            string key = host.Name + "/" + (nav != null ? nav.PageTitle : "") + "/" + label + "#" + (o.Id ?? (++Seq).ToString());
-            string site = "History '" + label + "'";
+            string key = host.Name + "/" + (nav != null ? nav.PageTitle : "") + "/" + label + "#" + (o.Id ?? (++Seq).ToString()) + LiveTag(at);
             var document = o.UndoDocument;
-            T prev = default(T);
-            Action read = () => prev = b.Get();
-            T[] end = null;          // what the row's newest step's redo restores
-            Action endRedo = null;   // and that redo
-            Action<T, T, Func<bool>> record = (was, now, valid) =>
-            {
-                var to = end = new[] { now };
-                Action undo = () => { b.Set(was); Applied(row, was); };
-                Action redo = endRedo = () => { b.Set(to[0]); Applied(row, to[0]); };
-                if (document == null) History.Record(label, key, undo, redo, tr);
-                else using (History.Step(label, key, valid, tr)) History.Record(label, key, undo, redo, tr);
-            };
-            return Bind.To(b.Get, v =>
-            {
-                if (Safe.Run(host, site, read) && !EqualityComparer<T>.Default.Equals(prev, v))
-                {
-                    var valid = document == null ? null : History.BoundTo(document);
-                    if (History.Extend(key, valid, endRedo)) end[0] = v;
-                    else record(prev, v, valid);
-                }
-                b.Set(v);
-            });
+            var applied = Relay(row);   // made apart: a lambda here would share this method's closure, which holds b
+            return b.Wrap(v => b.SetRecorded(v, label, key, tr, applied, document == null ? null : History.BoundTo(document)));
         }
 
         // Show and commit what an undo restored, on the row in the box.
-        private static void Applied<T>(Control<T>[] row, T x)
+        private static Action<T> Relay<T>(Control<T>[] row)
         {
-            var c = row[0];
-            if (c != null) { c.Show(x); c.Commit(); }
+            return x =>
+            {
+                var c = row[0];
+                if (c != null) c.Restored(x);
+            };
         }
     }
 }

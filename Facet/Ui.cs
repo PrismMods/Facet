@@ -191,6 +191,19 @@ namespace Facet
             return lv;
         }
 
+        /// A vertical ScrollView with Facet's scrollbars that takes the height left in its parent (flexGrow 1,
+        /// minHeight 0, or it sizes to its content and the parent clips it): what goes in a RightFill column.
+        public static ScrollView Scroll(VisualElement parent)
+        {
+            var sv = new ScrollView(ScrollViewMode.Vertical);
+            sv.style.flexGrow = 1f;
+            sv.style.minHeight = 0f;
+            sv.contentContainer.style.flexShrink = 0f;
+            Skin.When<ScrollView>(sv, Skin.Scroll);
+            parent?.Add(sv);
+            return sv;
+        }
+
         // ── style helpers: UI Toolkit splits these across four properties each ──
 
         public static void SetPadding(VisualElement e, float v)

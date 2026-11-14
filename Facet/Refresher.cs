@@ -30,6 +30,14 @@ namespace Facet
 
         internal int Count => _controls.Count;
 
+        /// The refresher of the surface `e` sits in, or null.
+        internal static Refresher Of(VisualElement e)
+        {
+            Refresher r = null;
+            for (; e != null && r == null; e = e.hierarchy.parent) r = Data.Find<Refresher>(e);
+            return r;
+        }
+
         internal void Add(Action refresh, string site) { _controls.Add(new KeyValuePair<string, Action>(site, refresh)); }
 
         internal void Remove(Action refresh)

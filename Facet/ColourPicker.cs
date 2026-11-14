@@ -67,6 +67,20 @@ namespace Facet
             Sync(true);
         }
 
+        /* A row over many colours that disagree: an Off swatch and "Mixed" for the hex. The picker still holds the
+           first colour, so opening it starts there, and a pick writes every item. */
+        internal void SetMixed(bool on)
+        {
+            if (on == _mixed) return;
+            _mixed = on;
+            _mixedFill.style.display = on ? DisplayStyle.Flex : DisplayStyle.None;
+            if (on) _hexLabel.text = Words.Own("Mixed", Host.For(_hexLabel));
+            else Sync(true);
+        }
+
+        private bool _mixed;
+        private VisualElement _mixedFill;
+
         private void BuildHeader(string label)
         {
             var head = Ui.Row(Root);
@@ -102,6 +116,14 @@ namespace Facet
             Ui.SetBorderWidth(_swatch, _sz.Line);
             Paint.Border(_swatch, Role.PanelBorder);
             swatchBg.Add(_swatch);
+            _mixedFill = new VisualElement { name = "mixed", pickingMode = PickingMode.Ignore };
+            _mixedFill.style.position = Position.Absolute;
+            _mixedFill.style.left = 0f; _mixedFill.style.top = 0f;
+            _mixedFill.style.right = 0f; _mixedFill.style.bottom = 0f;
+            _mixedFill.style.display = DisplayStyle.None;
+            Ui.SetRadius(_mixedFill, _sz.Radius);
+            Paint.Bg(_mixedFill, Role.Off);
+            _swatch.Add(_mixedFill);
 
             Events.On<ClickEvent>(head, _ =>
             {
@@ -345,7 +367,7 @@ namespace Facet
 
                 string hex = "#" + (_hasAlpha ? ColorUtility.ToHtmlStringRGBA(_colour)
                                               : ColorUtility.ToHtmlStringRGB(_colour));
-                _hexLabel.text = hex;
+                _hexLabel.text = _mixed ? Words.Own("Mixed", Host.For(_hexLabel)) : hex;
                 if (!_hexField.focusController?.focusedElement?.Equals(_hexField) ?? true)
                     _hexField.SetValueWithoutNotify(hex);
             }

@@ -73,6 +73,7 @@ namespace Facet
             { "Delete", "삭제" },
             { "Bring forward", "앞으로 가져오기" },
             { "Send backward", "뒤로 보내기" },
+            { "Mixed", "혼합" },
         };
     }
 }

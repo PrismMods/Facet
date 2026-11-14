@@ -318,6 +318,7 @@ static class FacetTest {
         CanvasGeometry();
         GuideColour();
         Shortcuts();
+        ManyBinds();
 
         Console.WriteLine(_fail == 0 ? "ALL PASS" : _fail + " FAILED");
     }
@@ -610,6 +611,89 @@ static class FacetTest {
         Check(Motion.Speed == 3f, "with no hold the store's last write shows");
         Motion.Speed = 1f;
     }
+
+    // One row over many items: the first item's value, a mixed state, and per-item undo.
+    static void ManyBinds() {
+        var clock = History.Clock;
+        double t = 0; History.Clock = () => t;
+        var items = new List<int[]> { new[] { 1 }, new[] { 1 }, new[] { 3 } };
+        var sel = new List<int[]>(items); var m = Bind.Many<int[], int>(() => sel, x => x[0], (x, v) => x[0] = v);
+        Check(m.Get() == 1 && m.Mixed, "Many reads the first item and knows the selection is mixed");
+        History.Clear(); m.Set(7); Check(items.TrueForAll(x => x[0] == 7) && !m.Mixed && !History.CanUndo, "Set writes every item and records nothing");
+        items[0][0] = 1; items[1][0] = 1; items[2][0] = 3;
+        int applied = 0; bool applying = true;
+        m.SetRecorded(7, "V", "k", null, _ => { applied++; applying &= History.Applying; }); sel.RemoveAt(2);   // the selection changes before the undo
+        History.Undo(); Check(items[0][0] == 1 && items[1][0] == 1 && items[2][0] == 3, "undo restores each captured item's own value");
+        History.Redo(); Check(items.TrueForAll(x => x[0] == 7), "redo writes the captured items again");
+        Check(applied == 2 && applying, "applied runs once per undo and redo, while Applying");
+        int pv = 0, pa = 0; var p = Bind.To(() => pv, x => pv = x); History.Clear();
+        p.SetRecorded(4, "P", "p", null, _ => pa++); History.Undo(); History.Redo(); Check(pv == 4 && pa == 2, "a plain bind runs applied too");
+        Check(!Bind.To(() => 0, _ => { }).Mixed, "a plain bind is never mixed");
+        // by key: the consumer rebuilt its items under the same keys before the undo
+        var objs = new List<int[]> { new[] { 1, 0 }, new[] { 2, 1 } };   // [value, key]
+        var keyed = Bind.Many<int[], int>(() => objs, x => x[0], (x, v) => x[0] = v, x => x[1].ToString());
+        History.Clear(); keyed.SetRecorded(9, "K", "keyed", null); var old = objs;
+        objs = new List<int[]> { new[] { 9, 0 }, new[] { 9, 1 } };
+        History.Undo(); Check(objs[0][0] == 1 && objs[1][0] == 2 && old[0][0] == 9, "a keyed step restores the clones and leaves the dropped originals");
+        objs.RemoveAt(0); History.Redo(); Check(objs.Count == 1 && objs[0][0] == 9, "...and a key that has gone is skipped, not thrown on");
+        // two selections in one tick are two steps
+        var sa = new List<int[]> { items[0] }; var sb = new List<int[]> { items[1] }; var cs = sa;
+        var two = Bind.Many<int[], int>(() => cs, x => x[0], (x, v) => x[0] = v);
+        History.Clear(); two.SetRecorded(5, "T", "two", null); cs = sb; two.SetRecorded(6, "T", "two", null);
+        History.Undo(); Check(History.CanUndo && items[0][0] == 5, "a new selection under the same row key is a new step");
+        // ...also inside a document-bound step, 0.1 s apart and with no rebuild between
+        var doc = new object(); Func<bool> valid = History.BoundTo(() => doc);
+        cs = sa; History.Clear(); two.SetRecorded(1, "T", "two", null, null, valid); t += 0.1; cs = sb; two.SetRecorded(2, "T", "two", null, null, valid);
+        bool u1 = History.Undo(); Check(u1 && History.CanUndo && items[1][0] == 7 && items[0][0] == 1, "two selections in document-bound steps 0.1 s apart are two entries", u1 + " " + History.CanUndo + " " + items[0][0] + " " + items[1][0]);
+        // one selection dragged: one step, undone to each item's own value
+        items[0][0] = 1; items[1][0] = 3; var both = new List<int[]> { items[0], items[1] }; cs = both;
+        History.Clear(); for (int i = 0; i < 5; i++) { t += 0.05; two.SetRecorded(10 + i, "T", "two", null); }
+        Check(History.Undo() && !History.CanUndo && items[0][0] == 1 && items[1][0] == 3 && two.Mixed, "a drag over one selection is one step, and its undo brings the mix back");
+        Check(History.Redo() && items[0][0] == 14 && items[1][0] == 14, "...and its redo writes the drag's last value");
+        History.Clear(); two.SetRecorded(14, "T", "two", null); Check(!History.CanUndo, "a write that changes no item records nothing");
+        cs = new List<int[]>(); two.Set(3); two.SetRecorded(3, "T", "two", null);
+        Check(two.Get() == 0 && !two.Mixed && !History.CanUndo, "with no items Get is default, nothing is written and nothing recorded");
+        // two bind instances under one row key (a rebuilt row) over different sets, 0.1 s apart
+        items[0][0] = 1; items[1][0] = 2;
+        var ra = Bind.Many<int[], int>(() => sa, x => x[0], (x, v) => x[0] = v);
+        var rb = Bind.Many<int[], int>(() => sb, x => x[0], (x, v) => x[0] = v);
+        History.Clear(); ra.SetRecorded(5, "R", "rebuilt", null); t += 0.1; rb.SetRecorded(6, "R", "rebuilt", null);
+        bool r1 = History.Undo();
+        Check(r1 && History.CanUndo && items[0][0] == 5 && items[1][0] == 2, "two rebuilt Many rows under one key over different sets are two entries", r1 + " " + History.CanUndo + " " + items[0][0] + " " + items[1][0]);
+        // a drag frame over the same set allocates nothing once the step is recorded
+        items[0][0] = 1; items[1][0] = 3; cs = both; History.Clear(); two.SetRecorded(20, "T", "two", null); two.SetRecorded(21, "T", "two", null);
+        long mb = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 200; i++) { t += 0.01; two.SetRecorded(30 + i % 50, "T", "two", null); }
+        mb = GC.GetAllocatedBytesForCurrentThread() - mb;
+        Check(mb == 0, "a Many drag frame over one set allocates nothing", mb + " bytes");
+        Check(History.Undo() && !History.CanUndo && items[0][0] == 1 && items[1][0] == 3, "...and it is still one step, undone to each item's value");
+        Check(History.Redo() && items[0][0] == 79 && items[1][0] == 79, "...whose redo writes the drag's last value", items[0][0].ToString());
+        // pinned: a commit after the selection moved on still writes the items the edit began on
+        var pa1 = new[] { 1 }; var pb1 = new[] { 2 }; var pcur = new List<int[]> { pa1 };
+        var pin = Bind.Many<int[], int>(() => pcur, x => x[0], (x, v) => x[0] = v);
+        History.Clear(); pin.Pin(true); pcur = new List<int[]> { pb1 }; pin.SetRecorded(9, "N", "pin", null); pin.Pin(false);
+        Check(pa1[0] == 9 && pb1[0] == 2 && pin.Get() == 2, "a pinned Many bind writes the items pinned, not the new selection", pa1[0] + " " + pb1[0]);
+        Check(History.Undo() && pa1[0] == 1, "...and its step restores them");
+        // a step keeps neither the items delegate nor what it captures (a canvas, its page)
+        History.Clear();
+        var weakItems = ManyStep(true); var weakPlain = ManyStep(false);
+        GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+        Check(!weakItems.IsAlive && !weakPlain.IsAlive && History.CanUndo, "a Many step lets its items delegate's page be collected", weakItems.IsAlive + " " + weakPlain.IsAlive);
+        History.Clock = clock; History.Clear();
+    }
+
+    // A Many row whose items delegate captures a "page"; one recorded write, then only the weak reference is left.
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    static WeakReference ManyStep(bool keyed) {
+        var page = new object[] { new List<int[]> { new[] { 1, 0 } } };
+        Func<IReadOnlyList<int[]>> items = () => (List<int[]>)page[0];
+        var b = keyed ? Bind.Many<int[], int>(items, x => x[0], (x, v) => x[0] = v, x => x[1].ToString(), Fixed((List<int[]>)page[0]))
+                      : Bind.Many<int[], int>(items, x => x[0], (x, v) => x[0] = v);
+        b.SetRecorded(keyed ? 4 : 5, "W", keyed ? "weak-k" : "weak", null, _ => { });
+        return new WeakReference(page);
+    }
+
+    static Func<IReadOnlyList<int[]>> Fixed(List<int[]> l) { return () => l; }
 
     static string First(List<string> l) { return l.Count > 0 ? l[0] : null; }
 
