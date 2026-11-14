@@ -13,6 +13,10 @@ namespace Facet.Mod
         /// The page and the grid, as last built.
         public static VisualElement Page { get; private set; }
         public static MaskTiles Tiles { get; private set; }
+        /// The pair the Range card edits, and how many times it was written.
+        public static Vector2 Span = new Vector2(400f, 600f);
+        public static int SpanWrites;
+        public static Control<Vector2> Range { get; private set; }
 
         internal static void Build(VisualElement p)
         {
@@ -36,6 +40,10 @@ namespace Facet.Mod
                 new MaskTile("Echo", 9, o => { o.Id = "mask-echo"; o.Colour = new Color(1f, 0.3f, 0.3f); }),
             };
             Tiles = grid = Controls.MaskTiles(card, Bind.To(() => Mask, v => Mask = v), tiles, o => { o.Id = "mask"; o.Columns = 5; });
+
+            var rc = Controls.Card(p, "Range", o => o.Id = "range-card");
+            Range = Controls.Range(rc, "Low end", "High end", Bind.To(() => Span, v => { Span = v; SpanWrites++; }),
+                o => { o.Id = "range-low"; o.HighId = "range-high"; o.Min = 100f; o.Max = 1000f; o.Step = 1f; o.Format = "0"; o.Default = new Vector2(400f, 600f); });
         }
     }
 }

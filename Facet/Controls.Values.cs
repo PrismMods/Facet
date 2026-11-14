@@ -783,7 +783,7 @@ namespace Facet
             OnTyped(field, c, typed =>
             {
                 float v;
-                if (!float.TryParse(typed, NumberStyles.Float, CultureInfo.CurrentCulture, out v) || float.IsNaN(v) || float.IsInfinity(v)) return false;
+                if (!ValueScale.TryParse(typed, CultureInfo.CurrentCulture, out v)) return false;
                 v = fit(v);
                 if (v != c.Value || c.Mixed) c.Set(v);
                 return true;

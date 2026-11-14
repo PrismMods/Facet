@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 
 namespace Facet
 {
@@ -21,6 +22,22 @@ namespace Facet
         {
             if (step <= 0f) return v;
             return min + (float)Math.Round((v - min) / step, MidpointRounding.AwayFromZero) * step;
+        }
+
+        /* A typed number box's text: a whole number, or the number before a unit a Format put after it ("500 BPM",
+           "12.5 %"), so a reader who edits only the digits is not reverted. NaN and infinity are no number. */
+        internal static bool TryParse(string s, IFormatProvider culture, out float v)
+        {
+            v = 0f;
+            if (s == null) return false;
+            const NumberStyles any = NumberStyles.Float;
+            if (!float.TryParse(s, any, culture, out v))
+            {
+                int end = s.Length;
+                while (end > 0 && !char.IsDigit(s[end - 1])) end--;
+                if (end == 0 || !float.TryParse(s.Substring(0, end), any, culture, out v)) return false;
+            }
+            return !float.IsNaN(v) && !float.IsInfinity(v);
         }
 
         /* A scrubbed number's value per 4 px of drag: Step, else 1/200 of the range, else 1. A range wider than a

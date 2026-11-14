@@ -140,5 +140,88 @@ namespace Facet.Mod
                 GalleryParts.Close(); GalleryForms.Mask = seed;
             }
         }
+
+        // The dual-range slider on the Forms page: 100..1000 in steps of 1, seeded (400, 600).
+        IEnumerator SectionRange()
+        {
+            var seed = new Vector2(400f, 600f);
+            GalleryForms.Span = seed;
+            var win = GalleryParts.Open(); yield return null; yield return null;
+            try
+            {
+                GalleryParts.Nav.Go(GalleryParts.FormsItem); yield return null; yield return null; yield return null;
+                var r = GalleryForms.Range;
+                var lo = win.Body.Q<TextField>("range-low-input");
+                var hi = win.Body.Q<TextField>("range-high-input");
+                var track = win.Body.Q("range-low-track");
+                bool laid = r != null && r.Root.name == "range-low" && lo != null && hi != null && track != null
+                    && lo.parent == track.parent && hi.parent == track.parent
+                    && lo.parent.IndexOf(lo) < lo.parent.IndexOf(track) && lo.parent.IndexOf(track) < lo.parent.IndexOf(hi)
+                    && lo.value == "400" && hi.value == "600";
+                Check(laid, "Range: two number fields named Id-input and HighId-input, and a track",
+                    (lo != null) + "/" + (hi != null) + "/" + (track != null) + " " + lo?.value + "-" + hi?.value);
+                if (r == null || lo == null || hi == null || track == null) yield break;
+
+                History.Clear();
+                Type(lo, "700"); yield return null;
+                bool pushed = GalleryForms.Span == new Vector2(700f, 700f) && hi.value == "700";
+                History.Undo(); yield return null;
+                Check(pushed && GalleryForms.Span == seed && !History.CanUndo && lo.value == "400",
+                    "Range: typing a low value above the high pushes the high to it, as one undo step", pushed + " " + GalleryForms.Span);
+
+                // The high thumb from 600 to 300, then (both ends at 300) from there to 800: two drags, two steps.
+                History.Clear();
+                var b = track.worldBound;
+                Func<float, Vector2> at = v => new Vector2(b.xMin + (v - 100f) / 900f * b.width, b.center.y);
+                yield return DragAt(at(600f), at(300f), win.Root);
+                bool first = GalleryForms.Span == new Vector2(300f, 300f);
+                var afterFirst = GalleryForms.Span;
+                yield return DragAt(at(300f), at(800f), win.Root);
+                bool second = GalleryForms.Span == new Vector2(300f, 800f);
+                History.Undo(); yield return null;
+                bool undo1 = GalleryForms.Span == new Vector2(300f, 300f);
+                History.Undo(); yield return null;
+                Check(first && second && undo1 && GalleryForms.Span == seed && !History.CanUndo,
+                    "Range: a drag of the high thumb below the low pushes the low, one step per drag",
+                    afterFirst + " " + second + " " + undo1 + " " + GalleryForms.Span);
+
+                History.Clear();
+                GalleryForms.Span = new Vector2(80f, 20f);
+                int writes = GalleryForms.SpanWrites;
+                GalleryParts.Surface.Refresh(); yield return null; yield return null;
+                Check(lo.value == "20" && hi.value == "80" && GalleryForms.Span == new Vector2(80f, 20f) && GalleryForms.SpanWrites == writes && !History.CanUndo,
+                    "Range: a stored (80, 20) shows 20 and 80 and writes nothing", lo.value + "-" + hi.value + " " + GalleryForms.Span);
+
+                GalleryForms.Span = seed; GalleryParts.Surface.Refresh(); yield return null;
+                Type(lo, "250.6"); yield return null;
+                bool snapped = GalleryForms.Span == new Vector2(251f, 600f);
+                Type(hi, "5000"); yield return null;
+                bool top = GalleryForms.Span == new Vector2(251f, 1000f);
+                Type(lo, "50"); yield return null;
+                Check(snapped && top && GalleryForms.Span == new Vector2(100f, 1000f) && lo.value == "100" && hi.value == "1000",
+                    "Range: typed values snap to Step from Min and clamp", snapped + "/" + top + " " + GalleryForms.Span);
+                History.Clear();
+
+                Type(hi, "450 BPM"); yield return null;
+                Check(GalleryForms.Span == new Vector2(100f, 450f) && hi.value == "450",
+                    "Range: a number typed before a unit is read", hi.value + " " + GalleryForms.Span);
+                History.Clear();
+
+                bool found = true; string miss = null;
+                foreach (var label in new[] { "Low end", "High end" })
+                {
+                    GalleryParts.Nav.Filter(label); yield return null; yield return null;
+                    var labels = win.Body.Query<Label>().ToList();
+                    if (!labels.Exists(l => l.text == label) || labels.Exists(l => l.text.StartsWith("Nothing matches"))) { found = false; miss = miss ?? label; }
+                }
+                GalleryParts.Nav.Filter(""); yield return null; yield return null;
+                Check(found, "Range: both labels are found by search", miss);
+            }
+            finally
+            {
+                History.Clear();
+                GalleryParts.Close(); GalleryForms.Span = seed;
+            }
+        }
     }
 }

@@ -333,6 +333,8 @@ static class FacetTest {
         Conveniences();
         UndoChord();
         MaskBits();
+        RangeEnds();
+        TypedNumbers();
 
         Console.WriteLine(_fail == 0 ? "ALL PASS" : _fail + " FAILED");
     }
@@ -695,6 +697,33 @@ static class FacetTest {
         Check(MaskMath.AllOn(7, new[] { 0, 1, 2 }) && !MaskMath.AllOn(5, new[] { 0, 1, 2 }), "AllOn");
         Check(MaskMath.Merge(1 << 20 | 0b010, 0b101, new[] { 0, 1, 2 }) == (1 << 20 | 0b101), "Merge copies the listed bits from the snapshot");
         Check(MaskMath.Merge(1 << 20, 0, new[] { 0, 1 }) == 1 << 20 && MaskMath.Merge(0, 1 << 20, new[] { 0, 1 }) == 0, "Merge keeps the bits not listed as they are now");
+    }
+
+    static void RangeEnds() {
+        Check(Math.Abs(RangeMath.Snap(37.26f, 0f, 100f, 0.1f) - 37.3f) < 1e-4, "Snap rounds to the step");
+        Check(RangeMath.Snap(-5f, 0f, 100f, 1f) == 0f && RangeMath.Snap(105f, 0f, 100f, 1f) == 100f, "Snap clamps");
+        Check(RangeMath.Snap(100.4f, 100f, 1000f, 1f) == 100f && RangeMath.Snap(150.6f, 100f, 1000f, 1f) == 151f, "Snap counts steps from Min");
+        Check(Math.Abs(RangeMath.Snap(0.333f, 0f, 1f, 0f) - 0.333f) < 1e-6, "Snap without a step only clamps");
+        float lo = 10f, hi = 20f; RangeMath.Move(ref lo, ref hi, false, 25f, 0f, 100f, 1f);
+        Check(lo == 25f && hi == 25f, "a low end moved past the high one pushes it");
+        lo = 10f; hi = 20f; RangeMath.Move(ref lo, ref hi, true, 5f, 0f, 100f, 1f);
+        Check(lo == 5f && hi == 5f, "a high end moved below the low one pushes it");
+        lo = 10f; hi = 20f; RangeMath.Move(ref lo, ref hi, false, 12.4f, 0f, 100f, 1f);
+        Check(lo == 12f && hi == 20f, "a move inside the range leaves the other end");
+        float a, b; RangeMath.Shown(80f, 20f, out a, out b);
+        Check(a == 20f && b == 80f, "a stored x > y shows swapped");
+        RangeMath.Shown(20f, 80f, out a, out b);
+        Check(a == 20f && b == 80f, "an ordered pair shows as stored");
+    }
+
+    static void TypedNumbers() {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        float v;
+        Check(ValueScale.TryParse("500 BPM", inv, out v) && v == 500f, "a typed number keeps working with the format's unit after it");
+        Check(ValueScale.TryParse("12.5 %", inv, out v) && v == 12.5f, "a decimal before a unit parses");
+        Check(ValueScale.TryParse(" -3 ", inv, out v) && v == -3f, "a plain number parses");
+        Check(!ValueScale.TryParse("BPM", inv, out v) && !ValueScale.TryParse("", inv, out v), "no digits is no number");
+        Check(!ValueScale.TryParse("NaN", inv, out v) && !ValueScale.TryParse("1e40", inv, out v), "NaN and infinity are no number");
     }
 
     static void MotionHold() {
