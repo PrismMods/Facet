@@ -470,6 +470,52 @@ Parts a consumer wires with plain delegates, for code that must not name a UI To
 
   The int rows (`DropdownOptions.Items`/`ItemFont`, `ChoiceOptions.Items`) stay.
 
+## Regions
+
+- **`Controls.When(parent, shown)`** is a box whose rows show only while `shown()` is true, asked on every refresh
+  pass of its surface (and after a write, in the same frame).
+- **`Controls.Hook(e, configure)`** gives any element a row's options: `Tooltip`/`TooltipText`, `EnabledWhen`,
+  `VisibleWhen` (asked while it is on a panel), `ContextMenu`/`ContextMenuItems`, and `Id` naming it.
+- **`Controls.ToggleGroup(parent, label, bind, out toggle, configure)`** hands back the group's switch (its `Value`,
+  `Changed`, `Committed`); the body still hides while it is off.
+- **`Controls.Section(parent, title, o => …)`** takes `SectionOptions`: `Open` is how it starts before the reader
+  folds it (default true); `Id` names the header row and keys the stored fold in place of the title, so two sections
+  with one title fold apart; `VisibleWhen` hides the header and the body together, and showing it again restores the
+  fold (a search hit that unfolds it meanwhile leaves the body hidden until then); `Tooltip`, `EnabledWhen` and
+  `ContextMenu` go on the header. The `bool defaultOpen` overload stays.
+- **`HostOptions.LabelIds`** (off by default): a value row (`Toggle`, `Slider`, `Number`, `IntSlider`, `Choice`,
+  `Dropdown`, `Enum`, `Text`, `Colour`, `Key`, `Info`, `Action`, `Danger`, `DangerButton`) built with no `Id` takes its
+  label as `Id`, so its history key reads `…/<label>#<label>` and its element is named by the label. The second row
+  with the same label on a page takes `label#2`, the third `label#3`, skipping an `Id` an earlier row on the page
+  already has (a row given `Id = "Gap"`, then an unnamed `Gap` row: `Gap#2`); an explicit `Id` is never changed, so
+  give it before the label rows it could clash with. The count is per page build, per tab, and a
+  `Controls.Live` rebuild counts as its first build did; rows built outside any `Nav` count on through the session,
+  whatever pages are built in between. Without it an unnamed row is numbered, as before.
+
+## Settings window
+
+`SettingsWindow.Open(host, id, title, pages, o => …)` builds the whole window in one call:
+
+- a Window-layer surface (shown), the `Window` on it (`id` keys its stored rect), raised when pressed (by Facet
+  itself: `Window.OnRaise` stays free for the consumer, and assigning it keeps the raise);
+- a `Nav` of `pages` in its body with the content inset applied (`Window.SetContentInset(Nav.Inset)`, kept in step);
+- with `Search` (default true) the title bar's search box filters through `Nav.Filter` (placeholder: the key
+  `"Search"`, translated by the host, else Facet's own word);
+- `Icon`, a `Background` at the start of the title bar; `CompactRail` starts the rail as its icon strip;
+- `RailWidth`, the open rail's width (default 200), passed to the `Nav`: `Nav.Inset` is then `RailWidth + 7`.
+
+**Where it opens.** An id with a stored rect (this session, or the host's `Read` of `window.<id>`) opens there
+(`Window.HasStoredGeometry` is true). Otherwise the window is placed once, on the first layout of the surface while
+it is visible: at a `Window.Rect` set before then (a rect carried over from another key), else at `Initial` when set,
+else `InitialFraction` (default 0.8 × 0.8) of the panel, centred; each is clamped to the panel. Until then
+the rect is stored nowhere: a surface hidden in the frame it opened writes nothing to `window.<id>` (nor to the
+in-memory cache), so a window built ahead and never shown leaves no rect behind; its first show centres it and
+stores that rect. `Tick()` (call it every frame while shown) runs `Nav.Tick`; `Dispose()` disposes the surface.
+`Surface`, `Window` and `Nav` are public for everything else (`Surface.Visible`, `EscapeHandler`, `Hidden`,
+`Nav.Go`, `Nav.AddSearchSource`, …); `Window` and `Nav` are null when the surface could not be created (its `Root` is
+null), which the host's log reports. `Nav.Inset` is public: where the content pane starts (the open rail's width
+and its 7 px handle, the handle alone with the rail shut, or the icon strip when compact).
+
 ## API in 0.2
 
 | Area | API |
@@ -496,7 +542,9 @@ Parts a consumer wires with plain delegates, for code that must not name a UI To
 | Lists | `Controls.Reorder<T>`/`Reorder<T>` (`Root`, `Refresh`, `BeginRename`), `ReorderOptions<T>` (`Items`, `Key`, `Text`, `Selected`, `Active`, `Select`, `Move`, `Rename`, `Menu`, `Add`, `Title`, `TitleMenu`, `Vertical`, `Scroll`, `Build`) |
 | Dialogs | `Popup.Confirm`, `ConfirmOptions` (`Ok`, `Cancel`, null for a notice, `Danger`); `Sizes.DialogMinWidth`, `DialogMaxWidth` (280, 420) |
 | Status | `Controls.Status`/`StatusLine` (`Root`, `Show(key, role, seconds)`, `Show(func, role, seconds)`, `Clear`); `InfoOptions.Tone` (`Controls.Info` takes `Action<InfoOptions>`; its `Action<ControlOptions>` overload stays, so a mod built against it still loads) |
-| Window | `Window.Scale` is clamped to 0.6-2.5 |
+| Window | `Window.Scale` is clamped to 0.6-2.5; `Window.HasStoredGeometry` |
+| Settings window | `SettingsWindow.Open` (`Surface`, `Window`, `Nav`, `Tick`, `Dispose`), `SettingsWindowOptions` (`Initial`, `InitialFraction`, `Search`, `CompactRail`, `Icon`, `RailWidth`); `Nav.Inset` (public) |
+| Regions | `Controls.When`, `Controls.Hook`, `Controls.ToggleGroup(…, out toggle, …)`, `Controls.Section(…, Action<SectionOptions>)`/`SectionOptions.Open`; `HostOptions.LabelIds` |
 | Composition | `Bind<T>.Then`; `Controls.AfterChange`; a row's write or an `Action` click refreshes its surface in the same frame |
 | Hooks | `Ui.Pointer`, `Ui.Every`, `Ui.WhileAttached` (delegates only); `Ui.Search`; `TextOptions.Live`, `TextOptions.Placeholder` |
 | Typed rows | `Controls.Dropdown<T>`/`DropdownOptions<T>` (`ItemFace`), `Controls.Choice<T>`/`ChoiceOptions<T>`, `Controls.Enum<TEnum>` |

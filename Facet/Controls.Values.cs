@@ -79,6 +79,29 @@ namespace Facet
     {
         /// Counter for controls built without an Id; Nav resets it before every page build.
         internal static int Seq;
+
+        /// Under a host with LabelIds, how many rows took each label as their Id on the page being built: scoped
+        /// like Seq (a page, each tab, a Live rebuild replays its first build's), null until the first.
+        internal static System.Collections.Generic.Dictionary<string, int> Labels;
+
+        /* A row's options; with the host's LabelIds an unnamed row takes its label as Id ("label#2" for the second),
+           skipping any Id a row already took on the page. Taken Ids are kept in Labels under a "\u0001" prefix, so
+           they are scoped and replayed with the counts. */
+        private static O Opts<O>(VisualElement at, string label, Action<O> configure) where O : ControlOptions, new()
+        {
+            var o = ControlOptions.Make(at, label, configure);
+            if (!Host.For(at).LabelIds) return o;
+            if (Labels == null) Labels = new System.Collections.Generic.Dictionary<string, int>();
+            if (o.Id == null && !string.IsNullOrEmpty(label))
+            {
+                int n;
+                Labels.TryGetValue(label, out n);
+                do { n++; o.Id = n == 1 ? label : label + "#" + n; } while (Labels.ContainsKey("\u0001" + o.Id));
+                Labels[label] = n;
+            }
+            if (o.Id != null) Labels["\u0001" + o.Id] = 1;
+            return o;
+        }
         private static int KeySeq;
 
         /// Reachable by Tab / NavigationMove, and draws Role.Focus around itself while focused.
@@ -92,7 +115,7 @@ namespace Facet
 
         public static Control<bool> Toggle(VisualElement parent, string label, Bind<bool> bind, Action<Options<bool>> configure = null)
         {
-            var o = ControlOptions.Make(parent, label, configure);
+            var o = Opts(parent, label, configure);
             var right = Controls.Row(parent, label);
             Action<bool, bool> show;
             Control<bool> c = null;
@@ -103,14 +126,14 @@ namespace Facet
 
         public static Control<float> Slider(VisualElement parent, string label, Bind<float> bind, Action<SliderOptions> configure = null)
         {
-            return FloatRow(parent, label, bind, ControlOptions.Make(parent, label, configure), true);
+            return FloatRow(parent, label, bind, Opts(parent, label, configure), true);
         }
 
         /// Just the typed number, no track. Unbounded unless you set a range (Min < Max), then clamped to it.
         public static Control<float> Number(VisualElement parent, string label, Bind<float> bind, Action<SliderOptions> configure = null)
         {
             // No range by default: a slider's 0..1 would clamp every typed number.
-            return FloatRow(parent, label, bind, ControlOptions.Make<SliderOptions>(parent, label, o =>
+            return FloatRow(parent, label, bind, Opts<SliderOptions>(parent, label, o =>
             {
                 o.Min = o.Max = 0f;
                 if (configure != null) configure(o);
@@ -119,7 +142,7 @@ namespace Facet
 
         public static Control<int> IntSlider(VisualElement parent, string label, Bind<int> bind, Action<IntSliderOptions> configure = null)
         {
-            var o = ControlOptions.Make(parent, label, configure);
+            var o = Opts(parent, label, configure);
             var right = Controls.Row(parent, label);
             var s = new SliderInt(o.Min, o.Max);
             s.style.width = Theme.For(right).Sizes.SliderWidth;
@@ -160,7 +183,7 @@ namespace Facet
            setting usually has, seeing them all beats opening a list to find out. */
         public static Control<int> Choice(VisualElement parent, string label, Bind<int> bind, Action<ChoiceOptions> configure = null)
         {
-            var o = ControlOptions.Make(parent, label, configure);
+            var o = Opts(parent, label, configure);
             var right = Controls.Row(parent, label);
             Control<int> c = null;
             var select = Segments(right, o.Items ?? new string[0], i => { if (i != c.Value || c.Mixed) c.Set(i); });
@@ -171,7 +194,7 @@ namespace Facet
         /// A button showing the current item that opens a Popup.Menu of the rest.
         public static Control<int> Dropdown(VisualElement parent, string label, Bind<int> bind, Action<DropdownOptions> configure = null)
         {
-            var o = ControlOptions.Make(parent, label, configure);
+            var o = Opts(parent, label, configure);
             var items = o.Items ?? new string[0];
             return DropdownRow(parent, label, bind, o, items, v => v >= 0 && v < items.Count ? v : -1, i => i, o.ItemFont, null);
         }
@@ -183,7 +206,7 @@ namespace Facet
         public static Control<T> Dropdown<T>(VisualElement parent, string label, Bind<T> bind, IList<T> values, Func<T, string> text,
                                              Action<DropdownOptions<T>> configure = null)
         {
-            var o = ControlOptions.Make(parent, label, configure);
+            var o = Opts(parent, label, configure);
             var vals = Snapshot(values);
             var face = o.ItemFace;
             return DropdownRow(parent, label, bind, o, Names(parent, vals, text, "Dropdown text"), v => IndexOf(vals, v), i => vals[i], null,
@@ -201,7 +224,7 @@ namespace Facet
         public static Control<T> Choice<T>(VisualElement parent, string label, Bind<T> bind, IList<T> values, Func<T, string> text,
                                            Action<ChoiceOptions<T>> configure = null)
         {
-            var o = ControlOptions.Make(parent, label, configure);
+            var o = Opts(parent, label, configure);
             var right = Controls.Row(parent, label);
             var vals = Snapshot(values);
             Control<T> c = null;
@@ -279,7 +302,7 @@ namespace Facet
 
         public static Control<string> Text(VisualElement parent, string label, Bind<string> bind, Action<TextOptions> configure = null)
         {
-            var o = ControlOptions.Make(parent, label, configure);
+            var o = Opts(parent, label, configure);
             var right = Controls.Row(parent, label);
             var f = new TextField();
             f.style.width = o.Width;
@@ -315,7 +338,7 @@ namespace Facet
            look for it), so Root and Input are two wrappers around it. */
         public static Control<Color> Colour(VisualElement parent, string label, Bind<Color> bind, Action<ColourOptions> configure = null)
         {
-            var o = ControlOptions.Make(parent, label, configure);
+            var o = Opts(parent, label, configure);
             var root = Ui.Row(parent);
             Controls.Noted(root, label);
             var sz = Theme.For(root).Sizes;
@@ -343,7 +366,7 @@ namespace Facet
            treat as navigation (Tab, arrows, Escape). */
         public static Control<string> Key(VisualElement parent, string label, Bind<string> bind, Action<KeyOptions> configure = null)
         {
-            var o = ControlOptions.Make(parent, label, configure);
+            var o = Opts(parent, label, configure);
             var right = Controls.Row(parent, label);
             Control<string> c = null;
             Button b = null;
@@ -407,7 +430,7 @@ namespace Facet
         /// value takes that role, re-read with the text on every refresh pass.
         public static Control<string> Info(VisualElement parent, string label, Func<string> value, Action<InfoOptions> configure = null)
         {
-            var o = ControlOptions.Make(parent, label, configure);
+            var o = Opts(parent, label, configure);
             var right = Controls.Row(parent, label);
             right.style.flexShrink = 1f;
             right.style.maxWidth = Length.Percent(65f);
@@ -439,7 +462,7 @@ namespace Facet
 
         public static Button Action(VisualElement parent, string label, string button, Action onClick, Action<ControlOptions> configure = null)
         {
-            var o = ControlOptions.Make(parent, label, configure);
+            var o = Opts(parent, label, configure);
             var right = Controls.Row(parent, label);
             if (string.IsNullOrEmpty(label)) Noted(right.parent, button);   // no label: search finds the row by its button
             Button b = null;
@@ -459,7 +482,7 @@ namespace Facet
         /// mod had grown its own armed-button dance for this.
         public static Button Danger(VisualElement parent, string label, string button, Action onConfirm, Action<ControlOptions> configure = null)
         {
-            var o = ControlOptions.Make(parent, label, configure);
+            var o = Opts(parent, label, configure);
             var right = Controls.Row(parent, label);
             if (string.IsNullOrEmpty(label)) Noted(right.parent, button);
             var b = Armed(button, onConfirm, right);
@@ -471,7 +494,7 @@ namespace Facet
            called "All positions"; "[Reset all positions]" reads as the action it is. */
         public static Button DangerButton(VisualElement parent, string text, Action onConfirm, Action<ControlOptions> configure = null)
         {
-            var o = ControlOptions.Make(parent, text, configure);
+            var o = Opts(parent, text, configure);
             var row = Ui.Row(parent);
             var sz = Theme.For(row).Sizes;
             row.style.minHeight = sz.RowHeight;

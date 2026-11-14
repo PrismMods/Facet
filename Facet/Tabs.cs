@@ -142,10 +142,12 @@ namespace Facet
             {
                 var page = _pages[i];
                 int seq = Controls.Seq;
+                var labels = Controls.Labels;
                 Controls.Seq = 1000 * (i + 1);
+                Controls.Labels = null;   // a tab counts its own labels: its history keys carry the tab's name
                 bool ok;
                 try { ok = page.Build == null || Safe.Run(host, "Tabs.build '" + page.Title + "'", () => page.Build(Content)); }
-                finally { Controls.Seq = seq; }   // controls after the row count on as if no tab were there
+                finally { Controls.Seq = seq; Controls.Labels = labels; }   // controls after the row count on as if no tab were there
                 if (!ok) Nav.FailedCard(Content, page.Owner ?? host.Name);
             };
             if (_nav != null) _nav.InTab(_names[i], build);

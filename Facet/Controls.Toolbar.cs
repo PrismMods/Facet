@@ -174,9 +174,9 @@ namespace Facet
         }
 
         /// The placeholder (an English key, translated by `host`) and the change handler, run under Safe at `site`.
-        internal static void WireSearch(TextField f, Button clear, string placeholder, Action<string> changed, Host host, string site)
+        internal static void WireSearch(TextField f, Button clear, string placeholder, Action<string> changed, Host host, string site, bool own = false)
         {
-            Placeholder(f, placeholder, host);
+            Placeholder(f, placeholder, host, own);
             Events.On<ChangeEvent<string>>(f, e =>
             {
                 clear.style.display = string.IsNullOrEmpty(e.newValue) ? DisplayStyle.None : DisplayStyle.Flex;
@@ -185,12 +185,13 @@ namespace Facet
         }
 
         /// Grey text shown while f is empty: `key` is an English key translated by `host`, again on a relabel.
-        internal static void Placeholder(TextField f, string key, Host host)
+        /// own: Facet picked the key, so Facet's own word stands in when the host leaves it untranslated.
+        internal static void Placeholder(TextField f, string key, Host host, bool own = false)
         {
             // Unity 6 only; Unity 2022 has no placeholder, so it is set by name.
             var ph = typeof(ITextEdition).GetProperty("placeholder");
             if (ph == null || key == null) return;
-            Action set = () => ph.SetValue(f.textEdition, Words.T(key, host), null);
+            Action set = () => ph.SetValue(f.textEdition, own ? Words.TOrOwn(key, host) : Words.T(key, host), null);
             set();
             Words.OnRelabel(f, set);
         }

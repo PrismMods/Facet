@@ -140,7 +140,7 @@ namespace Facet.Mod
             _win.CloseRequested += _ => Close();
             _win.OnRaise = () => { if (Surface != null) Surface.BringToFront(); };   // a press raises it, so its shortcuts answer
             Nav = new Nav(_win.Body, new[] { NavItem.Heading(null, UndoItem = new NavItem("Undo", Undo), CanvasItem = new NavItem("Canvas", CanvasPage),
-                ListsItem = new NavItem("Lists", Lists), ApiItem = new NavItem("API", Api)) });
+                ListsItem = new NavItem("Lists", Lists), ApiItem = new NavItem("API", Api), new NavItem("Regions", Regions)) });
             return _win;
         }
 
@@ -399,6 +399,23 @@ namespace Facet.Mod
                 RowList.Refresh();
                 status.Show("Cleared", Role.Accent, 2f);
             }, o => { o.Ok = "Clear"; o.Danger = true; }), p).name = "ed-clear";
+        }
+
+        // Value-following regions: a group with its switch, a When box, sections with options, a hooked label.
+        static bool _more = true, _details;
+        static void Regions(VisualElement p)
+        {
+            Control<bool> details;
+            var group = Controls.ToggleGroup(p, "Details", Bind.To(() => _details, v => _details = v), out details);
+            Controls.Info(group, "Switch", () => details.Value ? "on" : "off");
+            Controls.Toggle(p, "More", Bind.To(() => _more, v => _more = v));
+            Controls.Info(Controls.When(p, () => _more), "Shown with More", () => "yes");
+            var folded = Controls.Section(p, "Folded at first", o => { o.Id = "rg-demo-folded"; o.Open = false; });
+            Controls.Info(folded, "Inside", () => "a row");
+            Controls.Section(p, "Only with More", o => { o.Id = "rg-demo-more"; o.VisibleWhen = () => _more; });
+            var tip = new Label("A plain label with a tooltip");
+            p.Add(tip);
+            Controls.Hook(tip, o => o.Tooltip = "Hooked onto a plain element");
         }
 
         /// Plain delegates only: a search, live text, typed rows, a card that counts its changes, a pointer pad and a clock.

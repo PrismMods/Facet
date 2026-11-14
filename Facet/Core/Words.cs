@@ -30,6 +30,14 @@ namespace Facet
             return !string.IsNullOrEmpty(english) && language == "ko" && Korean.TryGetValue(english, out ko) ? ko : english;
         }
 
+        /// A word Facet picks that the host may still word its own way: the host's, else Facet's own when the
+        /// host leaves the key unchanged.
+        internal static string TOrOwn(string english, Func<string, string> translator, string language)
+        {
+            var s = T(english, translator);
+            return s == english ? Own(english, language) : s;
+        }
+
         /// A sentence with a value in it: the translated pattern, then filled.
         public static string F(string englishFormat, Func<string, string> translator, params object[] args)
             => Fill(T(englishFormat, translator), englishFormat, args);
@@ -47,6 +55,7 @@ namespace Facet
         private static readonly Dictionary<string, string> Korean = new Dictionary<string, string>
         {
             { "Nothing matches.", "일치하는 항목이 없습니다." },
+            { "Search", "검색" },
             { "Results for \u201c{0}\u201d", "\u201c{0}\u201d 검색 결과" },
             { "{0}: this page failed to build — see the log.", "{0}: 이 페이지를 만들지 못했습니다 — 로그를 확인하세요." },
             { "Run", "실행" },

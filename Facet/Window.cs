@@ -50,11 +50,14 @@ namespace Facet
             if (_headerGap != null) _headerGap.style.width = Mathf.Max(inset, 110f);
         }
 
-        public void ShowSearch(string placeholder, Action<string> onChange)
+        public void ShowSearch(string placeholder, Action<string> onChange) { ShowSearch(placeholder, onChange, false); }
+
+        // own: the placeholder is Facet's own word (SettingsWindow's), shown from Facet's table when the host has none.
+        internal void ShowSearch(string placeholder, Action<string> onChange, bool own)
         {
             if (Search == null) return;
             _searchBox.style.display = DisplayStyle.Flex;
-            Controls.WireSearch(Search, _searchClear, placeholder, onChange, _host, "Window.Search");
+            Controls.WireSearch(Search, _searchClear, placeholder, onChange, _host, "Window.Search", own);
         }
 
         private VisualElement _searchBox;
@@ -77,6 +80,9 @@ namespace Facet
         /// Set by the panel that owns this window, to raise its surface. Window has no Surface of
         /// its own — it is just the element tree inside one.
         public Action OnRaise;
+
+        // Facet's own raise (SettingsWindow's), run before OnRaise so a consumer assigning OnRaise keeps it.
+        internal Action Raised;
 
         /// Raised by the close button. With no subscriber the window's surface hides; with any,
         /// only they decide (animate, veto, dispose).
@@ -118,12 +124,18 @@ namespace Facet
             return true;
         }
 
-        public Window(VisualElement parent, string id, string title, Rect initial)
+        public Window(VisualElement parent, string id, string title, Rect initial) : this(parent, id, title, initial, true) { }
+
+        /* store false: the rect is kept nowhere (not in memory, not through the host) until Storing is set, so a
+           window built ahead and never shown leaves no rect behind it. */
+        internal Window(VisualElement parent, string id, string title, Rect initial, bool store)
         {
+            Storing = store;
             _id = id ?? title ?? "window";
             _host = Host.For(parent);
             _key = _host.Name + "|" + _id;
             Rect stored; float storedScale;
+            HasStoredGeometry = true;
             if (_saved.ContainsKey(_key))
             {
                 _rect = _saved[_key];
@@ -133,7 +145,7 @@ namespace Facet
             {
                 _rect = stored; _scale = storedScale;
             }
-            else _rect = initial;
+            else { _rect = initial; HasStoredGeometry = false; }
 
             Root = Ui.Card(parent);
             var t = Theme.For(Root); var sz = t.Sizes; var looks = t.Looks;
@@ -226,7 +238,11 @@ namespace Facet
 
             /* Click anywhere in the window to raise it above the other one. Trickle-down, because the title bar's drag,
                the resize grip and a Button's clickable stop the press before it would bubble here. */
-            Events.On<PointerDownEvent>(Root, _ => { if (OnRaise != null) Safe.Run(_host, "Window.OnRaise", OnRaise); }, TrickleDown.TrickleDown);
+            Events.On<PointerDownEvent>(Root, _ =>
+            {
+                if (Raised != null) Safe.Run(_host, "Window.Raise", Raised);
+                if (OnRaise != null) Safe.Run(_host, "Window.OnRaise", OnRaise);
+            }, TrickleDown.TrickleDown);
 
             MakeDraggable(bar);
             MakeResizable();
@@ -261,10 +277,20 @@ namespace Facet
             }
         }
 
+        /// True when the rect came from where this id's window was last left (this session, or the host's Read),
+        /// false when the window opened at the rect it was built with.
+        public bool HasStoredGeometry { get; private set; }
+
+        // False while the rect is kept nowhere; set it to start keeping it (the next Apply stores the rect).
+        internal bool Storing;
+
+        // Rect was set while Storing was false: the owner's first placement keeps it.
+        internal bool RectGiven;
+
         public Rect Rect
         {
             get { return _rect; }
-            set { _rect = value; Clamp(); Apply(); }
+            set { if (!Storing) RectGiven = true; _rect = value; Clamp(); Apply(); }
         }
 
         /* Scale magnifies the CONTENTS, not the window. The transform would otherwise blow the
@@ -279,6 +305,7 @@ namespace Facet
             Root.style.width = _rect.width / _scale;
             Root.style.height = _rect.height / _scale;
             Root.style.scale = new Scale(new Vector2(_scale, _scale));
+            if (!Storing) return;
             _saved[_key] = _rect;
             _savedScale[_key] = _scale;
             var c = System.Globalization.CultureInfo.InvariantCulture;

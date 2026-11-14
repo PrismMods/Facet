@@ -201,6 +201,9 @@ static class FacetTest {
         Check(Words.T("Undo", s => { throw new Exception("x"); }) == "Undo", "a throwing translator falls back to English");
         Check(Words.Own("Undo", "ko") == "\uC2E4\uD589 \uCDE8\uC18C" && Words.Own("Undo", "en") == "Undo" && Words.Own("Undo", null) == "Undo", "Own answers Korean from Facet's table for ko only, whatever any consumer maps Undo to");
         Check(Words.Own("Not ours", "ko") == "Not ours", "Own falls back to English for a key not in Facet's table");
+        Check(Words.Own("Search", "ko") == "\uAC80\uC0C9", "Facet's own search placeholder has a Korean word");
+        Check(Words.TOrOwn("Search", s => s, "ko") == "\uAC80\uC0C9" && Words.TOrOwn("Search", s => s == "Search" ? "Find" : s, "ko") == "Find",
+            "TOrOwn takes the host's word, and Facet's own only when the host leaves the key unchanged");
         History.Clear();
         History.Record("Size", "k1", () => { }, () => { }, trB);
         Check(History.NextUndoText == Words.T("Size", trB) && History.NextUndoText == "Size", "an entry recorded with translator B shows its label through B");
@@ -332,6 +335,7 @@ static class FacetTest {
         using (History.Step("Pair", "pair")) { a = 1; History.Record("A", "a", () => a = 0, () => a = 1);
                                                b = 1; History.Record("B", "b", () => b = 0, () => b = 1); }
         Check(History.NextUndo == "Pair", "a scope records one step under its own label");
+        Check(History.TopKey == "pair", "TopKey is the newest entry's key", History.TopKey);
         History.Undo(); Check(a == 0 && b == 0 && !History.CanUndo, "one undo puts both back");
         History.Redo(); Check(a == 1 && b == 1, "one redo does both again");
         var log = new List<string>(); History.Clear();

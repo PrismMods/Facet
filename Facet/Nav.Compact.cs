@@ -40,8 +40,9 @@ namespace Facet
         /// not when the host sets Compact.
         public Action<bool> OnCompactChanged;
 
-        // Where the content pane starts: the strip, else the rail and its handle.
-        private float Inset => _compact ? _compactWidth : (_railOpen ? _railWidth : 0f) + 7f;
+        /// Where the content pane starts, in the window body: the icon strip when Compact, else the open rail's width
+        /// and its handle (7), or the handle alone with the rail shut. Window.SetContentInset takes it as it is.
+        public float Inset => _compact ? _compactWidth : (_railOpen ? _railWidth : 0f) + 7f;
 
         private void BuildCompact(VisualElement split, VisualElement handle, Sizes sz)
         {

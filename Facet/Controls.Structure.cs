@@ -6,6 +6,12 @@ namespace Facet
 {
     /* The structure rows: the row every control sits in, headings, folding sections, a group that
        follows a switch, and rows with a page behind them. */
+    /// Controls.Section's options: Open is how it starts before the reader folds it.
+    public sealed class SectionOptions : ControlOptions
+    {
+        public bool Open { get; set; } = true;
+    }
+
     public static partial class Controls
     {
         /// Facet's default setting-row height; a part reads its theme's Sizes.RowHeight.
@@ -169,7 +175,14 @@ namespace Facet
            and follows the bound value on every refresh, not only on clicks. */
         public static VisualElement ToggleGroup(VisualElement parent, string label, Bind<bool> bind, Action<Options<bool>> configure = null)
         {
-            var c = Toggle(parent, label, bind, configure);
+            Control<bool> toggle;
+            return ToggleGroup(parent, label, bind, out toggle, configure);
+        }
+
+        /// The same, handing back the switch (its Changed, Committed and Value) beside the body it governs.
+        public static VisualElement ToggleGroup(VisualElement parent, string label, Bind<bool> bind, out Control<bool> toggle, Action<Options<bool>> configure = null)
+        {
+            var c = toggle = Toggle(parent, label, bind, configure);
             var body = Ui.Box(parent);
             body.style.paddingLeft = Theme.For(body).Sizes.Pad;
             Action<bool> follow = v => body.style.display = v ? DisplayStyle.Flex : DisplayStyle.None;
@@ -187,6 +200,20 @@ namespace Facet
 
         public static VisualElement Section(VisualElement parent, string title, bool defaultOpen = true)
         {
+            return Section(parent, title, defaultOpen, null);
+        }
+
+        /* The same with options: Open is the state before the reader first folds it; Id names the header row and
+           the fold's stored key in place of the title (two sections with one title fold apart); VisibleWhen hides
+           header and body together; Tooltip, EnabledWhen and ContextMenu go on the header. */
+        public static VisualElement Section(VisualElement parent, string title, Action<SectionOptions> configure)
+        {
+            var o = ControlOptions.Make(parent, title, configure);
+            return Section(parent, title, o.Open, o);
+        }
+
+        private static VisualElement Section(VisualElement parent, string title, bool defaultOpen, SectionOptions o)
+        {
             SearchIndex.EnterSection(title);
             var head = Ui.Row(parent);
             var sz = Theme.For(head).Sizes;
@@ -202,7 +229,13 @@ namespace Facet
 
             var body = Ui.Box(parent);
             body.style.marginBottom = sz.Gap;
-            Folds(head, body, title, title, defaultOpen, open => arrow.text = open ? "▾" : "▸");
+            Folds(head, body, o != null && o.Id != null ? o.Id : title, title, defaultOpen, open => arrow.text = open ? "▾" : "▸");
+            if (o == null) return body;
+            var c = Hook(head, null, title, o);
+            var fold = Data.Get<Fold>(body);
+            Action<bool> follow = v => body.style.display = v && fold.IsOpen() ? DisplayStyle.Flex : DisplayStyle.None;
+            c.OnVisible = follow;
+            if (head.style.display == DisplayStyle.None) follow(false);   // hidden by the first VisibleWhen, before OnVisible was set
             return body;
         }
 
@@ -227,7 +260,8 @@ namespace Facet
                 _folds[mem] = open;
                 Host.For(head).Write(key, open ? "1" : "0");
                 drawn(open);
-                if (!open) body.style.display = DisplayStyle.None;
+                // A header hidden by VisibleWhen keeps its body hidden; showing the header shows the body as folded.
+                if (!open || head.style.display == DisplayStyle.None) body.style.display = DisplayStyle.None;
                 else if (animate) Anim.SlideIn(body, -6f, Anim.Fast);
                 else body.style.display = DisplayStyle.Flex;
             };

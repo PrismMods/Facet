@@ -34,6 +34,8 @@ namespace Facet {
 
         public static string Own(string english, Host host) => Own(english, host.Language);
 
+        internal static string TOrOwn(string english, Host host) => TOrOwn(english, host.Translate, host.Language);
+
         /// The word as `host` shows it: Facet's table for its own words, else the host's.
         internal static string Show(string english, Host host, bool own)
             => own || _ownScope > 0 ? Own(english, host) : T(english, host);

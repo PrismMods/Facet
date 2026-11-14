@@ -148,6 +148,7 @@ namespace Facet
             var nav = Nav.Active;
             string tab = nav != null ? nav.Tab : null;
             int seq = Seq;
+            var labels = Labels == null ? null : new System.Collections.Generic.Dictionary<string, int>(Labels);
             Action run = () => { if (build != null) Safe.Run(Host.For(box), "Live build", () => build(box)); };
             run();   // in the caller's context already
             Action rebuild = () =>
@@ -155,9 +156,11 @@ namespace Facet
                 builds.N++;
                 box.Clear();
                 int s = Seq;
+                var l = Labels;
                 Seq = seq;
+                Labels = labels == null ? null : new System.Collections.Generic.Dictionary<string, int>(labels);
                 try { if (nav != null) nav.Within(tab, run); else run(); }
-                finally { Seq = s; }
+                finally { Seq = s; Labels = l; }
             };
             Action check = () => { if (changed != null && changed()) rebuild(); };
             Refresher joined = null;
@@ -171,6 +174,22 @@ namespace Facet
             Events.On<DetachFromPanelEvent>(box, _ => { if (joined != null) joined.Remove(check); joined = null; });
             if (box.panel != null) attach();
             return box;
+        }
+
+        /// A box whose rows show only while shown() is true, asked on every refresh pass of its surface.
+        public static VisualElement When(VisualElement parent, Func<bool> shown)
+        {
+            var box = Ui.Box(parent);
+            if (shown != null) Hook(box, o => o.VisibleWhen = shown);
+            return box;
+        }
+
+        /* A row's options on any element: Tooltip, TooltipText, EnabledWhen, VisibleWhen (asked on every refresh
+           pass while it is on a panel), ContextMenu and ContextMenuItems, and Id naming it. */
+        public static void Hook(VisualElement e, Action<ControlOptions> configure)
+        {
+            if (e == null) return;
+            Hook(e, null, e.name, ControlOptions.Make(e, "Hook", configure));
         }
 
         private sealed class AfterChanges { public Action Run; }

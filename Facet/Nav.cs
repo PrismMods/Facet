@@ -817,7 +817,10 @@ namespace Facet
             var was = Active;
             Active = this;
             Controls.Seq = 0;   // so an unnamed control has the same history key after every rebuild
+            var labels = Controls.Labels;
+            Controls.Labels = null;   // the page counts its own labels; rows built after it (a popup's) count on as before it
             bool ok = Safe.Run(Host.For(_host), "Nav.build '" + what + "'", () => build(_content));
+            Controls.Labels = labels;
             Active = was;
             if (!ok) FailedCard(_content, leaf != null && leaf.Owner != null ? leaf.Owner : Host.For(_host).Name);
         }

@@ -19,6 +19,9 @@ namespace Facet {
         public int RefreshMs = 100;
         /// null keeps Facet's own font lists.
         public string[][] SansFonts, MonoFonts;
+        /// A row built with no Id takes its label as its Id (the history key and the element name), and the second
+        /// row with that label on a page takes "label#2". Off: an unnamed row is numbered, as before.
+        public bool LabelIds;
     }
 
     /* What a consumer (a mod) brings: its log, translator, language, persistence and theme. One per
@@ -131,6 +134,8 @@ namespace Facet {
         internal Action<string> LogFn { get { return _log; } }
 
         internal Func<Cursors.Kind, bool> CursorHook => _o.Cursor;
+
+        internal bool LabelIds => _o.LabelIds;
 
         /// The host's wheel speed, or 0 for Facet's own; asked on every scroll.
         internal float WheelSpeed => _o.WheelSpeed == null ? 0f : Safe.Get(this, "WheelSpeed", _o.WheelSpeed, 0f);

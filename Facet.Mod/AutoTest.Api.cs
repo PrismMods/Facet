@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using UnityEngine;
 using UnityEngine.Scripting;
@@ -325,6 +326,187 @@ namespace Facet.Mod
                 Popup.CloseAll();
                 s.Dispose();
                 GalleryEditor.Close(); GalleryEditor.Model = new EditorModel();
+                History.Clear();
+            }
+        }
+        // Labels with this text anywhere under e.
+        static int LabelsWith(VisualElement e, string text) => e.Query<Label>().Where(l => l.text == text).ToList().Count;
+
+        static bool Close(Rect a, Rect b, float px) =>
+            Mathf.Abs(a.x - b.x) <= px && Mathf.Abs(a.y - b.y) <= px && Mathf.Abs(a.width - b.width) <= px && Mathf.Abs(a.height - b.height) <= px;
+
+        static Rect CentredIn(Vector2 panel, float f) => new Rect(panel.x * (1f - f) / 2f, panel.y * (1f - f) / 2f, panel.x * f, panel.y * f);
+
+        IEnumerator SectionRegions()
+        {
+            var s = new Surface(Gallery.Host, "FacetRegionsProbe", Layer.Window);
+            var w = new Window(s.Root, "regionsprobe", "Regions", new Rect(60, 60, 700, 560));
+            var store = new Dictionary<string, string>();
+            var writes = new List<string>();
+            var swHost = Host.Create("FacetSettingsWindowProbe", o =>
+            {
+                o.Log = m => Main.Log("[settingswindow] " + m);
+                o.Read = k => { string v; return store.TryGetValue(k, out v) ? v : null; };
+                o.Write = (k, v) => { writes.Add(k); if (v == null) store.Remove(k); else store[k] = v; };
+            });
+            Surface ls = null, other = null;
+            SettingsWindow sw = null, hid = null;
+            try
+            {
+                yield return null; yield return null;
+
+                // When: its rows follow the flag on a refresh.
+                bool shown = true;
+                var when = Controls.When(w.Body, () => shown);
+                Controls.Toggle(when, "Inside", Bind.Value(false));
+                s.Refresh();
+                bool wasShown = when.style.display != DisplayStyle.None;
+                shown = false; s.Refresh();
+                bool hidden = when.style.display == DisplayStyle.None;
+                shown = true; s.Refresh();
+                Check(wasShown && hidden && when.style.display != DisplayStyle.None, "When's rows hide on a refresh after the flag goes false, and show again after it goes true",
+                    wasShown + " " + hidden);
+
+                // ToggleGroup with its switch handed back.
+                Control<bool> sw1;
+                var gb = Controls.ToggleGroup(w.Body, "Group", Bind.Value(true), out sw1);
+                bool open1 = gb.style.display != DisplayStyle.None;
+                sw1.Set(false);
+                Check(sw1 != null && sw1.Root.parent == w.Body && open1 && gb.style.display == DisplayStyle.None,
+                    "ToggleGroup's out toggle is the group's switch, and the body hides when it is set off");
+
+                // Section options.
+                bool secShown = true;
+                var folded = Controls.Section(w.Body, "Folded probe", o => { o.Id = "rg-folded"; o.Open = false; });
+                Check(folded.style.display == DisplayStyle.None && s.Root.Q("rg-folded") != null, "a Section with Open = false starts folded, its header named by Id");
+                var sec = Controls.Section(w.Body, "Shown probe", o => { o.Id = "rg-shown"; o.VisibleWhen = () => secShown; });
+                var head = s.Root.Q("rg-shown");
+                bool both = head != null && head.style.display != DisplayStyle.None && sec.style.display != DisplayStyle.None;
+                secShown = false; s.Refresh();
+                Check(both && head.style.display == DisplayStyle.None && sec.style.display == DisplayStyle.None,
+                    "a Section's VisibleWhen false hides its header and its body");
+                Data.Find<Controls.Fold>(sec).Set(true, false);   // what a search hit inside it does
+                Check(sec.style.display == DisplayStyle.None, "a search reveal inside a hidden Section leaves its body hidden with its header");
+                secShown = true; s.Refresh();
+                Check(head.style.display != DisplayStyle.None && sec.style.display != DisplayStyle.None, "...and true shows both again");
+
+                // Hook on a plain element.
+                var plain = new Label("Plain");
+                w.Body.Add(plain);
+                Controls.Hook(plain, o => o.Tooltip = "Probe tip");
+                Check(plain.tooltip == Words.T("Probe tip", Gallery.Host), "Hook puts a Tooltip on a plain Label", plain.tooltip);
+
+                // Label ids: two "Speed" rows on a page under a host that opts in, then under one that does not.
+                Control<float> a = null, b = null, num = null, gap = null;
+                ls = new Surface(Host.Create("FacetLabelIdsProbe", o => { o.Log = m => Main.Log("[labelids] " + m); o.LabelIds = true; }), "FacetLabelIdsProbe", Layer.Window);
+                var lw = new Window(ls.Root, "labelidsprobe", "Label ids", new Rect(80, 80, 600, 400));
+                Controls.Labels = null;   // nothing counted before the page
+                new Nav(lw.Body, new List<NavItem> { new NavItem("Speed", p => { a = Controls.Slider(p, "Speed", Bind.Value(0f)); b = Controls.Slider(p, "Speed", Bind.Value(0f)); num = Controls.Number(p, "Width", Bind.Value(0f));
+                    Controls.Slider(p, "Spacing", Bind.Value(0f), o => o.Id = "Gap"); gap = Controls.Slider(p, "Gap", Bind.Value(0f)); }) });
+                History.Clear();
+                a.Set(0.5f);
+                string k1 = History.TopKey;
+                b.Set(0.5f);
+                string k2 = History.TopKey;
+                Check(k1 != null && k1.EndsWith("/Speed#Speed") && k2 != null && k2.EndsWith("/Speed#Speed#2"), "LabelIds: two Speed rows on a page record under .../Speed#Speed, then .../Speed#Speed#2",
+                    k1 + " | " + k2);
+                Check(a.Root.name == "Speed" && b.Root.name == "Speed#2", "...and the rows are named by them", a.Root.name + " " + b.Root.name);
+                num.Set(5f);
+                string kn = History.TopKey ?? "";
+                Check(kn.EndsWith("/Width#Width") && num.Root.name == "Width", "LabelIds: a Number row records under .../Width#Width and is named Width", kn + " " + num.Root.name);
+                Check(gap.Root.name == "Gap#2", "LabelIds: a Gap row after a row given Id Gap takes Gap#2", gap.Root.name);
+                var popupRow = Controls.Slider(lw.Root, "Speed", Bind.Value(0f));   // outside the Nav, as a popup's row
+                Check(popupRow.Root.name == "Speed", "LabelIds: a Speed row built after the page, outside any Nav, keeps its plain id", popupRow.Root.name);
+                Control<float> c = null;
+                var plainNav = new Nav(w.Body, new List<NavItem> { new NavItem("Speed", p => { Controls.Slider(p, "Speed", Bind.Value(0f)); c = Controls.Slider(p, "Speed", Bind.Value(0f)); }) });
+                c.Set(0.5f);
+                string k3 = History.TopKey ?? "";
+                Check(k3.EndsWith("/Speed#2") && c.Root.name != "Speed#2", "without LabelIds an unnamed row keeps its numbered key", k3);
+                History.Clear();
+
+                // SettingsWindow: placed on the first visible layout, raised by a press, searched, inset by the Nav.
+                Func<IList<NavItem>> pages = () => new List<NavItem> {
+                    new NavItem("Alpha", p => Controls.Toggle(p, "Gizmo", Bind.Value(false))),
+                    new NavItem("Beta", p => Controls.Toggle(p, "Widget", Bind.Value(false))),
+                    new NavItem("Gamma", p => Controls.Toggle(p, "Sprocket", Bind.Value(false))) };
+                sw = SettingsWindow.Open(swHost, "swprobe", "Probe", pages());
+                Check(!sw.Window.HasStoredGeometry, "a first SettingsWindow.Open has no stored geometry");
+                yield return Wait(0.1f, 3);
+                var panel = sw.Surface.Root.layout.size;
+                var placed = sw.Window.Rect;
+                Check(Close(placed, CentredIn(panel, 0.8f), 2f), "SettingsWindow.Open shows its window at 80% of the panel, centred (2 px)", placed + " in " + panel);
+                Check(store.ContainsKey("window.swprobe"), "...and stores that rect once shown");
+                Check(sw.Nav.Inset == 207f && Mathf.Abs(sw.Window.TitleBarLeft.style.width.value.value - sw.Nav.Inset) < 0.01f,
+                    "the content inset is Nav.Inset (207 with the default rail): the header lines up with it", sw.Nav.Inset + " / " + sw.Window.TitleBarLeft.style.width.value.value);
+
+                other = new Surface(Gallery.Host, "FacetRegionsOther", Layer.Window);
+                new Window(other.Root, "regionsother", "Other", new Rect(100, 100, 300, 200));
+                yield return null;
+                bool under = Ui.Stack.IndexOf(other) > Ui.Stack.IndexOf(sw.Surface);
+                var at = sw.Window.Footer.worldBound.center;   // no control there: the press is the window's alone
+                PointerAt(EventType.MouseDown, at, sw.Surface.Root);
+                PointerAt(EventType.MouseUp, at, sw.Surface.Root);
+                Check(under && Ui.Stack.IndexOf(sw.Surface) > Ui.Stack.IndexOf(other), "a press on the settings window raises it over a later window");
+                other.BringToFront();
+                bool mine = false;
+                sw.Window.OnRaise = () => mine = true;   // a consumer's own raise behaviour
+                PointerAt(EventType.MouseDown, at, sw.Surface.Root);
+                PointerAt(EventType.MouseUp, at, sw.Surface.Root);
+                Check(mine && Ui.Stack.IndexOf(sw.Surface) > Ui.Stack.IndexOf(other), "with a consumer's OnRaise assigned, a press runs it and still raises the settings window");
+
+                bool before = LabelsWith(sw.Window.Body, "Gizmo") > 0;
+                sw.Window.Search.value = "Widget";
+                yield return null;
+                Check(before && LabelsWith(sw.Window.Body, "Gizmo") == 0 && LabelsWith(sw.Window.Body, "Widget") > 0,
+                    "typing in its search filters through the Nav: the open page gives way to the hit");
+                sw.Window.Search.value = "";
+
+                var stored = sw.Window.Rect;
+                sw.Dispose(); sw = null;
+                sw = SettingsWindow.Open(swHost, "swprobe", "Probe", pages());
+                yield return Wait(0.1f, 3);
+                Check(sw.Window.HasStoredGeometry && Close(sw.Window.Rect, stored, 0.5f), "a reopen restores the stored rect, and HasStoredGeometry is true", sw.Window.Rect + " vs " + stored);
+                sw.Dispose(); sw = null;
+
+                // A rect set right after Open, before the first layout, is where it opens.
+                var given = new Rect(50f, 60f, 500f, 400f);
+                sw = SettingsWindow.Open(swHost, "swrect", "Rect", pages());
+                sw.Window.Rect = given;
+                yield return Wait(0.1f, 3);
+                Check(Close(sw.Window.Rect, given, 0.5f) && store.ContainsKey("window.swrect"), "a Rect set right after Open is kept by the first placement and stored", sw.Window.Rect.ToString());
+                sw.Dispose(); sw = null;
+
+                // Rail width.
+                sw = SettingsWindow.Open(swHost, "swrail", "Rail", pages(), o => o.RailWidth = 160f);
+                yield return Wait(0.1f, 3);
+                var rail = sw.Window.Body.Q<ScrollView>();
+                Check(sw.Nav.RailOpen && !sw.Nav.Compact && sw.Nav.Inset == 167f && rail != null && Mathf.Abs(rail.layout.width - 160f) <= 1f,
+                    "SettingsWindow with RailWidth 160: Nav.Inset is 167 and the rail is 160 wide (1 px)", sw.Nav.Inset + " / " + (rail == null ? -1f : rail.layout.width));
+                sw.Dispose(); sw = null;
+
+                // Built hidden: nothing stored until it is shown; the first show centres it once.
+                writes.Clear();
+                hid = SettingsWindow.Open(swHost, "swhidden", "Hidden", pages());
+                hid.Surface.Visible = false;
+                yield return Wait(0.2f, 6);
+                Check(!writes.Contains("window.swhidden") && !store.ContainsKey("window.swhidden") && !hid.Window.HasStoredGeometry,
+                    "a SettingsWindow hidden in the frame it opened writes nothing to window.<id>", string.Join(",", writes.ToArray()));
+                hid.Surface.Visible = true;
+                yield return Wait(0.1f, 3);
+                var first = hid.Window.Rect;
+                hid.Surface.Visible = false; yield return null;
+                hid.Surface.Visible = true; yield return Wait(0.1f, 3);
+                int n = writes.FindAll(x => x == "window.swhidden").Count;
+                Check(Close(first, CentredIn(hid.Surface.Root.layout.size, 0.8f), 2f) && n == 1 && hid.Window.Rect == first,
+                    "...its first show centres it and stores the rect once; a second show leaves it", first + " writes " + n);
+            }
+            finally
+            {
+                if (sw != null) sw.Dispose();
+                if (hid != null) hid.Dispose();
+                if (ls != null) ls.Dispose();
+                if (other != null) other.Dispose();
+                s.Dispose();
                 History.Clear();
             }
         }

@@ -91,6 +91,9 @@ namespace Facet
         public static string NextUndo => Next(_done, false);
         public static string NextRedo => Next(_undone, false);
 
+        /// The newest entry's key (null when there is none), for tests.
+        internal static string TopKey => _done.Count > 0 ? _done[_done.Count - 1].Key : null;
+
         /* The label as its recorder's host shows it. History is session-wide, so each entry brings
            its own translator (that host's, or Facet's own table for Facet's words); a window never
            runs another host's label through its own. */
