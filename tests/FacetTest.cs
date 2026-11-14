@@ -332,6 +332,7 @@ static class FacetTest {
         BindThen();
         Conveniences();
         UndoChord();
+        MaskBits();
 
         Console.WriteLine(_fail == 0 ? "ALL PASS" : _fail + " FAILED");
     }
@@ -684,6 +685,18 @@ static class FacetTest {
     }
 
     // The in-game autotest holds the speed against other mods' per-frame writes.
+    static void MaskBits() {
+        Check(MaskMath.With(0b1010, 0, true) == 0b1011, "MaskMath.With sets a bit");
+        Check(MaskMath.With(0b1010, 1, false) == 0b1000, "MaskMath.With clears a bit");
+        Check(MaskMath.With(1 << 12, 3, true) == (1 << 12 | 1 << 3), "MaskMath.With leaves the other bits");
+        Check(MaskMath.WithAll(1 << 12 | 1 << 20, new[] { 0, 1, 2 }, true) == (1 << 12 | 1 << 20 | 7), "WithAll on sets the listed bits only");
+        Check(MaskMath.WithAll(-1, new[] { 0, 31 }, false) == (-1 & ~1 & ~(1 << 31)), "WithAll off clears the listed bits only, bit 31 too");
+        Check(MaskMath.WithAll(5, new int[0], true) == 5, "WithAll over no bits changes nothing");
+        Check(MaskMath.AllOn(7, new[] { 0, 1, 2 }) && !MaskMath.AllOn(5, new[] { 0, 1, 2 }), "AllOn");
+        Check(MaskMath.Merge(1 << 20 | 0b010, 0b101, new[] { 0, 1, 2 }) == (1 << 20 | 0b101), "Merge copies the listed bits from the snapshot");
+        Check(MaskMath.Merge(1 << 20, 0, new[] { 0, 1 }) == 1 << 20 && MaskMath.Merge(0, 1 << 20, new[] { 0, 1 }) == 0, "Merge keeps the bits not listed as they are now");
+    }
+
     static void MotionHold() {
         Motion.Speed = 2f;
         using (Motion.Hold(1f, false)) {

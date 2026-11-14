@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -23,6 +24,67 @@ namespace Facet
         public bool Switch { get; set; } = true;
     }
 
+    /// One tile of a mask grid: its label, the bit it flips, and the tile's own options (Id, Colour, Tooltip...).
+    public sealed class MaskTile
+    {
+        public MaskTile(string label, int bit, Action<TileOptions> configure = null)
+        {
+            Label = label; Bit = bit; Configure = configure;
+        }
+
+        public string Label { get; }
+        public int Bit { get; }
+        public Action<TileOptions> Configure { get; }
+    }
+
+    /// Id, VisibleWhen, EnabledWhen, Tooltip/TooltipText and ContextMenu act on the whole grid, as TilesOptions' do.
+    /// Undoable false records no step for SetAll or any tile's click.
+    public sealed class MaskTilesOptions : ControlOptions
+    {
+        public int Columns { get; set; } = 4;
+    }
+
+    /// A tile grid over the bits of an int (Controls.MaskTiles).
+    public sealed class MaskTiles
+    {
+        private static int _steps;   // SetAll's History keys: two quick calls stay two steps
+        private readonly Bind<int> _mask;
+        private readonly int[] _bits;
+        private readonly string _label;
+        private readonly Func<string, string> _translate;
+        private readonly Host _host;
+        private readonly bool _undoable;
+
+        /// The Tiles grid.
+        public VisualElement Root { get; }
+
+        /// One switch tile per entry, in the order given.
+        public IReadOnlyList<Control<bool>> Tiles { get; }
+
+        internal MaskTiles(VisualElement root, IReadOnlyList<Control<bool>> tiles, Bind<int> mask, int[] bits, string label, bool undoable)
+        {
+            Root = root; Tiles = tiles; _mask = mask; _bits = bits; _label = label; _undoable = undoable;
+            _translate = Words.Translator(root);
+            _host = Host.For(root);
+        }
+
+        /// Turns every listed bit on or off in one write, one History step; nothing when nothing changes.
+        public void SetAll(bool on)
+        {
+            int was = 0;
+            if (!Safe.Run(_host, "Bind.Get '" + _label + "'", () => was = _mask.Get())) return;
+            int now = MaskMath.WithAll(was, _bits, on);
+            if (now == was) return;
+            var mask = _mask; var bits = _bits;
+            bool landed = Safe.Run(_host, "Bind.Set '" + _label + "'", () => mask.Set(now));
+            // Undo and redo restore the listed bits alone: a bit no tile names may have changed since.
+            if (landed && _undoable)
+                History.Record(_label, _label + "#all#" + ++_steps, () => mask.Set(MaskMath.Merge(mask.Get(), was, bits)),
+                               () => mask.Set(MaskMath.Merge(mask.Get(), now, bits)), _translate);
+            for (int i = 0; i < Tiles.Count; i++) Tiles[i].Refresh();
+        }
+    }
+
     /* Toggle tiles in a wrapping grid: judgement choices, a Features page, a home page's quick switches. */
     public static partial class Controls
     {
@@ -35,10 +97,15 @@ namespace Facet
         public static VisualElement Tiles(VisualElement parent, Action<TilesOptions> configure = null)
         {
             var o = ControlOptions.Make(parent, "Tiles", configure);
+            return Tiles(parent, o, o.Columns);
+        }
+
+        private static VisualElement Tiles(VisualElement parent, ControlOptions o, int columns)
+        {
             var grid = Ui.Box(parent);
             var sz = Theme.For(grid).Sizes;
             float gap = sz.Gap;
-            int cols = Math.Max(1, o.Columns);
+            int cols = Math.Max(1, columns);
             grid.style.flexDirection = FlexDirection.Row;
             grid.style.flexWrap = Wrap.Wrap;
             grid.style.marginRight = -gap;
@@ -130,6 +197,26 @@ namespace Facet
             Events.On<ClickEvent>(tile, e => activate());
             Events.On<NavigationSubmitEvent>(tile, e => { activate(); e.StopPropagation(); });
             return ctl;
+        }
+
+        /* A grid of switch tiles over the bits of mask: tile i reads and writes tiles[i].Bit alone, so bits no tile
+           names never change. A click is one History step (the tile's own); MaskTiles.SetAll writes every listed bit at once. */
+        public static MaskTiles MaskTiles(VisualElement parent, Bind<int> mask, IList<MaskTile> tiles, Action<MaskTilesOptions> configure = null)
+        {
+            var o = ControlOptions.Make(parent, "MaskTiles", configure);
+            var grid = Tiles(parent, o, o.Columns);
+            var made = new List<Control<bool>>(tiles.Count);
+            var bits = new int[tiles.Count];
+            for (int i = 0; i < tiles.Count; i++)
+            {
+                int bit = bits[i] = tiles[i].Bit;
+                var own = tiles[i].Configure;
+                Action<TileOptions> cfg = own;
+                if (!o.Undoable) cfg = t => { own?.Invoke(t); t.Undoable = false; };   // the grid's Undoable covers its clicks too
+                made.Add(Tile(grid, tiles[i].Label, Bind.To(() => (mask.Get() >> bit & 1) != 0, v => mask.Set(MaskMath.With(mask.Get(), bit, v))),
+                              cfg));
+            }
+            return new MaskTiles(grid, made, mask, bits, o.Id ?? "Tiles", o.Undoable);
         }
     }
 }
