@@ -127,7 +127,10 @@ namespace Facet {
 
         public string Translate(string s) {
             if (_o.Translate == null) return s;
-            var t = Safe.Get(Name, "Host.Translate", () => _o.Translate(s), null, _log);
+            // No lambda: Words.Own and T ask on every refresh pass, and a closure here would allocate per word.
+            string t;
+            try { t = _o.Translate(s); }
+            catch (Exception e) { Safe.Report(Name, "Host.Translate", e, _log); t = null; }
             return string.IsNullOrEmpty(t) ? s : t;
         }
 

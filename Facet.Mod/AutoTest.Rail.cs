@@ -78,15 +78,15 @@ namespace Facet.Mod
                 yield return Until(() => Mathf.Abs(railScroll.worldBound.width - compactW) < 1f, ms, 1000);
                 Check(ms[0] >= 0, "leaving the rail narrows it again", railScroll.worldBound.width.ToString());
 
-                // The button: in the window's title bar, left of the title, not in the rail.
+                // The button: in the window's title bar, right of the title, not in the rail.
                 bool? told = null;
                 nav.CompactChanged += v => told = v;
                 nav.CompactButton = true;
                 yield return null;
                 var btn = w.Root.Q("sidebar-toggle");
                 var title = w.TitleBarLeft.Q<Label>();
-                Check(btn != null && btn.parent == w.TitleBarLeft && title != null && btn.worldBound.xMax <= title.worldBound.xMin && rail.Q("rail-button") == null,
-                    "CompactButton puts sidebar-toggle in the title bar left of the title, and no rail-button in the rail",
+                Check(btn != null && btn.parent == w.TitleBarLeft && title != null && btn.worldBound.xMin >= title.worldBound.xMax && rail.Q("rail-button") == null,
+                    "CompactButton puts sidebar-toggle in the title bar right of the title, and no rail-button in the rail",
                     btn == null ? "none" : btn.worldBound + " / " + (title == null ? "no title" : title.worldBound.ToString()) + " / rail " + (rail.Q("rail-button") != null));
                 Func<Texture2D> tex = () => btn == null || btn.childCount == 0 ? null : btn[0].resolvedStyle.backgroundImage.texture;
                 var tex0 = tex();
@@ -120,9 +120,15 @@ namespace Facet.Mod
                 SidebarToggleProbe(nav, out flips, out sets, out junk);
                 Main.Log("[perf] sidebar toggle: heap grew " + flips + " bytes over 1000 flips, " + sets + " over 1000 host Compact sets (2000 x 128-byte arrays grew it " + junk + ")");
                 Check(junk > 0 && flips <= sets + 8192, "a flip by the toggle allocates nothing beyond the host setting Compact (heap probe, 8 KB slack)", flips + " vs " + sets + " B, junk " + junk);
-                long draws = DrawButtonsProbe(nav);
-                Main.Log("[perf] sidebar toggle redraw: heap grew " + draws + " bytes over 1000 glyph and tip redraws (least of 3)");
-                Check(draws == 0, "redrawing the toggle's glyph and tip allocates nothing (heap probe, least of 3)", draws + " B");
+                long draws = DrawButtonsProbe(nav, false), flipped = DrawButtonsProbe(nav, true);
+                Main.Log("[perf] sidebar toggle redraw: heap grew " + draws + " bytes over 1000 redraws as it is, " + flipped
+                    + " over 1000 that change the tip (least of 3)");
+                Check(draws == 0, "redrawing the toggle's glyph and tip as they are allocates nothing (heap probe, least of 3)", draws + " B");
+                // A host's words, asked on every refresh pass (header tips, a Mixed field), with a translator set as Quartz sets one.
+                var wh = Host.Create("WordsProbe", o => { o.Log = m => Main.Log("[wordsprobe] " + m); o.Translate = k => k; });
+                long own = HeapProbe(() => Words.Own("Collapse sidebar", wh)), tr = HeapProbe(() => Words.T("Collapse sidebar", wh));
+                Main.Log("[perf] host words: heap grew " + own + " bytes over 1000 Words.Own, " + tr + " over 1000 Words.T, with a translator (least of 3)");
+                Check(own == 0 && tr == 0, "asking a host with a translator for a word allocates nothing (heap probe, least of 3)", own + " / " + tr + " B");
                 nav.Rebuild(); yield return null; yield return null;
                 Check(nav.Compact && w.Root.Q("sidebar-toggle") == btn && rail.Q("rail-button") == null && titles().TrueForAll(l => l.resolvedStyle.opacity == 0f), "a rebuild keeps the strip and its toggle");
 
@@ -279,23 +285,45 @@ namespace Facet.Mod
             GC.KeepAlive(keep);
         }
 
-        // Heap growth over 1000 redraws of the buttons' glyph and tip, alternating states, the least of three runs with the collector paused.
-        static long DrawButtonsProbe(Nav nav)
+        /* Heap growth over 1000 redraws of the buttons' glyph and tip, the least of three runs with the collector paused: in the
+           Nav's own state, or alternating (each then changes the tooltip, and UI Toolkit's change event is its own cost). */
+        static long DrawButtonsProbe(Nav nav, bool alternate)
         {
             var mode = GarbageCollector.GCMode;
             long least = long.MaxValue;
             try
             {
-                for (int i = 0; i < 200; i++) nav.DrawButtons(i % 2 == 0);
+                bool now = nav.Compact;
+                for (int i = 0; i < 200; i++) nav.DrawButtons(alternate ? i % 2 == 0 : now);
                 GarbageCollector.GCMode = GarbageCollector.Mode.Disabled;
                 for (int run = 0; run < 3; run++)
                 {
                     long a = GC.GetTotalMemory(false);
-                    for (int i = 0; i < 1000; i++) nav.DrawButtons(i % 2 == 0);
+                    for (int i = 0; i < 1000; i++) nav.DrawButtons(alternate ? i % 2 == 0 : now);
                     least = Math.Min(least, GC.GetTotalMemory(false) - a);
                 }
             }
             finally { GarbageCollector.GCMode = mode; nav.DrawButtons(nav.Compact); }
+            return least;
+        }
+
+        // Heap growth over 1000 calls of `a`, the least of three runs with the collector paused.
+        static long HeapProbe(Action a)
+        {
+            var mode = GarbageCollector.GCMode;
+            long least = long.MaxValue;
+            try
+            {
+                for (int i = 0; i < 200; i++) a();
+                GarbageCollector.GCMode = GarbageCollector.Mode.Disabled;
+                for (int run = 0; run < 3; run++)
+                {
+                    long b = GC.GetTotalMemory(false);
+                    for (int i = 0; i < 1000; i++) a();
+                    least = Math.Min(least, GC.GetTotalMemory(false) - b);
+                }
+            }
+            finally { GarbageCollector.GCMode = mode; }
             return least;
         }
 

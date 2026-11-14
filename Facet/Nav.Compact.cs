@@ -35,8 +35,8 @@ namespace Facet
             set { if (value != _compact) { _compact = value; ApplyCompact(); } }
         }
 
-        /// A button that flips Compact and raises CompactChanged: `sidebar-toggle` at the left of the owning
-        /// Window's title bar for the window's first Nav, else a `rail-button` at the top of the rail.
+        /// A button that flips Compact and raises CompactChanged: `sidebar-toggle` in the owning
+        /// Window's title bar, just after its title for the window's first Nav, else a `rail-button` at the top of the rail.
         public bool CompactButton
         {
             get { return _compactButton; }
@@ -171,7 +171,7 @@ namespace Facet
             if (_compactList != null) Safe.Each(Host.For(_host), "Nav.CompactChanged", _compactList, _compact);
         }
 
-        /* In the window's title bar, just before the title (after any logo put in front of it), sized as its ↶ ↷ ×.
+        /* In the window's title bar, just after the title (a logo put in front of it reads as one with the name), sized as its ↶ ↷ ×.
            The window keeps the button and it flips whichever Nav is the window's main one now. It leaves the hover
            rule alone: the pointer that pressed it is not on the rail, so the strip may widen as soon as it comes over it. */
         private void TitleToggle()
@@ -192,7 +192,7 @@ namespace Facet
                 b.style.flexShrink = 0f;
                 b.style.alignSelf = Align.Center;
                 b.style.marginRight = Theme.For(b).Sizes.Gap;
-                w.TitleBarLeft.Insert(Math.Max(0, w.TitleBarLeft.IndexOf(w.TitleLabel)), b);   // after a logo, before the title
+                w.TitleBarLeft.Insert(w.TitleBarLeft.IndexOf(w.TitleLabel) + 1, b);   // logo, title, then the toggle
             }
             if (b != null) b.style.display = _compactButton ? DisplayStyle.Flex : DisplayStyle.None;
             DrawRailButton();
@@ -205,12 +205,23 @@ namespace Facet
         {
             string tip = compact ? "Expand sidebar" : "Collapse sidebar";
             var t = Toggle;
-            if (t != null) Words.Tip(t, tip, true);
+            if (t != null) TipOnce(ref _window.SidebarToggleTipOn, ref _window.SidebarToggleTip, t, tip);   // the window's button, so the window's cache
             var b = _rail.childCount > 0 && _rail[0].name == "rail-button" ? _rail[0] : null;
             var g = b == null ? null : b.Q("rail-glyph");
             if (g == null) return;
             g.style.backgroundImage = Background.FromTexture2D(Tex.Chevrons(!compact));
-            Words.Tip(b, tip, true);
+            TipOnce(ref _railTipOn, ref _railTip, b, tip);
+        }
+
+        // A redraw that leaves a button's tip as it is skips Words.Tip, which allocates per call; Relabel still rewords it.
+        private VisualElement _railTipOn;
+        private string _railTip;
+
+        private static void TipOnce(ref VisualElement on, ref string shown, VisualElement e, string tip)
+        {
+            if (ReferenceEquals(on, e) && ReferenceEquals(shown, tip)) return;
+            Words.Tip(e, tip, true);
+            on = e; shown = tip;
         }
     }
 }

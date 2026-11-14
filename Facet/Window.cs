@@ -47,6 +47,8 @@ namespace Facet
            toggle, so a rebuilt Nav takes the same button. Found from the body through Data. */
         internal Nav MainNav;
         internal Button SidebarToggle;
+        internal VisualElement SidebarToggleTipOn;   // the tip last put on the toggle, by whichever Nav drew it
+        internal string SidebarToggleTip;
         internal Label TitleLabel;
         internal sealed class Owner { public Window W; }
 

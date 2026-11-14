@@ -1472,7 +1472,7 @@ namespace Facet.Mod
 
         static int HistorySubscribers()
         {
-            var d = typeof(History).GetField("Changed", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null) as Delegate;
+            var d = typeof(History).GetField("_changed", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null) as Delegate;
             return d == null ? 0 : d.GetInvocationList().Length;
         }
 

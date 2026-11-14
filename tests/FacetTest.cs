@@ -536,15 +536,15 @@ static class FacetTest {
         History.Record("D", "d", () => dr = 0, () => dr = 1); History.Undo();
         using (History.Step("Gone", "gone", History.BoundTo(() => { throw new Exception("no doc"); }))) History.Record("x", "x", () => { }, () => { });
         Check(!History.CanRedo, "a write on a document that cannot be read still ends the redo branch");
-        // undo and redo hand AfterApply's handlers out without allocating
-        History.Clear(); t = 900; Action ap1 = () => { }, ap2 = () => { };
-        History.AfterApply += ap1; History.AfterApply += ap2;
+        // undo and redo hand AfterApply's and Changed's handlers out without allocating
+        History.Clear(); t = 900; Action ap1 = () => { }, ap2 = () => { }, ch1 = () => { };
+        History.AfterApply += ap1; History.AfterApply += ap2; History.Changed += ch1;
         History.Record("U", "u", nop, nop); History.Undo(); History.Redo();
         long aa = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < 1000; i++) { History.Undo(); History.Redo(); }
         aa = GC.GetAllocatedBytesForCurrentThread() - aa;
-        History.AfterApply -= ap1; History.AfterApply -= ap2;
-        Check(aa == 0, "1000 undo/redo pairs with two AfterApply handlers allocate nothing", aa + " bytes");
+        History.AfterApply -= ap1; History.AfterApply -= ap2; History.Changed -= ch1;
+        Check(aa == 0, "1000 undo/redo pairs with two AfterApply handlers and a Changed handler allocate nothing", aa + " bytes");
         History.Log = hl.Add;
         History.Log = oldLog; History.Clock = clock; History.Clear();
     }

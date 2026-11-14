@@ -30,7 +30,9 @@ namespace Facet {
             return h.Translate;
         }
 
-        public static string T(string english, Host host) => T(english, host.Translate);
+        // Asks the host directly: passing host.Translate as a Func would build a delegate per call.
+        public static string T(string english, Host host)
+            => string.IsNullOrEmpty(english) || host == null ? english : host.Translate(english);
 
         /* Facet's own words as `host` shows them. The host is asked first, under "Facet:" + english, so a mod can word
            Facet's parts in a language Facet's table lacks (Quartz's zh and ja players) while a host still answers only

@@ -74,7 +74,13 @@ namespace Facet
         /// Raised whenever what the stacks show may change, so a toolbar can enable or disable its
         /// buttons. A change that only coalesces into the top step, leaving the header as it was, raises
         /// nothing: a drag would refresh every window once a frame.
-        public static event Action Changed;
+        public static event Action Changed
+        {
+            add { _changed += value; _changedList = Safe.Handlers<Action>(_changed); }
+            remove { _changed -= value; _changedList = Safe.Handlers<Action>(_changed); }
+        }
+        private static Action _changed;
+        private static Action[] _changedList;   // rebuilt on add and remove, as AfterApply's is
 
         /// Raised after an undo or redo has been applied (after Facet's own refresh), for panels to
         /// re-read what they show. Add with +=, so one subscriber never drops another; each handler
@@ -442,10 +448,10 @@ namespace Facet
 
         private static void Fire()
         {
-            var c = Changed;
+            var c = _changedList;
             if (c == null) return;
             // One guard per handler: a throwing window's refresh must not leave the others stale.
-            foreach (Action a in c.GetInvocationList()) Safe.Run("Facet", "History.Changed", a, Log);
+            for (int i = 0; i < c.Length; i++) Safe.Run("Facet", "History.Changed", c[i], Log);
         }
     }
 }
