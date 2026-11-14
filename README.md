@@ -423,6 +423,53 @@ pending or running fade. `Clear` empties it and drops the resting line.
 `Controls.Info(…, o => o.Tone = () => role)` paints an Info row's value in the role `Tone` returns, re-read with the
 text on every refresh pass (`Danger` for a problem). `Info`'s `configure` takes `InfoOptions`, a `ControlOptions`.
 
+## Hooks and composition
+
+Parts a consumer wires with plain delegates, for code that must not name a UI Toolkit event type.
+
+- **`Bind<T>.Then(after)`** is the same bind with `after(v)` run once each write has landed, and once after each
+  undo and redo of a write a row recorded through it, a `Bind.Many`'s included (its undo writes the items directly,
+  so `after` gets the first item's restored value). A throwing `after` is logged through `History.Log` and the value
+  stays written. `Mixed` and a Many bind's per-item recording are kept; `Then(a).Then(b)` runs `a`, then `b`. An
+  undo of a row off every panel still runs `after`: it is part of the write, not of the row. The order is the same
+  on a write, an undo and a redo, for both kinds: `after`, then the row's `Committed`, then `AfterChange`.
+- **`Ui.Pointer(e, down, move, up)`** reports a press, every move and the release on `e`, at positions local to `e`,
+  buttons 0, 1 and 2. A press captures the pointer until its release, so a drag's moves and release arrive outside
+  `e`; a lost capture, or `e` leaving its panel, ends it like a release. Disposing the returned handle unregisters.
+  Each delegate runs under `Safe`, through fields, so a drag allocates nothing.
+- **`Ui.Every(e, ms, tick)`** runs `tick` every `ms` (0: every frame) only while `e` is on a panel and its surface is
+  visible. Three throws in a row stop it until `e` is attached again; disposing stops it.
+- **`Ui.WhileAttached(e, attached, detached)`** runs `attached` whenever `e` joins a panel (at once if it is on one)
+  and `detached` whenever it leaves.
+- **`Ui.Search(parent, changed, placeholder)`** is the toolbar's search field on its own (a ✕ that clears it);
+  `changed` runs on every keystroke. **`TextOptions.Live`** does the same for a `Text` row, whose bind is still written
+  only on Enter or blur; **`TextOptions.Placeholder`** is an English key shown while the field is empty.
+- **`Controls.AfterChange(container, after)`** runs `after` once per `Committed` of any row under `container`: once
+  per click, typed commit or finished drag (not per drag frame), and once per undo or redo of a row's step while
+  that row is on a panel. Nested containers each run theirs, innermost first. A canvas's commits are not rows'.
+- **A write refreshes its surface at once.** After a row's write (a click, a drag frame, `Set`) or an `Action`
+  button's click, the surface's refresh pass runs in the same frame, so a row whose `VisibleWhen` reads what was
+  written shows or hides now, not at the next tick. Writes made inside a write (a `Committed` or `AfterChange`
+  handler writing another row, an `Action` writing several rows) join it: one pass runs when the outermost returns,
+  so all of them and the outer row's own follow-ups show together. At most one such pass per frame: a second
+  outermost write in the same frame waits for the timer, and a write made during a refresh pass starts none.
+- **Typed choices.** `Controls.Dropdown<T>(parent, label, bind, values, text)`, `Controls.Choice<T>(…)` and
+  `Controls.Enum<TEnum>(parent, label, bind)` take the values themselves; `text` names each one (an English key;
+  null: `ToString`, so an enum's names are its keys). Values match by `EqualityComparer<T>.Default`: one not in the
+  list shows blank and selects nothing. The values and their names are copied at build, so a list that changes later
+  needs a rebuild (a `Controls.Live` region), as the int rows' `Items` do. Over a mixed `Bind.Many` the dropdown
+  reads "Mixed" with no item marked and the segments select none. `DropdownOptions<T>.ItemFace` draws each item of
+  the open menu in its own `FontAsset`; null or a throw draws that item in the menu's face. It runs for every item
+  each time the menu opens, so fonts are not created per open: create each face once and keep it (a `Font` converts
+  through `FontAsset.CreateFontAsset`, whose asset the collector never frees), as `Fonts.Mono` does:
+
+  ```csharp
+  var faces = new Dictionary<Font, FontAsset>();   // lives as long as the fonts, not the menu
+  x.ItemFace = f => faces.TryGetValue(f, out var fa) ? fa : (faces[f] = FontAsset.CreateFontAsset(f));
+  ```
+
+  The int rows (`DropdownOptions.Items`/`ItemFont`, `ChoiceOptions.Items`) stay.
+
 ## API in 0.2
 
 | Area | API |
@@ -450,6 +497,9 @@ text on every refresh pass (`Danger` for a problem). `Info`'s `configure` takes 
 | Dialogs | `Popup.Confirm`, `ConfirmOptions` (`Ok`, `Cancel`, null for a notice, `Danger`); `Sizes.DialogMinWidth`, `DialogMaxWidth` (280, 420) |
 | Status | `Controls.Status`/`StatusLine` (`Root`, `Show(key, role, seconds)`, `Show(func, role, seconds)`, `Clear`); `InfoOptions.Tone` (`Controls.Info` takes `Action<InfoOptions>`; its `Action<ControlOptions>` overload stays, so a mod built against it still loads) |
 | Window | `Window.Scale` is clamped to 0.6-2.5 |
+| Composition | `Bind<T>.Then`; `Controls.AfterChange`; a row's write or an `Action` click refreshes its surface in the same frame |
+| Hooks | `Ui.Pointer`, `Ui.Every`, `Ui.WhileAttached` (delegates only); `Ui.Search`; `TextOptions.Live`, `TextOptions.Placeholder` |
+| Typed rows | `Controls.Dropdown<T>`/`DropdownOptions<T>` (`ItemFace`), `Controls.Choice<T>`/`ChoiceOptions<T>`, `Controls.Enum<TEnum>` |
 | Undo | `History.Step`, `History.BoundTo`, `History.Snapshot<T>`, `History.Invalidate`; stale steps are skipped; a null key never coalesces; `ControlOptions.Undoable`, `ControlOptions.UndoDocument`; an undo or redo of a row's or canvas's step raises its `Committed` inside the apply (`History.Applying` true) while it is on a panel, and otherwise only writes the bind or `SetRect` |
 
 ## Coexistence

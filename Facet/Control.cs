@@ -116,23 +116,41 @@ namespace Facet
         }
 
         /// Write v to the bind and show it. notify raises Changed and Committed.
+        /// Then the surface refreshes at once (at most once per frame), so a row whose VisibleWhen reads v follows now;
+        /// a write made inside this one (a Committed handler's) joins its refresh, run when this one returns.
         public void Set(T v, bool notify = true)
         {
-            Write(v);
-            if (!notify) return;
-            Raise(Changed, "Changed");
-            Raise(Committed, "Committed");
+            var r = Refresher.Enter(_refresher, Root);
+            try
+            {
+                Write(v);
+                if (notify)
+                {
+                    Raise(Changed, "Changed");
+                    Commit();
+                }
+            }
+            finally { Refresher.Exit(r); }
         }
 
         /// One step of a change still in progress (a drag frame): written, shown, Changed raised.
         internal void Edit(T v)
         {
-            Write(v);
-            Raise(Changed, "Changed");
+            var r = Refresher.Enter(_refresher, Root);
+            try
+            {
+                Write(v);
+                Raise(Changed, "Changed");
+            }
+            finally { Refresher.Exit(r); }
         }
 
-        /// The change in progress is done: Committed with the current value.
-        internal void Commit() { Raise(Committed, "Committed"); }
+        /// The change in progress is done: Committed with the current value, then every AfterChange above the row.
+        internal void Commit()
+        {
+            Raise(Committed, "Committed");
+            Controls.AfterChanged(Root, _host);
+        }
 
         /// What an undo or redo restored: show it and commit. A Many bind's value and Mixed are read
         /// again from its items (the step passes only the first captured item's value).

@@ -172,5 +172,26 @@ namespace Facet
             if (box.panel != null) attach();
             return box;
         }
+
+        private sealed class AfterChanges { public Action Run; }
+
+        /* after runs once per Committed of every control under container (a row, a toggle in a card, a canvas
+           excluded): once per click, typed commit or finished drag, never per drag frame, and once per undo or redo
+           of a row's step while that row is on a panel (an undo commits only a row on a panel). Under Safe. Nested
+           containers each run theirs, the innermost first. */
+        public static void AfterChange(VisualElement container, Action after)
+        {
+            if (container == null || after == null) return;
+            Data.Get<AfterChanges>(container).Run += after;
+        }
+
+        internal static void AfterChanged(VisualElement from, Host host)
+        {
+            for (var e = from; e != null; e = e.hierarchy.parent)
+            {
+                var a = Data.Find<AfterChanges>(e);
+                if (a != null && a.Run != null) Safe.Run(host, "AfterChange", a.Run);
+            }
+        }
     }
 }

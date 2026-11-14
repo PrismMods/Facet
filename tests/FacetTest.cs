@@ -319,6 +319,7 @@ static class FacetTest {
         GuideColour();
         Shortcuts();
         ManyBinds();
+        BindThen();
 
         Console.WriteLine(_fail == 0 ? "ALL PASS" : _fail + " FAILED");
     }
@@ -680,6 +681,49 @@ static class FacetTest {
         GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
         Check(!weakItems.IsAlive && !weakPlain.IsAlive && History.CanUndo, "a Many step lets its items delegate's page be collected", weakItems.IsAlive + " " + weakPlain.IsAlive);
         History.Clock = clock; History.Clear();
+    }
+
+    // A write composed with a follow-up: after runs once per write, undo and redo, for a plain and a Many bind.
+    static void BindThen() {
+        int seen = 0;
+        var b = Bind.Value(1).Then(v => seen = v);
+        b.Set(5); Check(b.Get() == 5 && seen == 5, "Then runs the write, then the follow-up with the value");
+        var log = History.Log; var lines = new List<string>(); History.Log = lines.Add;
+        var bad = Bind.Value(1).Then(v => { throw new InvalidOperationException("after"); });
+        bad.Set(3); History.Log = log;
+        Check(bad.Get() == 3 && lines.Count == 1 && lines[0].Contains("Bind.Then"), "a throwing follow-up leaves the value set and logs once", string.Join("|", lines));
+        int pv = 0, pa = 0; var runs = new List<int>();
+        var plain = Bind.To(() => pv, x => pv = x).Then(runs.Add); History.Clear();
+        plain.SetRecorded(4, "P", "then-plain", null, _ => pa++); History.Undo(); History.Redo();
+        Check(pv == 4 && pa == 2 && string.Join(",", runs) == "4,0,4", "a plain Then bind runs the follow-up after its write, undo and redo", string.Join(",", runs));
+        var items = new List<int[]> { new[] { 1 }, new[] { 2 } }; var mruns = new List<int>();
+        var many = Bind.Many<int[], int>(() => items, x => x[0], (x, v) => x[0] = v).Then(mruns.Add);
+        Check(many.Mixed && many.Get() == 1, "a Many Then bind still reports Mixed");
+        History.Clear(); many.SetRecorded(7, "M", "then-many", null);
+        Check(items[0][0] == 7 && items[1][0] == 7 && !many.Mixed && string.Join(",", mruns) == "7", "...writes every item and runs the follow-up once", string.Join(",", mruns));
+        History.Undo(); Check(items[0][0] == 1 && items[1][0] == 2 && many.Mixed, "...undoes each item to its own value");
+        History.Redo(); Check(string.Join(",", mruns) == "7,1,7", "...and runs the follow-up once per undo and redo", string.Join(",", mruns));
+        var clock = History.Clock; double t = 0; History.Clock = () => t;
+        int dn = 0; var drag = Bind.Many<int[], int>(() => items, x => x[0], (x, v) => x[0] = v).Then(_ => dn++);
+        Action<int> ap = _ => { }; History.Clear(); drag.SetRecorded(20, "M", "then-drag", null, ap); drag.SetRecorded(21, "M", "then-drag", null, ap);
+        long mb = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 200; i++) { t += 0.01; drag.SetRecorded(30 + i % 50, "M", "then-drag", null, ap); }
+        mb = GC.GetAllocatedBytesForCurrentThread() - mb; History.Clock = clock;
+        Check(mb == 0 && dn == 202, "a Many Then drag frame allocates nothing", mb + " bytes, " + dn + " follow-ups");
+        // One order for both kinds on undo and redo, as on a write: the follow-up, then the row's applied.
+        var order = new List<string>(); int ov = 0;
+        var po = Bind.To(() => ov, x => ov = x).Then(_ => order.Add("then"));
+        History.Clear(); po.SetRecorded(1, "O", "then-order-p", null, _ => order.Add("applied")); order.Clear();
+        History.Undo(); History.Redo();
+        Check(string.Join(",", order) == "then,applied,then,applied", "a plain Then bind runs the follow-up before the row's applied on undo and redo", string.Join(",", order));
+        var oitems = new List<int[]> { new[] { 1 } };
+        var mo = Bind.Many<int[], int>(() => oitems, x => x[0], (x, v) => x[0] = v).Then(_ => order.Add("then"));
+        History.Clear(); mo.SetRecorded(2, "O", "then-order-m", null, _ => order.Add("applied")); order.Clear();
+        History.Undo(); History.Redo();
+        Check(string.Join(",", order) == "then,applied,then,applied", "a Many Then bind runs the follow-up before the row's applied on undo and redo", string.Join(",", order));
+        int both = 0; var twice = Bind.Value(0).Then(_ => both++).Then(_ => both += 10); twice.Set(1);
+        Check(both == 11, "two Thens run both follow-ups in order");
+        History.Clear();
     }
 
     // A Many row whose items delegate captures a "page"; one recorded write, then only the weak reference is left.

@@ -27,6 +27,10 @@ namespace Facet
         private Host _host;
         private IVisualElementScheduledItem _timer;
         private Action _pass;
+        private int _written = -1;   // the frame of the last pass a write asked for
+        private int _depth;          // writes in progress (nested), see Enter
+        private bool _inPass;
+        internal int Passes;         // every pass run, for the autotest
 
         internal int Count => _controls.Count;
 
@@ -64,10 +68,33 @@ namespace Facet
             Now();
         }
 
+        /* A control wrote (or an Action button ran): refresh now, so a row whose VisibleWhen or value depends on what
+           was written follows in this frame rather than at the next tick. Writes nest (a Committed or AfterChange
+           handler writing another row, an Action writing several): Enter and Exit bracket each one, and the pass runs
+           once, when the outermost returns, so every write inside it and every follow-up of the outer row show. At
+           most once per frame: a drag writes every frame, and a second outermost write in the same frame waits for the
+           timer. A write made during a pass runs none: the pass is already reading the rows. Enter returns the
+           refresher (r when the control has joined one, else the one above e) for the matching Exit. */
+        internal static Refresher Enter(Refresher r, VisualElement e)
+        {
+            if (r == null) r = Of(e);
+            if (r != null) r._depth++;
+            return r;
+        }
+
+        internal static void Exit(Refresher r)
+        {
+            if (r == null || --r._depth > 0 || r._inPass) return;
+            int f = UnityEngine.Time.frameCount;
+            if (r._written == f) return;
+            r._written = f;
+            r.Now();
+        }
+
         internal void Now()
         {
             var s = _surface;
-            if (s != null && s.Visible && s.Root != null) Safe.Run(s.Host, "Refresher", _pass);
+            if (!_inPass && s != null && s.Visible && s.Root != null) Safe.Run(s.Host, "Refresher", _pass);
         }
 
         /* By index: a control's refresh may rebuild its page, adding and removing rows mid-pass.
@@ -76,11 +103,17 @@ namespace Facet
         private void Pass()
         {
             var h = _host;
-            for (int i = 0; i < _controls.Count; i++)
+            Passes++;
+            _inPass = true;
+            try
             {
-                var c = _controls[i];
-                Safe.Run(h, c.Key, c.Value);
+                for (int i = 0; i < _controls.Count; i++)
+                {
+                    var c = _controls[i];
+                    Safe.Run(h, c.Key, c.Value);
+                }
             }
+            finally { _inPass = false; }
         }
 
         internal void Stop()

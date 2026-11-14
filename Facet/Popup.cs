@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.TextCore.Text;
 using UnityEngine.UIElements;
 
 namespace Facet
@@ -88,6 +89,10 @@ namespace Facet
 
         /// itemFont: a face for each item (a font list shows every name in its own font); null keeps the menu's.
         public static Popup Menu(VisualElement anchor, IList<string> items, int selected, Action<int> onPick, Func<int, Font> itemFont)
+            => Menu(anchor, items, selected, onPick, itemFont, null);
+
+        /// itemFace: an SDF face for each item, over itemFont; null, or a throw, keeps the menu's face for that item.
+        internal static Popup Menu(VisualElement anchor, IList<string> items, int selected, Action<int> onPick, Func<int, Font> itemFont, Func<int, FontAsset> itemFace)
         {
             Popup menu = null;
             menu = Open(anchor, content =>
@@ -108,6 +113,11 @@ namespace Facet
                     {
                         var f = Safe.Get(Facet.Host.For(anchor), "Popup.Menu ItemFont", () => itemFont(index), null);
                         if (f != null) label.style.unityFontDefinition = FontDefinition.FromFont(f);
+                    }
+                    if (itemFace != null)
+                    {
+                        var fa = Safe.Get(Facet.Host.For(anchor), "Popup.Menu ItemFace", () => itemFace(index), null);
+                        if (fa != null) label.style.unityFontDefinition = FontDefinition.FromSDFFont(fa);
                     }
                     Paint.Look(row, MenuRow);
                     Events.On<PointerUpEvent>(row, e =>

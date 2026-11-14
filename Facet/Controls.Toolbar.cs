@@ -124,15 +124,9 @@ namespace Facet
         public static Control<T> Chips<T>(VisualElement parent, Bind<T> bind, IList<T> values, Func<T, string> text, Action<Options<T>> configure = null)
         {
             var o = ControlOptions.Make(parent, "Chips", configure);
-            var host = Host.For(parent);
             var bar = Ui.Row(parent);
             var vals = values ?? new T[0];
-            var names = new string[vals.Count];
-            for (int i = 0; i < names.Length; i++)
-            {
-                var v = vals[i];
-                names[i] = text == null ? (v == null ? "" : v.ToString()) : Safe.Get(host, "Chips text", () => text(v), "");
-            }
+            var names = Names(parent, vals, text, "Chips text");
             Control<T> c = null;
             var select = Segments(bar, names, i => { if (!EqualityComparer<T>.Default.Equals(vals[i], c.Value)) c.Set(vals[i]); });
             c = new Control<T>(bar, null, o.Id ?? "Chips", bind, v => select(vals.IndexOf(v)), o);
@@ -182,15 +176,23 @@ namespace Facet
         /// The placeholder (an English key, translated by `host`) and the change handler, run under Safe at `site`.
         internal static void WireSearch(TextField f, Button clear, string placeholder, Action<string> changed, Host host, string site)
         {
-            // Unity 6 only; Unity 2022 has no placeholder, so it is set by name.
-            var ph = typeof(ITextEdition).GetProperty("placeholder");
-            Action set = () => ph.SetValue(f.textEdition, Words.T(placeholder, host), null);
-            if (ph != null) { set(); Words.OnRelabel(f, set); }
+            Placeholder(f, placeholder, host);
             Events.On<ChangeEvent<string>>(f, e =>
             {
                 clear.style.display = string.IsNullOrEmpty(e.newValue) ? DisplayStyle.None : DisplayStyle.Flex;
                 if (changed != null) Safe.Run(host, site, () => changed(e.newValue));
             });
+        }
+
+        /// Grey text shown while f is empty: `key` is an English key translated by `host`, again on a relabel.
+        internal static void Placeholder(TextField f, string key, Host host)
+        {
+            // Unity 6 only; Unity 2022 has no placeholder, so it is set by name.
+            var ph = typeof(ITextEdition).GetProperty("placeholder");
+            if (ph == null || key == null) return;
+            Action set = () => ph.SetValue(f.textEdition, Words.T(key, host), null);
+            set();
+            Words.OnRelabel(f, set);
         }
 
         /* A bare glyph button at title size, lit on hover: the window header's ↶ ↷ and a toolbar's Glyph. These

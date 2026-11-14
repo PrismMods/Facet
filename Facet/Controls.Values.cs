@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using UnityEngine;
+using UnityEngine.TextCore.Text;
 using UnityEngine.UIElements;
 
 namespace Facet
@@ -34,9 +35,26 @@ namespace Facet
         public Func<int, Font> ItemFont { get; set; }
     }
 
+    /// A typed dropdown's options: the list and the item text are Controls.Dropdown<T>'s arguments.
+    public sealed class DropdownOptions<T> : Options<T>
+    {
+        /// A face for each item in the open menu (a font list shows every name in its own face); null, or a throw,
+        /// draws that item in the menu's face. A Font converts through FontAsset.CreateFontAsset: this runs for every item
+        /// each time the menu opens, so create each face once and keep it (as Fonts.Mono does), never in here.
+        public Func<T, FontAsset> ItemFace { get; set; }
+    }
+
+    /// A typed segment row's options: the list and the item text are Controls.Choice<T>'s arguments.
+    public sealed class ChoiceOptions<T> : Options<T> { }
+
     public class TextOptions : Options<string>
     {
         public float Width { get; set; } = 200f;
+        /// Called with the text on every keystroke, before any commit (a filter as you type). The bind is still
+        /// written only on Enter or when the field loses focus.
+        public Action<string> Live { get; set; }
+        /// An English key shown greyed while the field is empty.
+        public string Placeholder { get; set; }
     }
 
     public class ColourOptions : Options<Color>
@@ -154,15 +172,88 @@ namespace Facet
         public static Control<int> Dropdown(VisualElement parent, string label, Bind<int> bind, Action<DropdownOptions> configure = null)
         {
             var o = ControlOptions.Make(parent, label, configure);
-            var right = Controls.Row(parent, label);
             var items = o.Items ?? new string[0];
-            Control<int> c = null;
+            return DropdownRow(parent, label, bind, o, items, v => v >= 0 && v < items.Count ? v : -1, i => i, o.ItemFont, null);
+        }
+
+        /* The same over typed values: text names each value (an English key, translated like a label; null: ToString),
+           and values map to items by EqualityComparer<T>.Default, so a value not in the list shows blank and selects
+           nothing. Mixed reads "Mixed" with nothing marked. The values are copied at build: a changed list needs a
+           rebuild. */
+        public static Control<T> Dropdown<T>(VisualElement parent, string label, Bind<T> bind, IList<T> values, Func<T, string> text,
+                                             Action<DropdownOptions<T>> configure = null)
+        {
+            var o = ControlOptions.Make(parent, label, configure);
+            var vals = Snapshot(values);
+            var face = o.ItemFace;
+            return DropdownRow(parent, label, bind, o, Names(parent, vals, text, "Dropdown text"), v => IndexOf(vals, v), i => vals[i], null,
+                               face == null ? null : (Func<int, FontAsset>)(i => face(vals[i])));
+        }
+
+        /// A typed dropdown of every value of TEnum, named by ToString (English keys).
+        public static Control<TEnum> Enum<TEnum>(VisualElement parent, string label, Bind<TEnum> bind, Action<DropdownOptions<TEnum>> configure = null)
+            where TEnum : struct, System.Enum
+        {
+            return Dropdown(parent, label, bind, (TEnum[])System.Enum.GetValues(typeof(TEnum)), null, configure);
+        }
+
+        /// Segmented buttons over typed values, mapped as Dropdown<T>'s; a value not in the list selects none.
+        public static Control<T> Choice<T>(VisualElement parent, string label, Bind<T> bind, IList<T> values, Func<T, string> text,
+                                           Action<ChoiceOptions<T>> configure = null)
+        {
+            var o = ControlOptions.Make(parent, label, configure);
+            var right = Controls.Row(parent, label);
+            var vals = Snapshot(values);
+            Control<T> c = null;
+            var select = Segments(right, Names(parent, vals, text, "Choice text"), i =>
+            {
+                if (c.Mixed || !EqualityComparer<T>.Default.Equals(vals[i], c.Value)) c.Set(vals[i]);
+            });
+            c = TrackedRow(right.parent, right, parent, label, o, bind, null, (v, mixed) => select(mixed ? -1 : IndexOf(vals, v)));
+            return c;
+        }
+
+        /* The values as built: names are read once, so the values they pair with are copied too, and a caller's list
+           changed later cannot misname a value or index past its end. A changed list needs a rebuild (a Live region). */
+        private static T[] Snapshot<T>(IList<T> values)
+        {
+            var a = new T[values == null ? 0 : values.Count];
+            if (values != null) values.CopyTo(a, 0);
+            return a;
+        }
+
+        // Each value's name, read once at build under Safe (null text: ToString).
+        private static string[] Names<T>(VisualElement parent, IList<T> vals, Func<T, string> text, string site)
+        {
+            var host = Host.For(parent);
+            var names = new string[vals.Count];
+            for (int i = 0; i < names.Length; i++)
+            {
+                var v = vals[i];
+                names[i] = text == null ? (v == null ? "" : v.ToString()) : Safe.Get(host, site, () => text(v), "");
+            }
+            return names;
+        }
+
+        private static int IndexOf<T>(IList<T> vals, T v)
+        {
+            var eq = EqualityComparer<T>.Default;
+            for (int i = 0; i < vals.Count; i++) if (eq.Equals(vals[i], v)) return i;
+            return -1;
+        }
+
+        /* The dropdown both kinds build: index maps a value to its item (-1: none), value an item back. */
+        private static Control<T> DropdownRow<T>(VisualElement parent, string label, Bind<T> bind, ControlOptions o, IList<string> items,
+                                                 Func<T, int> index, Func<int, T> value, Func<int, Font> itemFont, Func<int, FontAsset> itemFace)
+        {
+            var right = Controls.Row(parent, label);
+            Control<T> c = null;
             Button b = null;
             /* The arrow goes in a cell around the button, not in the button: a Button that gains a child
                loses its text measure (UI Toolkit drops it on Insert), so it shrank to its padding and a
                long item overflowed instead of widening it. */
             var cell = Ui.Box(right);
-            b = Ui.Btn("", () => Popup.Menu(b, items, c.Mixed ? -1 : c.Value, i => c.Set(i), o.ItemFont), cell);
+            b = Ui.Btn("", () => Popup.Menu(b, items, c.Mixed ? -1 : index(c.Value), i => c.Set(value(i)), itemFont, itemFace), cell);
             var t = Theme.For(b); var sz = t.Sizes;
             Paint.Look(b, t.Looks.Field);
             b.style.marginRight = 0f;   // the box fills its cell, so the arrow is pinned inside the box's border
@@ -176,10 +267,11 @@ namespace Facet
             arrow.style.right = sz.ControlPad; arrow.style.top = 0f; arrow.style.bottom = 0f;
             arrow.style.unityTextAlign = TextAnchor.MiddleCenter;
             // An item's English key, translated like any label; out of range shows blank.
-            Action<int, bool> show = (v, mixed) =>
+            Action<T, bool> show = (v, mixed) =>
             {
-                if (mixed) Words.Label(b, "Mixed", true);
-                else Words.Label(b, v >= 0 && v < items.Count ? items[v] : "");
+                if (mixed) { Words.Label(b, "Mixed", true); return; }
+                int i = index(v);
+                Words.Label(b, i >= 0 && i < items.Count ? items[i] : "");
             };
             c = TrackedRow(right.parent, b, parent, label, o, bind, null, show);
             return c;
@@ -196,6 +288,17 @@ namespace Facet
             Cursors.Set(f, Cursors.Kind.Text);
             right.Add(f);
             var c = TrackedRow(right.parent, f, parent, label, o, bind, null, (v, mixed) => f.SetValueWithoutNotify(mixed ? "" : v ?? ""));
+            Placeholder(f, o.Placeholder, Host.For(right));
+            var live = o.Live;
+            if (live != null)
+            {
+                // The site and the call made once, the text passed through a local: a keystroke allocates nothing here.
+                var host = Host.For(right);
+                var site = "TextOptions.Live '" + label + "'";
+                string typed = null;
+                Action run = () => live(typed);
+                Events.On<ChangeEvent<string>>(f, e => { typed = e.newValue; Safe.Run(host, site, run); });
+            }
             /* On commit, not per keystroke: a setter that persists to disk should not run once per
                character typed. Mixed shows empty, and leaving it empty writes nothing: only typing does. */
             OnTyped(f, c, text =>
@@ -339,7 +442,14 @@ namespace Facet
             var o = ControlOptions.Make(parent, label, configure);
             var right = Controls.Row(parent, label);
             if (string.IsNullOrEmpty(label)) Noted(right.parent, button);   // no label: search finds the row by its button
-            var b = Ui.Btn(button, onClick, right);
+            Button b = null;
+            // One write around the click: the rows onClick writes and what it changed show in this frame, in one pass.
+            b = Ui.Btn(button, () =>
+            {
+                var r = Refresher.Enter(null, b);
+                try { if (onClick != null) onClick(); }
+                finally { Refresher.Exit(r); }
+            }, right);
             b.style.marginRight = 0f;
             Hook(right.parent, b, label, o);
             return b;

@@ -204,6 +204,150 @@ namespace Facet
             return sv;
         }
 
+        // ── delegate-only hooks: for code that cannot name a UI Toolkit event type or a scheduled item ──
+
+        /* Press, move and release on e, at positions local to e; buttons 0 (left), 1 (right) and 2 (middle). A press
+           captures the pointer until its release, so the moves and the release still arrive outside e; a lost
+           capture, or e leaving its panel, ends the press like a release at the last position. move gets every
+           move e hears, a hover's too. Each delegate runs under Safe. Disposing unregisters (and ends a held press without calling up). */
+        public static IDisposable Pointer(VisualElement e, Action<Vector2, int> down, Action<Vector2> move = null, Action<Vector2, int> up = null)
+        {
+            if (e == null) throw new ArgumentNullException("e");
+            var p = new Pointing { E = e, Down = down, Move = move, Up = up };
+            Events.On<PointerDownEvent>(e, p.OnDown);
+            Events.On<PointerMoveEvent>(e, p.OnMove);
+            Events.On<PointerUpEvent>(e, p.OnUp);
+            Events.On<PointerCaptureOutEvent>(e, p.OnLost);
+            Events.On<DetachFromPanelEvent>(e, p.OnDetach);
+            return p;
+        }
+
+        // Positions and the button go through fields to delegates made once, so a drag's moves allocate nothing.
+        private sealed class Pointing : IDisposable
+        {
+            internal VisualElement E;
+            internal Action<Vector2, int> Down, Up;
+            internal Action<Vector2> Move;
+            private readonly Action _down, _move, _up;
+            private int _held = -1, _id, _b;
+            private Vector2 _at;
+
+            internal Pointing() { _down = RunDown; _move = RunMove; _up = RunUp; }
+            private void RunDown() { Down(_at, _b); }
+            private void RunMove() { Move(_at); }
+            private void RunUp() { Up(_at, _b); }
+
+            internal void OnDown(PointerDownEvent ev)
+            {
+                if (ev.button < 0 || ev.button > 2 || _held >= 0) return;
+                _held = _b = ev.button; _id = ev.pointerId; _at = ev.localPosition;
+                E.CapturePointer(_id);
+                if (Down != null) Safe.Run(Host.For(E), "Ui.Pointer down", _down);
+            }
+
+            internal void OnMove(PointerMoveEvent ev)
+            {
+                _at = ev.localPosition;
+                if (Move != null) Safe.Run(Host.For(E), "Ui.Pointer move", _move);
+            }
+
+            internal void OnUp(PointerUpEvent ev)
+            {
+                if (_held < 0 || ev.button != _held) return;
+                _at = ev.localPosition;
+                End(true);
+            }
+
+            internal void OnLost(PointerCaptureOutEvent ev) { if (_held >= 0) End(true); }
+
+            // Leaving the panel mid-press may send no capture-out; without this the next press would be ignored.
+            internal void OnDetach(DetachFromPanelEvent ev) { if (_held >= 0) End(true); }
+
+            private void End(bool report)
+            {
+                _b = _held;
+                _held = -1;
+                if (E.HasPointerCapture(_id)) E.ReleasePointer(_id);
+                if (report && Up != null) Safe.Run(Host.For(E), "Ui.Pointer up", _up);
+            }
+
+            public void Dispose()
+            {
+                if (E == null) return;
+                Events.Off<PointerDownEvent>(E, OnDown);
+                Events.Off<PointerMoveEvent>(E, OnMove);
+                Events.Off<PointerUpEvent>(E, OnUp);
+                Events.Off<PointerCaptureOutEvent>(E, OnLost);
+                Events.Off<DetachFromPanelEvent>(E, OnDetach);
+                if (_held >= 0) End(false);
+                E = null;
+            }
+        }
+
+        /* tick every ms milliseconds (0: every frame) while e is on a panel and its surface is visible; it costs
+           nothing else. Under Safe: three throws in a row stop it until e is attached again. Disposing stops it. */
+        public static IDisposable Every(VisualElement e, int ms, Action tick)
+        {
+            if (e == null) throw new ArgumentNullException("e");
+            var t = new Ticking { E = e, Tick = tick };
+            t.Run = t.Step;   // made once: the tick runs every frame at 0 and must not allocate
+            t.Item = e.schedule.Execute(t.Run).Every(Math.Max(1, ms));
+            Events.On<AttachToPanelEvent>(e, t.OnAttach);
+            if (e.panel != null) t.Owner = Popup.OwnerOf(e);
+            return t;
+        }
+
+        private sealed class Ticking : IDisposable
+        {
+            internal VisualElement E;
+            internal Action Tick, Run;
+            internal IVisualElementScheduledItem Item;
+            internal Surface Owner;
+            internal Host Host;
+            private int _fails;
+
+            internal void OnAttach(AttachToPanelEvent ev)
+            {
+                Owner = Popup.OwnerOf(E);
+                Host = Facet.Host.For(E);
+                _fails = 0;
+                if (Item != null) Item.Resume();
+            }
+
+            internal void Step()
+            {
+                if (E == null || E.panel == null || Tick == null || (Owner != null && !Owner.Visible)) return;
+                if (Safe.Run(Host ?? (Host = Facet.Host.For(E)), "Ui.Every", Tick)) _fails = 0;
+                else if (++_fails >= 3) Item.Pause();   // until the next attach
+            }
+
+            public void Dispose()
+            {
+                if (E == null) return;
+                Item.Pause();
+                Events.Off<AttachToPanelEvent>(E, OnAttach);
+                E = null;
+            }
+        }
+
+        /// attached runs whenever e joins a panel (at once if it is on one now), detached whenever it leaves; both under Safe.
+        public static void WhileAttached(VisualElement e, Action attached, Action detached)
+        {
+            if (e == null) throw new ArgumentNullException("e");
+            if (attached != null) Events.On<AttachToPanelEvent>(e, _ => Safe.Run(Host.For(e), "Ui.WhileAttached attached", attached));
+            if (detached != null) Events.On<DetachFromPanelEvent>(e, _ => Safe.Run(Host.For(e), "Ui.WhileAttached detached", detached));
+            if (attached != null && e.panel != null) Safe.Run(Host.For(e), "Ui.WhileAttached attached", attached);
+        }
+
+        /// The toolbar's search field on its own: a ✕ that clears it, `placeholder` an English key, `changed` on every keystroke.
+        public static TextField Search(VisualElement parent, Action<string> changed, string placeholder = null)
+        {
+            VisualElement box; Button clear;
+            var f = Controls.SearchBox(parent, out box, out clear);
+            Controls.WireSearch(f, clear, placeholder, changed, Host.For(parent), "Ui.Search");
+            return f;
+        }
+
         // ── style helpers: UI Toolkit splits these across four properties each ──
 
         public static void SetPadding(VisualElement e, float v)

@@ -47,6 +47,11 @@ namespace Facet.Mod
         public string ActiveKey = "hand1";
         public List<string> Picks = new List<string>(), Moves = new List<string>();
         public int Renames, Adds, TitleMenus, Made;
+        // The API page.
+        public string Filter = "", Name = "", Typed = "", Face = "Sans", Status = "plain";
+        public Layer Layer = Layer.Window;
+        public int Size = 20, AfterChanges;
+        public bool Outline;
     }
 
     /// A tab in the strip or a row in the Lists page's list.
@@ -122,6 +127,7 @@ namespace Facet.Mod
         public static StatusLine Status { get; private set; }
         public static NavItem ListsItem { get; private set; }
         public static VisualElement ListsPage { get; private set; }
+        public static NavItem ApiItem { get; private set; }
         /// Snap targets beside the boxes, like another tab's items: drawn dim, never selected.
         public static readonly Rect[] Ghosts = { new Rect(400, 20, 60, 40), new Rect(400, 100, 60, 40) };
 
@@ -134,7 +140,7 @@ namespace Facet.Mod
             _win.CloseRequested += _ => Close();
             _win.OnRaise = () => { if (Surface != null) Surface.BringToFront(); };   // a press raises it, so its shortcuts answer
             Nav = new Nav(_win.Body, new[] { NavItem.Heading(null, UndoItem = new NavItem("Undo", Undo), CanvasItem = new NavItem("Canvas", CanvasPage),
-                ListsItem = new NavItem("Lists", Lists)) });
+                ListsItem = new NavItem("Lists", Lists), ApiItem = new NavItem("API", Api)) });
             return _win;
         }
 
@@ -393,6 +399,33 @@ namespace Facet.Mod
                 RowList.Refresh();
                 status.Show("Cleared", Role.Accent, 2f);
             }, o => { o.Ok = "Clear"; o.Danger = true; }), p).name = "ed-clear";
+        }
+
+        /// Plain delegates only: a search, live text, typed rows, a card that counts its changes, a pointer pad and a clock.
+        static void Api(VisualElement p)
+        {
+            var m = Model;
+            Ui.Search(p, v => m.Filter = v, "Find a box").name = "api-search";
+            Controls.Info(p, "Filter", () => m.Filter, o => o.Id = "api-filter");
+            Controls.Text(p, "Name", Bind.To(() => m.Name, v => m.Name = v), o => { o.Id = "api-name"; o.Placeholder = "Type a name"; o.Live = v => m.Typed = v; });
+            Controls.Info(p, "Typed", () => m.Typed, o => o.Id = "api-typed");
+            var card = Controls.Card(p, "Box style");
+            Controls.AfterChange(card, () => m.AfterChanges++);
+            Controls.Enum(card, "Layer", Bind.To(() => m.Layer, v => m.Layer = v), o => o.Id = "api-layer");
+            Controls.Choice(card, "Size", Bind.To(() => m.Size, v => m.Size = v), new[] { 10, 20, 40 }, v => v + " px");
+            var mono = Fonts.Mono(Gallery.Host);
+            Controls.Dropdown(card, "Face", Bind.To(() => m.Face, v => m.Face = v), new[] { "Sans", "Mono" }, null, o => o.ItemFace = v => v == "Mono" ? mono : null);
+            Controls.Toggle(card, "Outline", Bind.To(() => m.Outline, v => m.Outline = v).Then(v => m.Status = v ? "outlined" : "plain"));
+            Controls.Info(card, "Width", () => "2 px", o => o.VisibleWhen = () => m.Outline);
+            Controls.Info(p, "Changes", () => m.AfterChanges + " (" + m.Status + ")", o => o.Id = "api-changes");
+            var pad = Ui.Box(p);
+            pad.name = "api-pad";
+            pad.style.height = 80f;
+            Paint.Look(pad, Theme.For(p).Looks.Stage);
+            var at = Ui.Muted("Press and drag here", pad);
+            Ui.Pointer(pad, (v, b) => at.text = "down " + b + " at " + v, v => at.text = "at " + v, (v, b) => at.text = "up " + b + " at " + v);
+            var clock = Ui.Muted("", p);
+            Ui.Every(clock, 250, () => clock.text = DateTime.Now.ToString("HH:mm:ss"));
         }
 
         // Four read-only rows per shown box, re-read on every refresh pass; rebuilt when the number of boxes changes.

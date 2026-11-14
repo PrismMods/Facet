@@ -18,17 +18,52 @@ namespace Facet
         private readonly Func<T> _get;
         private readonly Action<T> _set;
         private readonly Many<T> _many;   // a Bind.Many's items; null for every other bind
+        private readonly Action<T> _after;   // Then's follow-ups, in order; null for a bind with none
+        private Action _runAfter;            // made once, so a drag frame through Then allocates nothing
+        private T _afterValue;
+        private Action<T> _appliedFor, _applied;   // a Many step's applied with the follow-ups, kept while the row's applied is the same
 
         // A plain bind's newest recorded step, so a drag frame moves its end instead of recording again.
         private T[] _end;
         private Action _endRedo;
 
-        internal Bind(Func<T> get, Action<T> set, Many<T> many = null) { _get = get; _set = set; _many = many; }
+        internal Bind(Func<T> get, Action<T> set, Many<T> many = null, Action<T> after = null) { _get = get; _set = set; _many = many; _after = after; }
 
         public T Get() { return _get(); }
 
-        /// A bind with no setter (a read-only row) ignores writes.
-        public void Set(T v) { if (_set != null) _set(v); }
+        /// A bind with no setter (a read-only row) ignores writes; a Then follow-up still runs.
+        public void Set(T v) { if (_set != null) _set(v); After(v); }
+
+        /* The same bind with `after` run once each write has landed, and once after each undo and redo
+           of a write recorded through it (a Many bind's too, whose undo writes its items directly). A
+           throwing `after` is logged through History.Log; the value stays written. Mixed and a Many
+           bind's per-item recording are kept. Thens chain in order. */
+        public Bind<T> Then(Action<T> after)
+        {
+            if (after == null) return this;
+            return new Bind<T>(_get, _set, _many, _after == null ? after : Chain(_after, after));
+        }
+
+        private static Action<T> Chain(Action<T> first, Action<T> then) { return v => { first(v); then(v); }; }
+
+        private void After(T v)
+        {
+            if (_after == null) return;
+            _afterValue = v;
+            if (_runAfter == null) _runAfter = () => _after(_afterValue);
+            Safe.Run("Facet", "Bind.Then", _runAfter, History.Log);
+        }
+
+        /* A Many step's applied with the follow-ups before it, made apart so it captures no bind: the order a write and
+           a plain bind's undo have (the follow-ups, then the row's Restored, Committed and AfterChange). */
+        private static Action<T> AfterApplied(Action<T> applied, Action<T> after)
+        {
+            return v =>
+            {
+                Safe.Run("Facet", "Bind.Then", () => after(v), History.Log);
+                if (applied != null) applied(v);
+            };
+        }
 
         /// A Bind.Many whose items do not all hold the first item's value. False for every other bind.
         public bool Mixed => _many != null && _many.Mixed();
@@ -39,7 +74,7 @@ namespace Facet
         internal void Pin(bool on) { if (_many != null) _many.Pin(on); }
 
         /// The same reads and Mixed, another setter: how a row records its writes.
-        internal Bind<T> Wrap(Action<T> set) { return new Bind<T>(_get, set, _many); }
+        internal Bind<T> Wrap(Action<T> set) { return new Bind<T>(_get, set, _many); }   // set records through this bind, which runs the follow-ups
 
         /* Write v as one undo step under label and key (inside a History.Step bound to valid when valid
            is set). A plain bind records the value it had; a Many bind records each item's own (see Many).
@@ -50,7 +85,13 @@ namespace Facet
            lambda capturing a parameter makes its closure at the top of the method). */
         internal void SetRecorded(T v, string label, string key, Func<string, string> translate, Action<T> applied = null, Func<bool> valid = null)
         {
-            if (_many != null) { _many.SetRecorded(v, label, key, translate, applied, valid); return; }
+            if (_many != null)
+            {
+                if (_after != null && (_appliedFor != applied || _applied == null)) { _appliedFor = applied; _applied = AfterApplied(applied, _after); }
+                _many.SetRecorded(v, label, key, translate, _after == null ? applied : _applied, valid);
+                After(v);
+                return;
+            }
             T prev;
             try { prev = _get(); }
             catch { Set(v); throw; }   // the write still lands; the caller's Safe logs the read
