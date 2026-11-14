@@ -39,6 +39,28 @@ namespace Facet.Mod
         public int Deletes, ZSteps, MenuDeletes;
         public string MenuFor;
         public bool NoMenu;
+
+        /// The tab strip over the canvas (Hands, Feet) and the Lists page's rows: the picked tab, the one marked
+        /// active, and what each callback was handed. Moves reads "<id> from>to".
+        public List<GalleryTab> Hands = GalleryTab.Make("hand", "Hand", 4), Feet = GalleryTab.Make("foot", "Foot", 2), Rows = GalleryTab.Make("row", "Row", 5);
+        public GalleryTab Current;
+        public string ActiveKey = "hand1";
+        public List<string> Picks = new List<string>(), Moves = new List<string>();
+        public int Renames, Adds, TitleMenus, Made;
+    }
+
+    /// A tab in the strip or a row in the Lists page's list.
+    public sealed class GalleryTab
+    {
+        public string Key, Name;
+        public GalleryTab(string key, string name) { Key = key; Name = name; }
+
+        internal static List<GalleryTab> Make(string key, string name, int n)
+        {
+            var l = new List<GalleryTab>();
+            for (int i = 1; i <= n; i++) l.Add(new GalleryTab(key + i, name + " " + i));
+            return l;
+        }
     }
 
     /// A plain box on the Canvas page. Not "Box": Core's internal Box struct is visible to this assembly.
@@ -93,6 +115,13 @@ namespace Facet.Mod
         /// The inspector's hue slider, as last built.
         public static Control<float> HueRow { get; private set; }
         public static IList<MenuItem> MenuItems { get; private set; }
+        /// The strip's two groups over the canvas, and the Lists page's list, status line and page, as last built.
+        public static Reorder<GalleryTab> Hands { get; private set; }
+        public static Reorder<GalleryTab> Feet { get; private set; }
+        public static Reorder<GalleryTab> RowList { get; private set; }
+        public static StatusLine Status { get; private set; }
+        public static NavItem ListsItem { get; private set; }
+        public static VisualElement ListsPage { get; private set; }
         /// Snap targets beside the boxes, like another tab's items: drawn dim, never selected.
         public static readonly Rect[] Ghosts = { new Rect(400, 20, 60, 40), new Rect(400, 100, 60, 40) };
 
@@ -104,7 +133,8 @@ namespace Facet.Mod
             _win = new Window(Surface.Root, "editor", "Facet Editor", new Rect(40, 40, 1300, 700));
             _win.CloseRequested += _ => Close();
             _win.OnRaise = () => { if (Surface != null) Surface.BringToFront(); };   // a press raises it, so its shortcuts answer
-            Nav = new Nav(_win.Body, new[] { NavItem.Heading(null, UndoItem = new NavItem("Undo", Undo), CanvasItem = new NavItem("Canvas", CanvasPage)) });
+            Nav = new Nav(_win.Body, new[] { NavItem.Heading(null, UndoItem = new NavItem("Undo", Undo), CanvasItem = new NavItem("Canvas", CanvasPage),
+                ListsItem = new NavItem("Lists", Lists)) });
             return _win;
         }
 
@@ -242,6 +272,21 @@ namespace Facet.Mod
             Bar = Controls.MenuBar(right, MenuItems = BuildMenus(() => c));
             var drawn = new Dictionary<string, VisualElement>();
             var order = new List<string>();
+            Action draw = null;
+            // Two groups side by side; picking a Foot tab shows the second set of boxes.
+            var strip = Ui.Row(right);
+            strip.style.alignItems = Align.FlexStart;
+            Action<GalleryTab> show = t =>
+            {
+                int tab = Model.Hands.Contains(t) ? 0 : 1;
+                if (tab == Model.Tab || c == null) return;
+                Model.Tab = tab;
+                c.Refresh();
+                draw();
+            };
+            Hands = Group(strip, "Hands", () => Model.Hands, "ed-hands", show, false, false);
+            Feet = Group(strip, "Feet", () => Model.Feet, "ed-feet", show, false, true);
+            Feet.Root.style.marginLeft = Theme.For(strip).Sizes.Pad;
             c = Canvas = Controls.Canvas<GalleryBox>(right, "Canvas", o =>
             {
                 o.Id = "ed-canvas";
@@ -262,7 +307,7 @@ namespace Facet.Mod
             Bar.Tools.Toggle("Snap", Bind.To(() => c.Snap, v => c.Snap = v), "Snap to the canvas centre, the grid and other boxes");
             Bar.Tools.UndoRedo();
             foreach (var g in Ghosts) Place(Plain(c.Content, new Color(0.6f, 0.6f, 0.65f, 0.25f)), g);
-            Action draw = () => Draw(c, drawn, order);
+            draw = () => Draw(c, drawn, order);
             c.Changed += draw;
             draw();
             Ui.Btn("Replace", () =>
@@ -283,6 +328,72 @@ namespace Facet.Mod
         }
 
         static readonly Func<object> BoxDoc = () => Model.BoxDoc;
+
+        /// One group of tabs (or rows, `vertical`): click picks, drag reorders, double-click renames, right-click opens
+        /// its menu, ＋ adds one; `titleMenu` gives its caption a menu.
+        static Reorder<GalleryTab> Group(VisualElement parent, string title, Func<List<GalleryTab>> list, string id, Action<GalleryTab> picked,
+                                         bool vertical, bool titleMenu)
+        {
+            Reorder<GalleryTab> r = null;
+            r = Controls.Reorder<GalleryTab>(parent, o =>
+            {
+                o.Id = id;
+                o.Title = title;
+                o.Vertical = vertical;
+                o.Scroll = !vertical;
+                o.Items = () => list();
+                o.Key = t => t.Key;
+                o.Text = t => t.Name;
+                o.Selected = t => Model.Current == t;
+                o.Active = t => t.Key == Model.ActiveKey;
+                o.Select = t => { Model.Picks.Add(t.Name); Model.Current = t; if (picked != null) picked(t); };
+                o.Move = (from, to) =>
+                {
+                    Model.Moves.Add(id + " " + from + ">" + to);
+                    var l = list(); var t = l[from]; l.RemoveAt(from); l.Insert(to, t);
+                };
+                o.Rename = (t, name) => { Model.Renames++; Renamed(t, name); };
+                o.Menu = t => new List<MenuItem>
+                {
+                    new MenuItem { Text = "Rename", Run = () => r.BeginRename(t) },
+                    new MenuItem { Text = "Use", Run = () => Model.ActiveKey = t.Key },
+                    new MenuItem { Text = "Remove", Danger = true, Run = () => { list().Remove(t); r.Refresh(); } },
+                };
+                o.Add = () => new List<MenuItem>
+                {
+                    new MenuItem { Text = "New tab", Run = () => { Model.Adds++; Model.Made++; list().Add(new GalleryTab(id + "-new" + Model.Made, "New " + Model.Made)); r.Refresh(); } },
+                };
+                if (titleMenu) o.TitleMenu = () => new List<MenuItem> { new MenuItem { Text = "Group menu", Run = () => Model.TitleMenus++ } };
+            });
+            return r;
+        }
+
+        // A rename is one undo step. The step holds the tab and the two names only: the strip re-reads its text on
+        // the refresh that follows an undo.
+        static void Renamed(GalleryTab t, string name)
+        {
+            string was = t.Name;
+            t.Name = name;
+            History.Record("Rename", null, () => t.Name = was, () => t.Name = name);
+        }
+
+        /// A vertical list of rows, a status line that names what happened, a confirm before clearing, and a count
+        /// that turns Danger at zero.
+        static void Lists(VisualElement p)
+        {
+            ListsPage = p;
+            Ui.Muted("Drag a row to reorder it; double-click it to rename it; right-click it for its menu.", p).style.whiteSpace = WhiteSpace.Normal;
+            var status = Status = Controls.Status(p);
+            RowList = Group(p, "Rows", () => Model.Rows, "ed-rows", t => status.Show(() => t.Name), true, false);
+            Controls.Info(p, "Rows", () => Model.Rows.Count == 0 ? "none" : "some", o => { o.Id = "ed-rows-count"; o.Tone = () => Model.Rows.Count == 0 ? Role.Danger : Role.TextMuted; });
+            Ui.Btn("Clear rows", () => Popup.Confirm(p, "Clear every row?", "The list empties; undo does not bring it back.", yes =>
+            {
+                if (!yes) return;
+                Model.Rows.Clear();
+                RowList.Refresh();
+                status.Show("Cleared", Role.Accent, 2f);
+            }, o => { o.Ok = "Clear"; o.Danger = true; }), p).name = "ed-clear";
+        }
 
         // Four read-only rows per shown box, re-read on every refresh pass; rebuilt when the number of boxes changes.
         static void BoxList(VisualElement p)
@@ -413,6 +524,7 @@ namespace Facet.Mod
             Surface.Dispose();
             Surface = null; Nav = null; _win = null; AmountRow = null; BoundRow = null; Canvas = null; Page = null; Bar = null; MenuItems = null;
             Left = null; Footer = null; Right = null; InspectorScroll = null; Inspector = null; HueRow = null;
+            Hands = null; Feet = null; RowList = null; Status = null; ListsItem = null; ListsPage = null;
         }
     }
 }

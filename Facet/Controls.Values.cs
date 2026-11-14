@@ -300,8 +300,9 @@ namespace Facet
         // A number box's text while its row is bound to many items that disagree.
         private static string MixedText(VisualElement e) { return Words.Own("Mixed", Host.For(e)); }
 
-        /// Read-only text beside a label that wraps when long, instead of a TextField that cuts it off.
-        public static Control<string> Info(VisualElement parent, string label, Func<string> value, Action<ControlOptions> configure = null)
+        /// Read-only text beside a label that wraps when long, instead of a TextField that cuts it off. With Tone the
+        /// value takes that role, re-read with the text on every refresh pass.
+        public static Control<string> Info(VisualElement parent, string label, Func<string> value, Action<InfoOptions> configure = null)
         {
             var o = ControlOptions.Make(parent, label, configure);
             var right = Controls.Row(parent, label);
@@ -313,8 +314,25 @@ namespace Facet
             v.style.unityTextAlign = TextAnchor.MiddleRight;
             v.style.flexShrink = 1f;
             v.style.minWidth = 0f;
-            return new Control<string>(right.parent, v, label, Bind.To(value, null), s => v.text = s ?? "", o);
+            var tone = o.Tone;
+            Func<string> read = value;
+            if (tone != null)
+            {
+                Role last = Role.TextMuted;
+                read = () =>
+                {
+                    var r = tone();
+                    if (r != last) { last = r; Paint.Fg(v, r); }
+                    return value == null ? null : value();
+                };
+            }
+            return new Control<string>(right.parent, v, label, Bind.To(read, null), s => v.text = s ?? "", o);
         }
+
+        /// Info's signature before InfoOptions, kept so a mod built against it still loads (a lambda that sets no Tone
+        /// binds here; the row is the same).
+        public static Control<string> Info(VisualElement parent, string label, Func<string> value, Action<ControlOptions> configure)
+            => Info(parent, label, value, configure == null ? null : (Action<InfoOptions>)(o => configure(o)));
 
         public static Button Action(VisualElement parent, string label, string button, Action onClick, Action<ControlOptions> configure = null)
         {

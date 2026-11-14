@@ -16,6 +16,15 @@ namespace Facet
 
        A popup also closes when the window it came from hides, or when its anchor leaves the panel
        (the page it sat on was rebuilt) — otherwise it would float over nothing. */
+    /// Popup.Confirm's buttons: English keys, translated by the owner's host (the defaults are Facet's own words).
+    /// A null Cancel shows OK alone, a notice. Danger paints OK in the theme's DangerButton look.
+    public sealed class ConfirmOptions
+    {
+        public string Ok { get; set; } = "OK";
+        public string Cancel { get; set; } = "Cancel";
+        public bool Danger { get; set; }
+    }
+
     public sealed class Popup
     {
         public VisualElement Content { get; }
@@ -26,6 +35,8 @@ namespace Facet
         private readonly VisualElement _anchor;
         private readonly Vector2 _at;              // a context menu's top-left (NaN: placed by the anchor)
         private readonly bool _beside;             // a submenu: beside its row rather than under it
+        private readonly bool _modal;              // a dialog: on the Modal layer, centred over its owner's window
+        private VisualElement _focus;              // focused once placed (a dialog's OK)
 
         /// The pointer moving over the catcher, in panel points: a menu bar switches menus as it crosses a title.
         internal Action<Vector2> Moved;
@@ -35,7 +46,7 @@ namespace Facet
         private readonly Action _retheme;
         private EventCallback<DetachFromPanelEvent> _onDetach;
 
-        private static Surface _popups;
+        private static Surface _popups, _modals;
         private static readonly List<Popup> _open = new List<Popup>();
 
         internal static readonly Look MenuRow = new Look { HoverBg = Role.RowHover };
@@ -54,7 +65,7 @@ namespace Facet
             if (anchor == null || anchor.panel == null) { Facet.Host.For(anchor).Log("Popup: anchor is not on a panel"); return null; }
             var surface = PopupSurface();
             if (surface == null || surface.Root == null) return null;
-            var p = new Popup(anchor, onClose, surface.Root, catcher, at, beside);
+            var p = new Popup(anchor, onClose, surface.Root, catcher, at, beside, false);
             if (build != null) Safe.Run(Facet.Host.For(anchor), "Popup.build", () => build(p.Content));
             return p;
         }
@@ -110,9 +121,60 @@ namespace Facet
             return menu;
         }
 
-        private Popup(VisualElement anchor, Action onClose, VisualElement root, bool catcher, Vector2 at, bool beside)
+        /* A yes-or-no question on the Modal layer, centred over the window `owner` sits in (on the screen when owner is
+           null), behind a catcher. `title` and `body` are English keys, translated by owner's host. OK is focused, so a
+           submit runs it; Escape, Cancel, an outside click, the owner's window hiding or owner leaving its panel mean no.
+           `done` runs exactly once, through Safe, after the dialog has closed. */
+        public static Popup Confirm(VisualElement owner, string title, string body, Action<bool> done, Action<ConfirmOptions> configure = null)
+        {
+            var host = Facet.Host.For(owner);
+            var o = new ConfirmOptions();
+            if (configure != null) Safe.Run(host, "Confirm configure", () => configure(o));
+            var surface = ModalSurface();
+            if (surface == null || surface.Root == null)
+            {
+                host.Log("Popup.Confirm: no modal surface");
+                if (done != null) Safe.Run(host, "Confirm done", () => done(false));
+                return null;
+            }
+            bool yes = false;
+            var anchor = owner != null && owner.panel != null ? owner : surface.Root;
+            var p = new Popup(anchor, () => { if (done != null) Safe.Run(host, "Confirm done", () => done(yes)); },
+                              surface.Root, true, new Vector2(float.NaN, float.NaN), false, true);
+            var c = p.Content;
+            var sz = Theme.For(c).Sizes;
+            var looks = Theme.For(c).Looks;
+            Ui.SetPadding(c, sz.Pad);
+            c.style.minWidth = sz.DialogMinWidth;
+            c.style.maxWidth = sz.DialogMaxWidth;
+            var t = Ui.Text(title, c, sz.Body);
+            t.style.whiteSpace = WhiteSpace.Normal;
+            if (!string.IsNullOrEmpty(body))
+            {
+                var b = Ui.Text(body, c, sz.Small, Role.TextMuted);
+                b.style.whiteSpace = WhiteSpace.Normal;
+                b.style.marginTop = sz.Gap / 2f;
+            }
+            var row = Ui.Row(c);
+            row.style.justifyContent = Justify.FlexEnd;
+            row.style.marginTop = sz.Pad;
+            if (o.Cancel != null)
+            {
+                var no = Ui.Btn(o.Cancel, p.Close, row, o.Cancel == "Cancel");
+                no.name = "confirm-cancel";
+            }
+            var ok = Ui.Btn(o.Ok ?? "OK", () => { yes = true; p.Close(); }, row, o.Ok == null || o.Ok == "OK");
+            ok.name = "confirm-ok";
+            ok.style.marginRight = 0f;
+            Paint.Look(ok, o.Danger ? looks.DangerButton : looks.AccentButton);
+            p._focus = ok;
+            return p;
+        }
+
+        private Popup(VisualElement anchor, Action onClose, VisualElement root, bool catcher, Vector2 at, bool beside, bool modal)
         {
             _anchor = anchor;
+            _modal = modal;
             _onClose = onClose;
             _at = at;
             _beside = beside;
@@ -174,11 +236,12 @@ namespace Facet
             Events.On(Content, place);
 
             _open.Add(this);
-            _popups.Visible = true;
+            (modal ? _modals : _popups).Visible = true;
         }
 
-        /* Every Facet surface shares one PanelSettings scale, so the anchor's panel coordinates are
-           this surface's coordinates too — no screen round trip needed. */
+        /* Each surface is its own panel, but every Facet surface shares one PanelSettings scale over the
+           same screen, so the anchor's world coordinates are this surface's coordinates too — no screen
+           round trip needed. */
         private void Place(float scale)
         {
             if (!IsOpen) return;
@@ -189,7 +252,21 @@ namespace Facet
             float w = Content.layout.width * scale, h = Content.layout.height * scale;
 
             float top, left;
-            if (!float.IsNaN(_at.x))
+            if (_modal)
+            {
+                // Over the window owner sits in: the child of its surface's root that holds it.
+                var area = screen;
+                var owner = OwnerOf(_anchor);
+                if (owner != null && owner != _modals && owner.Root != null)
+                {
+                    var e = _anchor;
+                    while (e.parent != null && e.parent != owner.Root) e = e.parent;
+                    area = e.worldBound;
+                }
+                left = Mathf.Clamp(area.center.x - w / 2f, Margin, Mathf.Max(Margin, screen.width - w - Margin));
+                top = Mathf.Clamp(area.center.y - h / 2f, Margin, Mathf.Max(Margin, screen.height - h - Margin));
+            }
+            else if (!float.IsNaN(_at.x))
             {
                 // A context menu: its top-left at the point, moved in only as far as the panel needs.
                 left = Mathf.Clamp(_at.x, 0f, Mathf.Max(0f, screen.width - w));
@@ -214,6 +291,8 @@ namespace Facet
             Content.style.left = left;
             Content.style.top = top;
             Content.style.visibility = Visibility.Visible;
+            // Next tick: it is still hidden until this style applies, and a hidden element takes no focus.
+            if (_focus != null) Content.schedule.Execute(() => { if (IsOpen) _focus.Focus(); });
         }
 
         public void Close()
@@ -228,7 +307,7 @@ namespace Facet
             if (fe != null && Content.Contains(fe)) fe.Blur();
             if (_catcher != null) _catcher.RemoveFromHierarchy();
             Content.RemoveFromHierarchy();
-            if (_open.Count == 0 && _popups != null) _popups.Visible = false;
+            if (Newest(_modal) == null) { var s = _modal ? _modals : _popups; if (s != null) s.Visible = false; }
             if (_onClose != null) Safe.Run(Facet.Host.For(_anchor), "Popup.onClose", _onClose);
         }
 
@@ -238,7 +317,15 @@ namespace Facet
             for (int i = _open.Count - 1; i >= 0; i--) _open[i].Close();
         }
 
-        // Every surface shares one panel, so ownership is ancestry, not which panel the anchor is in.
+        // The newest open dialog (modal) or popup, else null.
+        private static Popup Newest(bool modal)
+        {
+            for (int i = _open.Count - 1; i >= 0; i--) if (_open[i]._modal == modal) return _open[i];
+            return null;
+        }
+
+        // The surface whose root holds the anchor. Each surface is its own panel; ownership is read from the
+        // anchor's ancestry, the same for a popup or a dialog over any of them.
         internal static Surface OwnerOf(VisualElement anchor)
         {
             for (var e = anchor; e != null; e = e.parent)
@@ -254,12 +341,30 @@ namespace Facet
             if (_popups.Root == null) return _popups;
             _popups.EscapeHandler = () =>
             {
-                if (_open.Count == 0) return false;
-                _open[_open.Count - 1].Close();
+                var p = Newest(false);
+                if (p == null) return false;
+                p.Close();
                 return true;
             };
             _popups.Visible = false;
             return _popups;
+        }
+
+        // The dialogs' shared surface, above every window and popup; Escape closes the newest dialog.
+        private static Surface ModalSurface()
+        {
+            if (_modals != null && _modals.Root != null) return _modals;
+            _modals = new Surface(Facet.Host.Fallback, "FacetModals", Layer.Modal);
+            if (_modals.Root == null) return _modals;
+            _modals.EscapeHandler = () =>
+            {
+                var p = Newest(true);
+                if (p == null) return false;
+                p.Close();
+                return true;
+            };
+            _modals.Visible = false;
+            return _modals;
         }
     }
 }

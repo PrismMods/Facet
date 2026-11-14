@@ -3,8 +3,92 @@ using UnityEngine.UIElements;
 
 namespace Facet
 {
+    /* One line of feedback under an editor: "Saved", an import's result, a count. Show(key) translates an English key
+       through the host (and again on a relabel); Show(func) shows what the func returns, re-read on every refresh pass
+       of its surface, for text already formatted or translated. seconds > 0 fades it out after that long and then
+       falls back to the last Show with no seconds (the resting line, a count say), or empties if there is none; a
+       later Show or Clear wins over a pending or running fade. Clear drops the resting line too. */
+    public sealed class StatusLine
+    {
+        public VisualElement Root { get; }
+
+        private readonly Label _text;
+        private readonly Action _pass;
+        private Func<string> _func;
+        private Action _rest;   // re-shows the last Show with no seconds
+        private Refresher _joined;
+        private int _shown;   // which Show a pending fade belongs to
+
+        internal StatusLine(VisualElement parent)
+        {
+            Root = Ui.Row(parent);
+            Root.name = "status";
+            _text = Ui.Muted("", Root);
+            _text.style.whiteSpace = WhiteSpace.Normal;
+            _text.style.flexShrink = 1f;
+            _pass = () => { if (_func != null) { string s = _func() ?? ""; if (!string.Equals(_text.text, s)) _text.text = s; } };
+            Events.On<AttachToPanelEvent>(Root, _ => Join());
+            Events.On<DetachFromPanelEvent>(Root, _ => { if (_joined != null) _joined.Remove(_pass); _joined = null; });
+            if (Root.panel != null) Join();
+        }
+
+        public void Show(string key, Role role = Role.TextMuted, float seconds = 0f)
+        {
+            _func = null;
+            Words.Label(_text, key ?? "");
+            if (seconds <= 0f) _rest = () => Show(key, role);
+            Begin(role, seconds);
+        }
+
+        public void Show(Func<string> text, Role role = Role.TextMuted, float seconds = 0f)
+        {
+            Words.Label(_text, "");
+            _func = text;
+            Safe.Run(Host.For(Root), "Status text", _pass);
+            if (seconds <= 0f) _rest = () => Show(text, role);
+            Begin(role, seconds);
+        }
+
+        public void Clear()
+        {
+            _shown++;
+            _func = null;
+            _rest = null;
+            Words.Label(_text, "");
+            _text.style.opacity = 1f;
+        }
+
+        private void Begin(Role role, float seconds)
+        {
+            int shown = ++_shown;
+            Paint.Fg(_text, role);
+            _text.style.opacity = 1f;
+            if (seconds <= 0f) return;
+            Root.schedule.Execute(() =>
+            {
+                if (shown != _shown) return;
+                // UI Toolkit keeps running a started animation, so it writes only while this Show is still the latest.
+                Anim.Run(_text, 1f, 0f, Anim.Fast, (el, v) => { if (shown == _shown) el.style.opacity = v; }, () =>
+                {
+                    if (shown != _shown) return;
+                    if (_rest != null) _rest(); else Clear();
+                });
+            }).StartingIn((long)(seconds * 1000f));
+        }
+
+        private void Join()
+        {
+            if (_joined != null) return;
+            _joined = Refresher.Of(Root);
+            if (_joined != null) _joined.Add(_pass, "Status '" + (Root.name ?? "status") + "'");
+        }
+    }
+
     public static partial class Controls
     {
+        /// A status line (StatusLine) at the end of `parent`.
+        public static StatusLine Status(VisualElement parent) => new StatusLine(parent);
+
         // A Live region's rebuild count, kept on its box.
         private sealed class LiveBuilds { public int N; }
 

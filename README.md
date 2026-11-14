@@ -358,6 +358,71 @@ puts the canvas, and with it the page, in that closure).
   count of every enclosing Live region in their history key: rows of two builds never coalesce, even over one
   object.
 
+## Lists
+
+`Controls.Reorder<T>(parent, o => …)` is a group of items the user picks, drags into a new order, renames in place
+and right-clicks: a tab strip, or with `Vertical` a list of rows. One `Reorder` is one group; two groups side by side
+(hands and feet, say) are two.
+
+```csharp
+var tabs = Controls.Reorder<Profile>(row, o =>
+{
+    o.Id = "profiles"; o.Title = "Profiles"; o.Scroll = true;
+    o.Items = () => Doc.Profiles; o.Key = p => p.Id; o.Text = p => p.Name;
+    o.Selected = p => p == Doc.Open; o.Active = p => p == Doc.InUse;
+    o.Select = p => Doc.Open = p;
+    o.Move = (from, to) => { var p = Doc.Profiles[from]; Doc.Profiles.RemoveAt(from); Doc.Profiles.Insert(to, p); };
+    o.Rename = (p, name) => p.Name = name;
+    o.Menu = p => ProfileMenu(p); o.Add = () => NewProfileMenu();
+});
+```
+
+- **Keys.** `Key` names an item across refreshes. Left null, the item itself is its key (by `Equals`): a `string`
+  item (an id) is its own key, and any other item is the same item while it is the same object, so two items with
+  the same text stay two. Set `Key` when `Items` hands back new objects for the same item (a reloaded document).
+- **Refresh.** Items are rebuilt only when their keys change; `Text` (shown as returned, not translated), `Selected`
+  and `Active` (a ● before the text) are re-read on every refresh pass of the surface and on `Refresh()`, allocating
+  nothing when nothing changed. `Build(item, e)` adds content to each item as it is built.
+- **Layout.** A strip wraps onto a new line when full; with `Scroll` it stays on one line inside a horizontal
+  `ScrollView` that the wheel scrolls sideways (on the panel's own wheel event and on the polled path) and that a drag
+  held still near either edge keeps scrolling, every frame, until it leaves the edge or ends. `Vertical` stacks the rows.
+- **Click and drag.** A click calls `Select`. A drag past 5 px (with at least two items and a `Move`) shows a drop
+  marker at the slot under the pointer; the release calls `Move(from, to)` once when the slot differs, `to` being the
+  index in the new order (remove at `from`, insert at `to`). The drag is the frame's gesture, so Escape cancels it
+  with no `Move` and the window stays open. A lost pointer capture cancels it too: a canvas drag commits on a lost
+  capture because it has written the model on every frame, but a reorder has changed nothing until it drops.
+- **Rename.** A double-click, or `BeginRename(item)`, swaps the item's text for a focused field holding its name.
+  Enter (or focus leaving) calls `Rename` with a name that is not blank and not unchanged; Escape (the key in the
+  field, or the host's `Input.HandleEscape`, which blurs it) and an empty name cancel. When the items are rebuilt
+  while the field is open (their keys changed), the field closes with no `Rename`: the typed name never lands on
+  another item.
+- **Menus.** A right-click opens `Menu(item)` at the pointer. `Add` puts a ＋ after the items that opens its menu
+  under it; `TitleMenu` makes the `Title` caption a button that opens its menu under it.
+- Of the inherited options only `Id` (the group; its parts are `Id-item`, `Id-text`, `Id-mark`, `Id-title`,
+  `Id-add`, `Id-drop` and `Id-rename`) and `Tooltip` apply.
+
+## Dialogs
+
+`Popup.Confirm(owner, title, body, done, o => …)` asks yes or no in a card on the Modal layer, centred over the
+window `owner` sits in (on the screen when `owner` is null), behind a click catcher. `title` and `body` are English
+keys translated by the owner's host; `ConfirmOptions.Ok` and `Cancel` are too ("OK" and "Cancel", Facet's own words,
+by default). OK is focused, so a submit (Enter) runs it. Escape, Cancel, an outside click, the owner's window hiding or the
+owner leaving its panel mean no; the window under the dialog stays open. `done` runs exactly once, through `Safe`,
+after the card has closed. `Danger` paints OK in the theme's `DangerButton` look; a null `Cancel` shows OK alone, a
+notice (Escape and an outside click still give `done(false)`).
+
+## Status
+
+`Controls.Status(parent)` is one line of feedback under an editor. `Show(key, role, seconds)` shows an English key
+translated by the host (again on a relabel), painted in `role` (`TextMuted` by default); `Show(func, role, seconds)`
+shows what the func returns, re-read on every refresh pass, for text already formatted or translated (an import's
+result). `seconds > 0` fades it out after that long, then the line falls back to the resting line: the last `Show`
+with no seconds (a count under the timed "Saved"), or empty if there is none. A later `Show` or `Clear` wins over a
+pending or running fade. `Clear` empties it and drops the resting line.
+
+`Controls.Info(…, o => o.Tone = () => role)` paints an Info row's value in the role `Tone` returns, re-read with the
+text on every refresh pass (`Danger` for a problem). `Info`'s `configure` takes `InfoOptions`, a `ControlOptions`.
+
 ## API in 0.2
 
 | Area | API |
@@ -381,6 +446,9 @@ puts the canvas, and with it the page, in that closure).
 | Menus | `MenuItem`; `Controls.MenuBar`/`MenuBar` (`Root`, `Left`, `Tools`, `IsOpen`, `Open`, `Close`); `Popup.Menu(anchor, IList<MenuItem>)`; `Popup.Context`; `ControlOptions.ContextMenuItems` (at the pointer, read at the right-click; also on a canvas's pane, around its stage); `Menus.HandleKeys` |
 | Toolbar | `Controls.Toolbar`/`Toolbar` (`Search`, `Chips`, `Icon`, `Glyph`, `Button`, `Toggle`, `Label`, `UndoRedo`, `Spacer`); `Controls.Chips<T>`; `Ui.IconButton`; `Paint.Tint` (public) |
 | Inspector | `Bind.Many` (by key), `Bind<T>.Mixed`, `Control<T>.Mixed`, `ColumnsOptions.RightFill`, `Ui.Scroll`, `Controls.Live` |
+| Lists | `Controls.Reorder<T>`/`Reorder<T>` (`Root`, `Refresh`, `BeginRename`), `ReorderOptions<T>` (`Items`, `Key`, `Text`, `Selected`, `Active`, `Select`, `Move`, `Rename`, `Menu`, `Add`, `Title`, `TitleMenu`, `Vertical`, `Scroll`, `Build`) |
+| Dialogs | `Popup.Confirm`, `ConfirmOptions` (`Ok`, `Cancel`, null for a notice, `Danger`); `Sizes.DialogMinWidth`, `DialogMaxWidth` (280, 420) |
+| Status | `Controls.Status`/`StatusLine` (`Root`, `Show(key, role, seconds)`, `Show(func, role, seconds)`, `Clear`); `InfoOptions.Tone` (`Controls.Info` takes `Action<InfoOptions>`; its `Action<ControlOptions>` overload stays, so a mod built against it still loads) |
 | Window | `Window.Scale` is clamped to 0.6-2.5 |
 | Undo | `History.Step`, `History.BoundTo`, `History.Snapshot<T>`, `History.Invalidate`; stale steps are skipped; a null key never coalesces; `ControlOptions.Undoable`, `ControlOptions.UndoDocument`; an undo or redo of a row's or canvas's step raises its `Committed` inside the apply (`History.Applying` true) while it is on a panel, and otherwise only writes the bind or `SetRect` |
 

@@ -223,6 +223,8 @@ namespace Facet
             ScrollView target = null, biggest = null;
             foreach (var sv in lists)
             {
+                // A sideways strip with nothing to scroll is not a target: the page around it takes the wheel.
+                if (sv.mode == ScrollViewMode.Horizontal && ScrollableX(sv) <= 0f) continue;
                 var b = sv.worldBound;
                 if (biggest == null || b.width * b.height > biggest.worldBound.width * biggest.worldBound.height)
                     biggest = sv;
@@ -255,6 +257,18 @@ namespace Facet
                        + (_sawWheelEvent ? "" : " [host sends no WheelEvent]"));
             }
             if (target == null) return;
+
+            /* A sideways strip (a Reorder's tab strip): the wheel scrolls it sideways, as Unity's own handler does with a
+               horizontal-only view, which then has moved it already this frame. ponytail: an instant step even while the
+               glide is on; glide it when a strip wants it. */
+            if (target.mode == ScrollViewMode.Horizontal)
+            {
+                if (WheelHandledThisFrame) return;
+                float sx = Host.For(root).WheelSpeed;
+                float dx = sx > 0f ? delta * sx : Mathf.Abs(delta) < 0.6f ? delta * 400f : delta * 60f;
+                ScrollX(target, target.scrollOffset.x - dx);
+                return;
+            }
 
             /* A virtualised ListView does not grow its content container — that is the whole point
                of virtualising — so measuring it says a 53-row log has nothing to scroll. Glide.Max asks
@@ -306,6 +320,17 @@ namespace Facet
                 Host.For(root).Log("Skin wheel: scrolled " + before.ToString("0") + " -> " + o.y.ToString("0")
                        + " of " + max.ToString("0"));
             }
+        }
+
+        /// How far a view scrolls sideways (ScrollView.scrollableWidth is internal).
+        internal static float ScrollableX(ScrollView sv) => Mathf.Max(0f, sv.contentContainer.layout.width - sv.contentViewport.layout.width);
+
+        /// Scrolls a sideways view to x, clamped to what it can scroll.
+        internal static void ScrollX(ScrollView sv, float x)
+        {
+            var o = sv.scrollOffset;
+            o.x = Mathf.Clamp(x, 0f, ScrollableX(sv));
+            sv.scrollOffset = o;
         }
 
         /* Styling has to wait for the control to be attached: the parts are created when it joins a

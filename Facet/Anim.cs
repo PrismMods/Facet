@@ -100,7 +100,7 @@ namespace Facet
            in a panel yet: UI Toolkit's animation needs a panel to schedule against, and starting
            one on a detached element silently never runs. Setting the final value first means a
            caller always gets the end state even when the motion is skipped. */
-        private static void Run(VisualElement e, float from, float to, int ms,
+        internal static void Run(VisualElement e, float from, float to, int ms,
                                 Action<VisualElement, float> apply, Action done = null)
         {
             ms = Motion.Scale(ms);

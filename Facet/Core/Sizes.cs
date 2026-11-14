@@ -33,6 +33,8 @@ namespace Facet
         /// A canvas's selection chrome: a corner handle (square), an edge handle's long and short sides, the square a
         /// handle answers the pointer in, and the outline drawn outside each selected item.
         public float CanvasHandle = 10f, CanvasEdgeLong = 18f, CanvasEdgeShort = 8f, CanvasHit = 18f, CanvasOutline = 3f;
+        /// A dialog card's narrowest and widest (Popup.Confirm); its text wraps within the widest.
+        public float DialogMinWidth = 280f, DialogMaxWidth = 420f;
 
         public Sizes Copy() { return (Sizes)MemberwiseClone(); }
     }

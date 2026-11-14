@@ -51,6 +51,12 @@ namespace Facet
         }
     }
 
+    /// Controls.Info's options: Tone paints the value in a role (Danger for a problem), asked on every refresh pass.
+    public sealed class InfoOptions : ControlOptions
+    {
+        public Func<Role> Tone { get; set; }
+    }
+
     /// Options for a control with a value: a Default shows the changed dot and a middle-click resets to it.
     public class Options<T> : ControlOptions
     {

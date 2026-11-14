@@ -55,7 +55,8 @@ namespace Facet
             if (CanvasAll.OnStage(target)) return;   // a canvas pans or zooms on it; the page around it stays
             for (var sv = target as ScrollView ?? target?.GetFirstAncestorOfType<ScrollView>(); sv != null; sv = sv.GetFirstAncestorOfType<ScrollView>())
             {
-                if (sv.mode == ScrollViewMode.Horizontal) continue;
+                // A sideways strip that can move takes the wheel itself, as Unity's own handler does; one that cannot passes it on.
+                if (sv.mode == ScrollViewMode.Horizontal) { if (Skin.ScrollableX(sv) > 0f) return; continue; }
                 var g = Data.Find<State>(sv);
                 if (g != null && g.Polled == Time.frameCount) { e.StopPropagation(); return; }   // the polled path already took this notch
                 if (!Feed(sv, e.delta.y * sv.mouseWheelScrollSize, Max(sv)))

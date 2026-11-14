@@ -51,6 +51,9 @@ namespace Facet
         /// records nothing. Set by whoever starts the drag and cleared when it ends. It takes the frame's Escape first.
         internal static Action Gesture;
 
+        /// True while Escape blurs a focused field: a field that commits on focus loss (an in-place rename) cancels instead.
+        internal static bool Escaping;
+
         public static void HoldThisFrame() => _holdFrame[0] = Time.frameCount;
 
         public static bool HeldThisFrame => Time.frameCount == _holdFrame[0];
@@ -111,7 +114,13 @@ namespace Facet
                     ? s.Root.panel.focusController.focusedElement as VisualElement : null;
                 // The focus controller is the shared panel's, so only a field inside THIS surface counts.
                 if (focused != null && s.Root.Contains(focused))
-                    if (InTextInput(focused)) { focused.Blur(); s.Host.Log("Escape: blurred a field in " + s.Name); return true; }
+                    if (InTextInput(focused))
+                    {
+                        Escaping = true;
+                        try { focused.Blur(); } finally { Escaping = false; }
+                        s.Host.Log("Escape: blurred a field in " + s.Name);
+                        return true;
+                    }
                 if (CanvasAll.Escape(s.Root)) { s.Host.Log("Escape: cleared a canvas selection in " + s.Name); return true; }
                 if (s.EscapeHandler != null)
                 {

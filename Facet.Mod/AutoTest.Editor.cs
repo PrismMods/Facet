@@ -941,5 +941,383 @@ namespace Facet.Mod
         }
 
         static Func<IReadOnlyList<GalleryBox>> AllOf(List<GalleryBox> l) => () => l;
+
+        // A strip's items in order, by the names Reorder gives them under its Id.
+        static List<VisualElement> Faces(Reorder<GalleryTab> r) => r.Root.Query<VisualElement>(r.Root.name + "-item").ToList();
+
+        static string Texts(Reorder<GalleryTab> r)
+        {
+            var t = new List<string>();
+            foreach (var f in Faces(r)) t.Add(f.Q<Label>(r.Root.name + "-text").text);
+            return string.Join(",", t.ToArray());
+        }
+
+        static string Names(List<GalleryTab> l)
+        {
+            var t = new List<string>();
+            foreach (var x in l) t.Add(x.Name);
+            return string.Join(",", t.ToArray());
+        }
+
+        // A left press with a click count of two (the second press of a double-click), then its release.
+        static void DoublePress(Vector2 panel, VisualElement root)
+        {
+            var ev = new Event { type = EventType.MouseDown, button = 0, clickCount = 2, mousePosition = panel };
+            using (var e = PointerDownEvent.GetPooled(ev)) root.panel.visualTree.SendEvent(e);
+            PointerAt(EventType.MouseUp, panel, root);
+        }
+
+        // A left drag in panel points: press, `steps` moves, release.
+        IEnumerator DragAt(Vector2 from, Vector2 to, VisualElement root, int steps = 6)
+        {
+            PointerAt(EventType.MouseDown, from, root); yield return null;
+            for (int i = 1; i <= steps; i++) { PointerAt(EventType.MouseMove, Vector2.Lerp(from, to, i / (float)steps), root); yield return null; }
+            PointerAt(EventType.MouseUp, to, root); yield return null; yield return null;
+        }
+
+        static bool Shown(VisualElement e) => e != null && e.panel != null && e.resolvedStyle.display == DisplayStyle.Flex;
+
+        // The tab strip over the canvas and the Lists page's vertical list: click, drag, Escape, lost capture,
+        // rename, menus, and thirty tabs on one scrolling line.
+        IEnumerator SectionStrip()
+        {
+            GalleryEditor.Model = new EditorModel();
+            var win = GalleryEditor.Open(); yield return null; yield return null;
+            VisualElement box = null;
+            try
+            {
+                GalleryEditor.Nav.Go(GalleryEditor.CanvasItem); yield return null; yield return null;
+                var m = GalleryEditor.Model;
+                var hands = GalleryEditor.Hands; var feet = GalleryEditor.Feet;
+                var root = win.Root;
+                Check(hands != null && feet != null && Faces(hands).Count == 4 && Faces(feet).Count == 2, "the strip over the canvas has two groups: Hands with 4 items and Feet with 2");
+                if (hands == null || feet == null || Faces(hands).Count != 4) yield break;
+                Check(Mathf.Abs(hands.Root.worldBound.yMin - feet.Root.worldBound.yMin) <= 0.5f && feet.Root.worldBound.xMin > hands.Root.worldBound.xMax,
+                    "...side by side", hands.Root.worldBound + " / " + feet.Root.worldBound);
+                Check(GalleryEditor.Canvas != null && hands.Root.worldBound.yMax <= GalleryEditor.Canvas.Stage.worldBound.yMin, "...over the canvas");
+                Check(Texts(hands) == "Hand 1,Hand 2,Hand 3,Hand 4" && Shown(Faces(hands)[0].Q<Label>("ed-hands-mark")) && !Shown(Faces(hands)[1].Q<Label>("ed-hands-mark")),
+                    "each item shows its text, and the active one its mark", Texts(hands));
+
+                var f = Faces(hands);
+                PressAt(f[2].worldBound.center, root); yield return null; yield return null;
+                Check(m.Picks.Count == 1 && m.Picks[0] == "Hand 3" && m.Current == m.Hands[2], "clicking item 2 calls Select with item 2", string.Join(",", m.Picks.ToArray()));
+                GalleryEditor.Surface.Refresh();
+                var accent = Theme.For(f[2])[Role.Accent];
+                Check(Near(f[2].style.backgroundColor.value, accent) && !Near(f[1].style.backgroundColor.value, accent), "...and the selected look follows Selected on the next refresh");
+
+                // Item 0 dropped between items 2 and 3.
+                f = Faces(hands);
+                var to = new Vector2((f[2].worldBound.center.x + f[3].worldBound.center.x) / 2f, f[2].worldBound.center.y);
+                PointerAt(EventType.MouseDown, f[0].worldBound.center, root); yield return null;
+                PointerAt(EventType.MouseMove, f[0].worldBound.center + new Vector2(8f, 0f), root); yield return null;
+                PointerAt(EventType.MouseMove, to, root); yield return null;
+                var drop = hands.Root.Q<VisualElement>("ed-hands-drop");
+                Check(Shown(drop) && Mathf.Abs(drop.worldBound.center.x - (f[2].worldBound.xMax + f[3].worldBound.xMin) / 2f) <= 1.5f,
+                    "a drag past 5 px shows the drop marker at the slot", drop == null ? "none" : drop.worldBound + "");
+                PointerAt(EventType.MouseUp, to, root); yield return null; yield return null;
+                Check(m.Moves.Count == 1 && m.Moves[0] == "ed-hands 0>2" && Names(m.Hands) == "Hand 2,Hand 3,Hand 1,Hand 4",
+                    "dragging item 0 past item 2 calls Move(0, 2) once: order 1, 2, 0, 3", string.Join(";", m.Moves.ToArray()) + " / " + Names(m.Hands));
+                Check(Texts(hands) == "Hand 2,Hand 3,Hand 1,Hand 4" && !Shown(drop) && m.Picks.Count == 1, "...the strip shows the new order, the marker goes, and nothing was picked", Texts(hands));
+
+                f = Faces(hands);
+                yield return DragAt(f[3].worldBound.center, new Vector2((f[0].worldBound.center.x + f[1].worldBound.center.x) / 2f, f[0].worldBound.center.y), root);
+                Check(m.Moves.Count == 2 && m.Moves[1] == "ed-hands 3>1" && Names(m.Hands) == "Hand 2,Hand 4,Hand 3,Hand 1",
+                    "dragging item 3 before item 1 calls Move(3, 1)", string.Join(";", m.Moves.ToArray()) + " / " + Names(m.Hands));
+
+                f = Faces(hands);
+                yield return DragAt(f[0].worldBound.center, f[0].worldBound.center + new Vector2(4f, 0f), root, 2);
+                Check(m.Moves.Count == 2 && m.Picks.Count == 2, "a 4 px drag moves nothing: it is a click", m.Moves.Count + " / " + m.Picks.Count);
+
+                // Escape mid-drag: no Move, and the window stays open.
+                f = Faces(hands);
+                PointerAt(EventType.MouseDown, f[0].worldBound.center, root); yield return null;
+                PointerAt(EventType.MouseMove, f[2].worldBound.center, root); yield return null;
+                Check(Shown(drop), "...(a drag is under way)");
+                Input.HandleEscape(); yield return null;
+                Check(!Shown(drop) && GalleryEditor.Surface.Visible, "Escape mid-drag cancels it and the window stays open");
+                PointerAt(EventType.MouseUp, f[2].worldBound.center, root); yield return null; yield return null;
+                Check(m.Moves.Count == 2 && Names(m.Hands) == "Hand 2,Hand 4,Hand 3,Hand 1", "...and calls no Move", string.Join(";", m.Moves.ToArray()));
+
+                // A lost capture cancels too: the drag changed nothing yet.
+                f = Faces(hands);
+                PointerAt(EventType.MouseDown, f[0].worldBound.center, root); yield return null;
+                PointerAt(EventType.MouseMove, f[2].worldBound.center, root); yield return null;
+                ReleasePointer(root, f[2].worldBound.center); yield return null;
+                PointerAt(EventType.MouseUp, f[2].worldBound.center, root); yield return null; yield return null;
+                Check(m.Moves.Count == 2 && !Shown(drop), "a lost pointer capture cancels the drag with no Move", m.Moves.Count.ToString());
+
+                // Rename: double-click, type, Enter.
+                f = Faces(hands);
+                DoublePress(f[1].worldBound.center, root); yield return null; yield return null;
+                var field = hands.Root.Q<TextField>("ed-hands-rename");
+                Check(field != null && field.value == "Hand 4" && !Shown(f[1].Q<Label>("ed-hands-text")) && Within(field.panel.focusController.focusedElement as VisualElement, field),
+                    "a double-click swaps the item's text for a focused field holding its name", field == null ? "none" : field.value);
+                if (field != null)
+                {
+                    field.value = "Renamed";
+                    Key(field, KeyCode.Return); yield return null; yield return null;
+                }
+                Check(m.Renames == 1 && m.Hands[1].Name == "Renamed" && hands.Root.Q<TextField>("ed-hands-rename") == null && Texts(hands) == "Hand 2,Renamed,Hand 3,Hand 1",
+                    "typing Renamed and pressing Enter calls Rename once and shows it", m.Renames + " / " + Texts(hands));
+
+                hands.BeginRename(m.Hands[2]); yield return null;
+                field = hands.Root.Q<TextField>("ed-hands-rename");
+                if (field != null) field.value = "Typed";
+                Input.HandleEscape(); yield return null; yield return null;
+                Check(field != null && m.Renames == 1 && m.Hands[2].Name == "Hand 3" && hands.Root.Q<TextField>("ed-hands-rename") == null && GalleryEditor.Surface.Visible,
+                    "BeginRename opens the field; Escape calls nothing and leaves the window open", m.Renames + " / " + m.Hands[2].Name);
+                hands.BeginRename(m.Hands[2]); yield return null;
+                field = hands.Root.Q<TextField>("ed-hands-rename");
+                if (field != null) { field.value = "Typed"; Key(field, KeyCode.Escape); yield return null; }
+                Check(field != null && m.Renames == 1 && hands.Root.Q<TextField>("ed-hands-rename") == null, "...an Escape key in the field too");
+                hands.BeginRename(m.Hands[2]); yield return null;
+                field = hands.Root.Q<TextField>("ed-hands-rename");
+                if (field != null) { field.value = "  "; Key(field, KeyCode.Return); yield return null; }
+                Check(field != null && m.Renames == 1 && m.Hands[2].Name == "Hand 3", "...and an empty name cancels");
+
+                // Menus: the item's at the pointer, Add's under ＋, the title's under the title.
+                f = Faces(hands);
+                var at = f[0].worldBound.center;
+                PressAt(at, root, 1); yield return null; yield return null;
+                var ren = LiveLabel("Rename");
+                Check(ren != null && Mathf.Abs(ren.parent.parent.worldBound.xMin - at.x) <= 1f, "a right-click opens the item's menu at the pointer");
+                Popup.CloseAll(); yield return null;
+                var add = hands.Root.Q<Button>("ed-hands-add");
+                if (add != null) { Submit(add); yield return null; yield return null; }
+                var nt = LiveLabel("New tab");
+                Check(nt != null && nt.worldBound.yMin >= add.worldBound.yMax, "＋ opens Add() under it");
+                if (nt != null) { Release(nt.parent); yield return null; yield return null; }
+                Check(m.Adds == 1 && Faces(hands).Count == 5, "...and its item adds a tab", Faces(hands).Count.ToString());
+                var title = feet.Root.Q<Button>("ed-feet-title");
+                Check(title != null && hands.Root.Q<Button>("ed-hands-title") == null && hands.Root.Q<Label>("ed-hands-title") != null, "a TitleMenu makes the title a button; without one it is a caption");
+                if (title != null) { Submit(title); yield return null; yield return null; }
+                var gm = LiveLabel("Group menu");
+                // The card (the row's parent's parent) sits the popup's 4 px gap below the title, its left within the title.
+                var gcard = gm == null ? null : gm.parent.parent;
+                Rect tb = title == null ? new Rect() : title.worldBound, gb = gcard == null ? new Rect() : gcard.worldBound;
+                Check(gcard != null && Mathf.Abs(gb.yMin - (tb.yMax + 4f)) <= 1f && gb.xMin >= tb.xMin - 1f && gb.xMin <= tb.xMax,
+                    "...that opens TitleMenu under it", gb + " under " + tb);
+                if (gm != null) { Release(gm.parent); yield return null; }
+                Check(gm != null && m.TitleMenus == 1, "...and runs its item", m.TitleMenus.ToString());
+
+                // Rename from the item's menu: a right-click, a click on Rename, the name typed, Enter; one undo step.
+                History.Clear();
+                f = Faces(hands);
+                var named = m.Hands[0];
+                string was = named.Name;
+                PressAt(f[0].worldBound.center, root, 1); yield return null; yield return null;
+                var mren = LiveLabel("Rename");
+                if (mren != null) { PressAt(mren.parent.worldBound.center, mren); yield return null; yield return null; yield return null; }
+                field = hands.Root.Q<TextField>("ed-hands-rename");
+                Check(mren != null && field != null && field.value == was && field.panel != null && Within(field.panel.focusController.focusedElement as VisualElement, field),
+                    "Rename in an item's menu opens a focused field holding its name", mren == null ? "no menu" : field == null ? "no field" : field.value);
+                if (field != null) { field.value = "From menu"; Key(field, KeyCode.Return); yield return null; yield return null; }
+                Check(named.Name == "From menu" && hands.Root.Q<TextField>("ed-hands-rename") == null && Texts(hands).StartsWith("From menu,") && History.CanUndo,
+                    "...typing a name and pressing Enter renames the item", named.Name + " / " + Texts(hands));
+                Check(History.Undo() && named.Name == was && !History.CanUndo, "...in one undo step", named.Name);
+
+                // Thirty tabs: one line that scrolls, its last item reachable.
+                float h0 = hands.Root.worldBound.height;
+                while (m.Hands.Count < 30) m.Hands.Add(new GalleryTab("more" + m.Hands.Count, "More " + m.Hands.Count));
+                hands.Refresh(); yield return null; yield return null;
+                f = Faces(hands);
+                float y0 = f[0].worldBound.yMin, spread = 0f;
+                foreach (var x in f) spread = Mathf.Max(spread, Mathf.Abs(x.worldBound.yMin - y0));
+                Check(f.Count == 30 && spread <= 0.5f && Mathf.Abs(hands.Root.worldBound.height - h0) <= 0.5f, "thirty tabs stay on one line of the same height", f.Count + " / " + spread + " / " + hands.Root.worldBound.height + " vs " + h0);
+                Check(feet.Root.worldBound.xMax <= GalleryEditor.Right.worldBound.xMax + 0.5f, "...within the column", feet.Root.worldBound.xMax + " vs " + GalleryEditor.Right.worldBound.xMax);
+                var sv = hands.Root.Q<ScrollView>();
+                float x0 = sv == null ? 0f : sv.scrollOffset.x;
+                if (sv != null) Skin.Wheel(GalleryEditor.Surface.Root, Ctr(f[1]), -1f);
+                Check(sv != null && sv.scrollOffset.x > x0, "...the wheel scrolls it", sv == null ? "no scroll" : sv.scrollOffset.x + "");
+                var over = Ctr(f[1]);   // a fixed point over the strip: the item itself scrolls away
+                for (int i = 0; i < 200 && sv != null; i++) { float b = sv.scrollOffset.x; Skin.Wheel(GalleryEditor.Surface.Root, over, -1f); if (sv.scrollOffset.x == b) break; }
+                yield return null;
+                var last = Faces(hands)[29];
+                Check(sv != null && last.worldBound.xMax <= sv.contentViewport.worldBound.xMax + 0.5f && last.worldBound.xMin >= sv.contentViewport.worldBound.xMin,
+                    "...and its last item can be scrolled into view", sv == null ? "" : last.worldBound + " in " + sv.contentViewport.worldBound + " offset " + sv.scrollOffset.x
+                    + " content " + sv.contentContainer.layout.width);
+                // A drag to the strip's edge scrolls it back toward the start.
+                f = Faces(hands);
+                float before = sv == null ? 0f : sv.scrollOffset.x;
+                var vp = sv == null ? new Rect() : sv.contentViewport.worldBound;
+                PointerAt(EventType.MouseDown, f[29].worldBound.center, root); yield return null;
+                PointerAt(EventType.MouseMove, f[29].worldBound.center - new Vector2(10f, 0f), root); yield return null;
+                PointerAt(EventType.MouseMove, new Vector2(vp.xMin + 2f, vp.center.y), root); yield return null;
+                PointerAt(EventType.MouseMove, new Vector2(vp.xMin + 3f, vp.center.y), root); yield return null;
+                Check(sv != null && sv.scrollOffset.x < before, "...and a drag held near its edge scrolls it", before + " -> " + (sv == null ? 0f : sv.scrollOffset.x));
+                float held0 = sv == null ? 0f : sv.scrollOffset.x;
+                yield return new WaitForSecondsRealtime(0.25f);
+                float held1 = sv == null ? 0f : sv.scrollOffset.x;
+                Check(sv != null && held1 < held0 - 10f, "...and keeps scrolling while the pointer is held still there", held0 + " -> " + held1);
+                if (Input.Gesture != null) Input.HandleEscape();
+                yield return null;
+                float ended0 = sv == null ? 0f : sv.scrollOffset.x;
+                yield return new WaitForSecondsRealtime(0.15f);
+                Check(sv != null && sv.scrollOffset.x == ended0, "...and stops when the drag ends", ended0 + " -> " + (sv == null ? 0f : sv.scrollOffset.x));
+                PointerAt(EventType.MouseUp, vp.center, root); yield return null;
+
+                // Without Scroll a strip wraps inside its parent.
+                box = Ui.Box();
+                box.style.width = 300f;
+                GalleryEditor.Page.Insert(0, box);
+                var many = GalleryTab.Make("w", "Wrapped", 30);
+                var wrap = Controls.Reorder<GalleryTab>(box, o => { o.Id = "wrap"; o.Items = () => many; o.Key = t => t.Key; o.Text = t => t.Name; });
+                yield return null; yield return null;
+                var wf = wrap.Root.Query<VisualElement>("wrap-item").ToList();
+                float maxX = 0f, maxY = 0f;
+                foreach (var x in wf) { maxX = Mathf.Max(maxX, x.worldBound.xMax); maxY = Mathf.Max(maxY, x.worldBound.yMin); }
+                Check(wf.Count == 30 && maxY > wf[0].worldBound.yMin + 1f && maxX <= box.worldBound.xMax + 0.5f, "a strip without Scroll wraps onto new lines within its parent",
+                    wf.Count + " / y " + wf[0].worldBound.yMin + ".." + maxY + " / x " + maxX + " vs " + box.worldBound + " / first " + (wf.Count > 0 ? wf[0].worldBound + "" : ""));
+
+                // A rebuild while a rename is open closes it with no Rename, and builds each item once.
+                var rl = GalleryTab.Make("r", "R", 3);
+                int renamed = 0;
+                var rr = Controls.Reorder<GalleryTab>(box, o => { o.Id = "rb"; o.Items = () => rl; o.Key = t => t.Key; o.Text = t => t.Name; o.Rename = (t, n) => { renamed++; t.Name = n; }; });
+                yield return null;
+                rr.BeginRename(rl[1]); yield return null; yield return null;
+                var rbf = rr.Root.Q<TextField>("rb-rename");
+                if (rbf != null) rbf.value = "Typed";
+                rl.RemoveAt(0); rr.Refresh(); yield return null; yield return null;
+                int rbn = rr.Root.Query<VisualElement>("rb-item").ToList().Count;
+                Check(rbf != null && renamed == 0 && rl[0].Name == "R 2" && rl[1].Name == "R 3" && rr.Root.Q<TextField>("rb-rename") == null && rbn == 2,
+                    "a rebuild during a rename closes the field with no Rename and builds each item once", renamed + " / " + Names(rl) + " / " + rbn);
+
+                // No Key: the item itself is the key, so two items with one text stay two.
+                var same = new List<GalleryTab> { new GalleryTab("x", "Same"), new GalleryTab("y", "Same") };
+                var er = Controls.Reorder<GalleryTab>(box, o => { o.Id = "eq"; o.Items = () => same; o.Text = t => t.Name; o.Build = (e, t) => e.Add(new Label(t.Key) { name = "eq-tag" }); });
+                yield return null;
+                same.Reverse(); er.Refresh(); yield return null;
+                var tags = new List<string>();
+                foreach (var l in er.Root.Query<Label>("eq-tag").ToList()) tags.Add(l.text);
+                Check(string.Join(",", tags.ToArray()) == "y,x", "with no Key two items with the same text stay distinct: a swap rebuilds them", string.Join(",", tags.ToArray()));
+                var ids = new List<string> { "id1", "id2" };
+                var shownAs = new Dictionary<string, string> { { "id1", "One" }, { "id2", "Two" } };
+                var sr = Controls.Reorder<string>(box, o => { o.Id = "ids"; o.Items = () => ids; o.Text = id => shownAs[id]; });
+                yield return null;
+                var sf0 = sr.Root.Q<VisualElement>("ids-item");
+                shownAs["id1"] = "Uno"; sr.Refresh(); yield return null;
+                var sf1 = sr.Root.Q<VisualElement>("ids-item");
+                Check(sf0 != null && sf0 == sf1 && sf1.Q<Label>("ids-text").text == "Uno", "...and a string item is its own key: a new text keeps its item", sf1 == null ? "none" : sf1.Q<Label>("ids-text").text);
+
+                // The Lists page's vertical list reorders the same way.
+                GalleryEditor.Nav.Go(GalleryEditor.ListsItem); yield return null; yield return null;
+                var rows = GalleryEditor.RowList;
+                var rf = rows == null ? new List<VisualElement>() : Faces(rows);
+                Check(rf.Count == 5 && Mathf.Abs(rf[0].worldBound.xMin - rf[1].worldBound.xMin) <= 0.5f && rf[1].worldBound.yMin >= rf[0].worldBound.yMax, "the Lists page stacks its rows", rf.Count.ToString());
+                if (rf.Count == 5)
+                {
+                    yield return DragAt(rf[0].worldBound.center, new Vector2(rf[2].worldBound.center.x, (rf[2].worldBound.center.y + rf[3].worldBound.center.y) / 2f), root);
+                    Check(m.Moves.Count == 3 && m.Moves[2] == "ed-rows 0>2" && Names(m.Rows) == "Row 2,Row 3,Row 1,Row 4,Row 5", "...and a drag reorders them: Move(0, 2)",
+                        string.Join(";", m.Moves.ToArray()) + " / " + Names(m.Rows));
+                }
+            }
+            finally { Popup.CloseAll(); box?.RemoveFromHierarchy(); GalleryEditor.Close(); GalleryEditor.Model = new EditorModel(); }
+        }
+
+        // Popup.Confirm, the status line and an Info row's tone.
+        IEnumerator SectionDialogStatus()
+        {
+            GalleryEditor.Model = new EditorModel();
+            var win = GalleryEditor.Open(); yield return null; yield return null;
+            Popup p = null;
+            try
+            {
+                GalleryEditor.Nav.Go(GalleryEditor.ListsItem); yield return null; yield return null;
+                var owner = GalleryEditor.ListsPage;
+                int yes = 0, no = 0;
+                Action<bool> done = r => { if (r) yes++; else no++; };
+                p = Popup.Confirm(owner, "Probe confirm", "Probe body", done); yield return null; yield return null;
+                var ok = p?.Content.Q<Button>("confirm-ok");
+                var cancel = p?.Content.Q<Button>("confirm-cancel");
+                var surface = Popup.OwnerOf(p?.Content);
+                Check(ok != null && cancel != null && ok.text == "OK" && cancel.text == "Cancel" && LiveLabel("Probe confirm") != null && LiveLabel("Probe body") != null,
+                    "Confirm shows its title, body, OK and Cancel");
+                Check(surface != null && surface.Layer == Layer.Modal && surface.Visible && Ui.Stack[Ui.Stack.Count - 1] == surface, "...on the Modal layer, above every window");
+                Check(ok != null && ok.panel.focusController.focusedElement == ok, "...with OK focused");
+                Check(p != null && Mathf.Abs(p.Content.worldBound.center.x - win.Root.worldBound.center.x) <= 1f && Mathf.Abs(p.Content.worldBound.center.y - win.Root.worldBound.center.y) <= 1f,
+                    "...centred over the owner's window", p == null ? "" : p.Content.worldBound.center + " vs " + win.Root.worldBound.center);
+                if (ok != null) { Submit(ok); yield return null; yield return null; }
+                Check(yes == 1 && no == 0 && p != null && !p.IsOpen && surface != null && !surface.Visible, "a submit on OK gives done(true) once and closes it", yes + "/" + no);
+
+                p = Popup.Confirm(owner, "Probe confirm", "Probe body", done); yield return null; yield return null;
+                Input.HandleEscape(); yield return null; yield return null;
+                Check(yes == 1 && no == 1 && !p.IsOpen && GalleryEditor.Surface.Visible, "Escape gives done(false) once, and the window under it stays open", yes + "/" + no);
+
+                p = Popup.Confirm(owner, "Probe confirm", "Probe body", done); yield return null; yield return null;
+                PressAt(new Vector2(3f, 3f), Popup.OwnerOf(p.Content).Root); yield return null; yield return null;   // the dialogs' own panel
+                Check(yes == 1 && no == 2 && !p.IsOpen, "an outside click gives done(false)", yes + "/" + no);
+
+                p = Popup.Confirm(owner, "Probe confirm", "Probe body", done); yield return null; yield return null;
+                cancel = p.Content.Q<Button>("confirm-cancel");
+                if (cancel != null) { Submit(cancel); yield return null; yield return null; }
+                Check(no == 3 && !p.IsOpen, "Cancel gives done(false)", no.ToString());
+
+                p = Popup.Confirm(owner, "Probe confirm", "Probe body", done, o => { o.Danger = true; o.Ok = "Remove"; o.Cancel = null; }); yield return null; yield return null;
+                ok = p.Content.Q<Button>("confirm-ok");
+                Check(ok != null && ok.text == "Remove" && Near(ok.resolvedStyle.color, Theme.For(ok)[Role.Danger]) && p.Content.Q<Button>("confirm-cancel") == null,
+                    "Danger paints OK in the Danger look; a null Cancel shows OK alone");
+                Input.HandleEscape(); yield return null; yield return null;
+                Check(no == 4, "...and Escape still gives done(false)", no.ToString());
+
+                p = Popup.Confirm(null, "Probe confirm", "Probe body", done); yield return null; yield return null;
+                var screen = p.Content.panel.visualTree.layout;
+                Check(Mathf.Abs(p.Content.worldBound.center.x - screen.center.x) <= 1f && Mathf.Abs(p.Content.worldBound.center.y - screen.center.y) <= 1f,
+                    "with no owner it is centred on the screen", p.Content.worldBound.center + " vs " + screen.center);
+                p.Close(); yield return null;
+                Check(no == 5 && yes == 1, "Close gives done(false)");
+                GalleryEditor.Surface.Visible = false; yield return null;
+                GalleryEditor.Surface.Visible = true; yield return null;
+                Check(no == 5 && yes == 1, "...and done never runs twice");
+
+                // The status line.
+                var st = GalleryEditor.Status;
+                var text = st.Root.Q<Label>();
+                st.Show("Saved", Role.Accent, 0.2f); yield return null;
+                Check(text.text == "Saved" && Near(text.resolvedStyle.color, Theme.For(text)[Role.Accent]), "Status.Show(key, role, seconds) shows the key in that role", text.text);
+                yield return new WaitForSecondsRealtime(0.45f);
+                Check(text.text == "", "...and is empty after it faded", text.text);
+                int count = 3;
+                st.Show(() => count + " boxes");
+                Check(text.text == "3 boxes", "Status.Show(func) shows what it returns", text.text);
+                count = 5;
+                GalleryEditor.Surface.Refresh();
+                Check(text.text == "5 boxes", "...and follows it on refresh", text.text);
+                st.Show("Saved", Role.Accent, 0.2f); yield return null;
+                yield return new WaitForSecondsRealtime(0.45f);
+                Check(text.text == "5 boxes" && text.resolvedStyle.opacity == 1f, "a timed message falls back to the resting line", text.text + " " + text.resolvedStyle.opacity);
+                st.Clear();
+                st.Show(() => "formatted", Role.TextMuted, 0.2f); yield return null;
+                yield return new WaitForSecondsRealtime(0.45f);
+                Check(text.text == "", "a shown func fades too", text.text);
+                st.Show("Saved"); st.Clear();
+                Check(text.text == "", "Clear empties it");
+                using (Motion.Hold(1f, false))
+                {
+                    st.Show("Saved", Role.Accent, 0.1f);
+                    yield return new WaitForSecondsRealtime(0.16f);   // past the delay, inside the fade
+                    st.Show("Failed", Role.Danger);
+                    yield return new WaitForSecondsRealtime(0.3f);    // past where the old fade would end
+                    Check(text.text == "Failed" && text.resolvedStyle.opacity == 1f, "a Show during a running fade stays visible", text.text + " " + text.resolvedStyle.opacity);
+                    st.Show("Saved", Role.Accent, 0.1f);
+                    yield return new WaitForSecondsRealtime(0.16f);
+                    st.Clear(); st.Show("Again");
+                    yield return new WaitForSecondsRealtime(0.3f);
+                    Check(text.text == "Again" && text.resolvedStyle.opacity == 1f, "...and after a Clear during it", text.text + " " + text.resolvedStyle.opacity);
+                    st.Clear();
+                }
+
+                // Tone on Info.
+                var tone = Role.Danger;
+                var info = Controls.Info(GalleryEditor.ListsPage, "Toned", () => "value", o => o.Tone = () => tone);
+                yield return null;
+                Check(Near(info.Input.resolvedStyle.color, Theme.For(info.Input)[Role.Danger]), "an Info row paints its value in Tone()'s role");
+                tone = Role.Accent;
+                GalleryEditor.Surface.Refresh(); yield return null;
+                Check(Near(info.Input.resolvedStyle.color, Theme.For(info.Input)[Role.Accent]), "...re-read on each refresh");
+                Check(typeof(Controls).GetMethod("Info", new[] { typeof(VisualElement), typeof(string), typeof(Func<string>), typeof(Action<ControlOptions>) }) != null,
+                    "Info still has its Action<ControlOptions> signature, so a mod built against it loads");
+            }
+            finally { Popup.CloseAll(); GalleryEditor.Close(); GalleryEditor.Model = new EditorModel(); }
+        }
     }
 }

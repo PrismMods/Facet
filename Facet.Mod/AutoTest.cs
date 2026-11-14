@@ -159,6 +159,8 @@ namespace Facet.Mod
                 yield return Run("SectionContextMenu", SectionContextMenu());
                 yield return Run("SectionMenuKeys", SectionMenuKeys());
                 yield return Run("SectionInspector", SectionInspector());
+                yield return Run("SectionStrip", SectionStrip());
+                yield return Run("SectionDialogStatus", SectionDialogStatus());
                 yield return Run("SectionClose", SectionClose());
                 // Later tasks: yield return Run("Section...", Section...());
             }
@@ -176,7 +178,7 @@ namespace Facet.Mod
             // Wheel steps land at once; the glide's section holds its own switch.
             float speed = name == "SectionWarmUp" || name == "SectionOpen" || name == "SectionPartsPerf" || name == "SectionSpeed" || name == "SectionClose" || name == "SectionSmoothScroll" ? 1f : 0f;
             // The canvas and context-menu sections time gestures by pixels and frames: the game's own pointer, wherever it rests, must not reach them.
-            var quiet = name == "SectionCanvasEdit" || name == "SectionCanvasView" || name == "SectionContextMenu" || name == "SectionInspector" ? QuietRealPointer() : null;
+            var quiet = name == "SectionCanvasEdit" || name == "SectionCanvasView" || name == "SectionContextMenu" || name == "SectionInspector" || name == "SectionStrip" || name == "SectionDialogStatus" ? QuietRealPointer() : null;
             try
             {
                 using (Motion.Hold(speed, false))
