@@ -195,7 +195,7 @@ namespace Facet
                 int idx = i;
                 var cell = Ui.Box(_bar);
                 cell.style.marginRight = sz.Gap;
-                var b = Ui.Btn(_names[i], () => Select(idx), cell);
+                var b = Ui.Btn(cell, _names[i], () => Select(idx));
                 b.style.marginRight = 0f;
                 Facet.Paint.Look(b, k.Tab);
                 var line = Pinned(cell, 0f, sz.Indicator);   // the cell's edge is the button's outer border edge

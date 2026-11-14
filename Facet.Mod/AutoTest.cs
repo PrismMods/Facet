@@ -168,6 +168,7 @@ namespace Facet.Mod
                 yield return Run("SectionConveniences", SectionConveniences());
                 yield return Run("SectionCardGrid", SectionCardGrid());
                 yield return Run("SectionRows", SectionRows());
+                yield return Run("SectionCleanup", SectionCleanup());
                 yield return Run("SectionClose", SectionClose());
                 // Later tasks: yield return Run("Section...", Section...());
             }
@@ -239,10 +240,9 @@ namespace Facet.Mod
             Check(!wb.Body.Query<Label>().ToList().Exists(l => l.text.Contains("failed to build")), "B's content builds");
             Check(ReferenceEquals(Host.For(wa.Body), a) && ReferenceEquals(Host.For(wb.Body), b), "Host.For finds each element's own host");
             var nb = new Nav(wb.Body, new[] { new NavItem("Fine2", p => { }) });
-            nb.OnInsetChanged = _ => throw new InvalidOperationException("inset");
             bool threw = false;
-            try { nb.ToggleRail(); } catch { threw = true; }
-            Check(!threw && lb.FindAll(m => m.StartsWith("[B] ") && m.Contains("OnInsetChanged")).Count == 1, "a throwing OnInsetChanged is guarded and logged once to its host", string.Join(" | ", lb));
+            try { nb.InsetChanged += _ => throw new InvalidOperationException("inset"); nb.ToggleRail(); } catch { threw = true; }
+            Check(!threw && lb.FindAll(m => m.StartsWith("[B] ") && m.Contains("InsetChanged")).Count == 1, "a throwing InsetChanged handler is guarded and logged once to its host", string.Join(" | ", lb));
             sa.Dispose(); sb.Dispose();
 
             var w = Gallery.Open(); yield return null; yield return null;
@@ -312,7 +312,7 @@ namespace Facet.Mod
             yield return null;
             Check(close.resolvedStyle.backgroundColor.a == 0f, "...and is bare again after the pointer leaves");
 
-            var b = Ui.Btn("Probe", null, w.Body);
+            var b = Ui.Btn(w.Body, "Probe", null);
             yield return null; yield return null;
             // Read in the same frame: the real pointer is elsewhere, so the panel sends a leave next frame.
             Pointer(EventType.MouseDown, Ctr(b));
@@ -326,7 +326,7 @@ namespace Facet.Mod
             b.RemoveFromHierarchy();
 
             // Look presets are copies: restyling the one a mod was handed changes no one else's.
-            var pb = Ui.Btn("Preset", null, w.Body);
+            var pb = Ui.Btn(w.Body, "Preset", null);
             yield return null;
             var mine = Look.Button; mine.Bg = Role.Accent;
             bool fresh = Look.Button.Bg == Role.RowAlt;
@@ -350,7 +350,7 @@ namespace Facet.Mod
             ht.RemoveFromHierarchy();
 
             // Paint.Forget: a literal colour set afterwards survives a re-theme and a hover.
-            var fl = Ui.Text("Forgotten", w.Body); var fb = Ui.Btn("Forgotten", null, w.Body);
+            var fl = Ui.Text(w.Body, "Forgotten"); var fb = Ui.Btn(w.Body, "Forgotten", null);
             yield return null;
             Paint.Forget(fl); Paint.Forget(fb);
             fl.style.color = Color.red; fb.style.backgroundColor = Color.red;
@@ -435,7 +435,7 @@ namespace Facet.Mod
                     new Tabs(p, i => { }).Rebuild(new[] { "A", "B" });
                     Controls.ToggleSubPage(p, "Sub toggle", Bind.Value(false), q => Controls.Info(q, "Inner", () => "x"));
                     var sec = Controls.Section(p, "Section"); Controls.Info(sec, "Info", () => "v");
-                    anchor = Ui.Btn("Anchor", null, p);
+                    anchor = Ui.Btn(p, "Anchor", null);
                 }),
                 NavItem.Heading("Group", new NavItem("Other", p => Controls.Action(p, "Other action", "Go", () => { }))),
             };
@@ -539,7 +539,7 @@ namespace Facet.Mod
             Label title = null;
             foreach (var l in Root.Query<Label>().ToList()) if (l.text == "Facet Gallery") title = l;
             Check(title != null && title.style.unityFontStyleAndWeight.value == FontStyle.Bold, "the window title is the bold label that face serves");
-            var late = Ui.Text("Size");   // no parent, no Host.Use scope: the Fallback host (English) translates it
+            var late = Ui.Text(null, "Size");   // no parent, no Host.Use scope: the Fallback host (English) translates it
             Check(late.text == "Size", "a parentless label starts untranslated");
             Root.Add(late);
             yield return null; yield return null;
@@ -595,12 +595,12 @@ namespace Facet.Mod
             History.Record("Toggle", "bind-test", () => Gallery.Model.Flag = false, () => Gallery.Model.Flag = true);
             History.Undo(); History.Redo();
             Check(on(), "a redo shows its value in the same frame (undo and redo refresh the visible surfaces)");
-            var consumers = History.AfterApply;
-            History.AfterApply = () => { };   // a consumer assigns rather than adds, as PrismLib's SettingsPanel does
+            Action consumer = () => { };
+            History.AfterApply += consumer;
             History.Undo();
-            Check(!on(), "with History.AfterApply assigned by a consumer, an undo still shows the old value in the same frame");
+            Check(!on(), "with a consumer's History.AfterApply handler added, an undo still shows the old value in the same frame");
             History.Redo();
-            History.AfterApply = consumers;
+            History.AfterApply -= consumer;
             History.Clear();
             Check(dotShown(), "the dot shows again with Flag on");
             yield return Click(Ctr(row), 2);
@@ -689,7 +689,7 @@ namespace Facet.Mod
             Nav nav = null;
             var page = new NavItem("Bound", p =>
             {
-                Ui.Btn("Rebuild", () => nav.Refresh(), p);
+                Ui.Btn(p, "Rebuild", () => nav.Refresh());
                 for (int i = 0; i < 100; i++) { int n = i; Controls.Toggle(p, "Bound " + n, Bind.To(() => value, v => value = v), o => o.Id = "bound" + n); }
             });
             nav = new Nav(w.Body, new[] { page });

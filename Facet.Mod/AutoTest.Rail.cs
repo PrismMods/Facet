@@ -77,7 +77,7 @@ namespace Facet.Mod
 
                 // The button.
                 bool? told = null;
-                nav.OnCompactChanged = v => told = v;
+                nav.CompactChanged += v => told = v;
                 nav.CompactButton = true;
                 yield return null;
                 var btn = rail.Q("rail-button");

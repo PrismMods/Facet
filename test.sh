@@ -21,5 +21,8 @@ if grep -rnE 'SetRadius\([^,]+, *([1-9][0-9.]*|0\.[0-9]+)f?\)|fontSize *= *[0-9]
     echo "a size literal in a part: read it from the theme's Sizes"; exit 1; fi
 if grep -rnE '\bLook\.(Button|FlatButton|AccentButton|DangerButton|Row|RailItem|Field|Ring|Card|Chrome)\b' Facet/ --include='*.cs' | grep -v 'Core/Looks.cs'; then
     echo "a part paints a Look preset: take it from the theme's Looks"; exit 1; fi
+# 0.2's API has one form of each member: parent first, events for notifications, Input for the input queries.
+if grep -nE 'public static (bool|void) (AnyWindowOpen|BlocksGameInput|PointerOverWindow|TextFocused|TickWheel|HandleEscape|ConsumeEscape)\b|public static int OpenWindows;|public static (Label (Text|Muted|Caps)|Button Btn)\(string|public static ListView List\(Func|public Action(<\w+>)? On(Raise|InsetChanged|CompactChanged)\b|public static Action AfterApply|out VisualElement right' Facet/Ui.cs Facet/Window.cs Facet/Nav.cs Facet/Nav.Compact.cs Facet/Core/History.cs Facet/Controls.Layout.cs; then
+    echo "a replaced form is back: keep one form of each member"; exit 1; fi
 if grep -nE '^\s*public [^=]*\b([A-Z]\w*Event|EventBase|IVisualElementScheduledItem|ITextEdition)\b' Facet/*.cs | grep -v 'Events.cs\|Glide.cs'; then
     echo "a public member names a UI Toolkit event type: Quartz's stubs cannot compile it"; exit 1; fi

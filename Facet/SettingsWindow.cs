@@ -62,7 +62,7 @@ namespace Facet
             _first = o.Initial ?? Centred(new Vector2(1920f, 1080f), _fraction);
             Window = new Window(Surface.Root, id, title, _first, false);
             var s = Surface;
-            Window.Raised = () => s.BringToFront();   // not OnRaise: that stays the consumer's
+            Window.Raised += () => s.BringToFront();
             if (o.Icon.HasValue)
             {
                 var sz = Theme.For(Window.Root).Sizes;
@@ -80,8 +80,7 @@ namespace Facet
             Nav = new Nav(Window.Body, pages, o.RailWidth);
             if (o.CompactRail) Nav.Compact = true;
             var w = Window;
-            Nav.OnInsetChanged = w.SetContentInset;
-            w.SetContentInset(Nav.Inset);   // the Nav reported its first inset before anyone listened
+            Nav.InsetChanged += w.SetContentInset;   // called at once with the current inset, then on each change
             var nav = Nav;
             if (o.Search) w.ShowSearch("Search", q => nav.Filter(q), true);
 

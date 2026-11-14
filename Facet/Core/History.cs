@@ -76,12 +76,14 @@ namespace Facet
         /// nothing: a drag would refresh every window once a frame.
         public static event Action Changed;
 
-        /// Called after an undo or redo has been applied, for panels to re-read what they show.
-        public static Action AfterApply;
+        /// Raised after an undo or redo has been applied (after Facet's own refresh), for panels to
+        /// re-read what they show. Add with +=, so one subscriber never drops another; each handler
+        /// runs under its own guard.
+        public static event Action AfterApply;
 
         /* Facet's own re-read of every visible surface (the Refresher sets it; Core cannot see
-           Surface). Internal and run before AfterApply, so a consumer assigning AfterApply with =,
-           as PrismLib's settings panel does, cannot switch it off (Ruling R14). */
+           Surface). Internal and run before AfterApply's handlers, so no
+           consumer can switch it off (Ruling R14). */
         internal static Action RefreshAll;
 
         /* Stale steps (their document was replaced) are skipped by all of these, so the header never
@@ -407,7 +409,9 @@ namespace Facet
             if (threw > 0) Safe.Say("Facet", "History " + what, threw + (threw == 1 ? " part threw: " : " parts threw: ") + first, Log);
 
             After(RefreshAll, what);
-            After(AfterApply, what);
+            var ap = AfterApply;
+            if (ap != null)
+                foreach (Action a in ap.GetInvocationList()) Safe.Run("Facet", "History.AfterApply", a, Log);
         }
 
         private static void After(Action a, string what)

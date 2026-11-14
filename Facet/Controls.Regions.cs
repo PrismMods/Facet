@@ -23,7 +23,7 @@ namespace Facet
         {
             Root = Ui.Row(parent);
             Root.name = "status";
-            _text = Ui.Muted("", Root);
+            _text = Ui.Muted(Root, "");
             _text.style.whiteSpace = WhiteSpace.Normal;
             _text.style.flexShrink = 1f;
             _pass = () => { if (_func != null) { string s = _func() ?? ""; if (!string.Equals(_text.text, s)) _text.text = s; } };

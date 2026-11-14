@@ -103,13 +103,13 @@ namespace Facet
                 if (o.TitleMenu != null)
                 {
                     Button b = null;
-                    b = Ui.Btn(o.Title, () => Open(b, o.TitleMenu, "TitleMenu"), Root);
+                    b = Ui.Btn(Root, o.Title, () => Open(b, o.TitleMenu, "TitleMenu"));
                     Paint.Look(b, Ui.Bare);
                     title = b;
                 }
                 else
                 {
-                    var l = Ui.Text(o.Title, Root, _sz.Small, Role.TextMuted);
+                    var l = Ui.Text(Root, o.Title, _sz.Small, Role.TextMuted);
                     l.style.unityTextAlign = TextAnchor.MiddleLeft;
                     l.style.minHeight = _sz.ListRowHeight;
                     title = l;
@@ -151,7 +151,7 @@ namespace Facet
             if (o.Add != null)
             {
                 Button plus = null;
-                plus = Ui.Btn("＋", () => Open(plus, o.Add, "Add"), Root);
+                plus = Ui.Btn(Root, "＋", () => Open(plus, o.Add, "Add"));
                 Paint.Look(plus, Ui.Bare);
                 plus.name = Root.name + "-add";
                 plus.style.flexShrink = 0f;

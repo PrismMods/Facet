@@ -87,15 +87,15 @@ namespace Facet
             head.style.minHeight = _sz.RowHeight;
             head.pickingMode = PickingMode.Position;
 
-            var chevron = Ui.Text("▸", head, _sz.Body + 3f, Role.TextMuted);
+            var chevron = Ui.Text(head, "▸", _sz.Body + 3f, Role.TextMuted);
             chevron.style.width = 18f;
 
-            var title = Ui.Text(label, head, _sz.Body);
+            var title = Ui.Text(head, label, _sz.Body);
             title.style.flexGrow = 1f;
             title.pickingMode = PickingMode.Ignore;
             Title = title;
 
-            _hexLabel = Ui.Muted("", head);
+            _hexLabel = Ui.Muted(head, "");
             _hexLabel.style.marginRight = _sz.Gap;
             _hexLabel.pickingMode = PickingMode.Ignore;
 
@@ -184,7 +184,7 @@ namespace Facet
             var hexRow = Ui.Row(_body);
             hexRow.style.minHeight = 26f;
             hexRow.style.marginTop = _sz.Gap;
-            var hl = Ui.Muted("Hex", hexRow);
+            var hl = Ui.Muted(hexRow, "Hex");
             hl.style.width = 32f;
             _hexField = new TextField { value = "" };
             _hexField.style.width = 110f;
@@ -290,7 +290,7 @@ namespace Facet
             var row = Ui.Row(_body);
             row.style.minHeight = 24f;
             row.style.marginTop = 3f;
-            var l = Ui.Muted(name, row);
+            var l = Ui.Muted(row, name);
             l.style.width = 16f;
             var s = new Slider(0f, 1f);
             s.style.flexGrow = 1f;
@@ -301,7 +301,7 @@ namespace Facet
             // The dragger holds mouse capture, so the release reaches the slider only as the capture ending.
             // EndDrag is a no-op unless a drag is on, so both firing commits once.
             Events.On<PointerCaptureOutEvent>(s, e => EndDrag(), TrickleDown.TrickleDown);
-            var readout = Ui.Muted("", row);
+            var readout = Ui.Muted(row, "");
             readout.style.minWidth = 34f;
             readout.style.unityTextAlign = TextAnchor.MiddleRight;
             Events.On<ChangeEvent<float>>(s, e =>

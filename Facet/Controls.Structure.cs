@@ -70,7 +70,7 @@ namespace Facet
             col.style.minWidth = 0f;
             col.pickingMode = PickingMode.Ignore;
             col.Add(l);
-            var help = Ui.Muted(o.Help, col);
+            var help = Ui.Muted(col, o.Help);
             help.name = "help";
             help.style.whiteSpace = WhiteSpace.Normal;
             help.pickingMode = PickingMode.Ignore;
@@ -122,7 +122,7 @@ namespace Facet
             Carded(row, sz);
             Words.Tip(row, tooltip);
 
-            var l = Ui.Text(label, row, sz.Body);
+            var l = Ui.Text(row, label, sz.Body);
             l.style.flexGrow = 1f;
             l.style.flexShrink = 1f;
             // A long label gives way (ellipsis, one line) before the control does: without minWidth 0
@@ -161,7 +161,7 @@ namespace Facet
            the right; anywhere else an empty slot would only widen the right gutter past the left. */
         internal static void AddArrowSlot(VisualElement row)
         {
-            var arrow = Ui.Text("", row, ArrowSize, Role.TextMuted);
+            var arrow = Ui.Text(row, "", ArrowSize, Role.TextMuted);
             arrow.name = "arrow";
             arrow.style.width = ArrowSlot;
             arrow.style.unityTextAlign = TextAnchor.MiddleRight;
@@ -220,9 +220,9 @@ namespace Facet
             head.style.marginTop = sz.Pad;
             head.pickingMode = PickingMode.Position;
             Carded(head, sz);
-            var arrow = Ui.Text("", head, sz.Body + 3f, Role.TextMuted);   // it was a speck at body size
+            var arrow = Ui.Text(head, "", sz.Body + 3f, Role.TextMuted);   // it was a speck at body size
             arrow.style.width = 18f;
-            var l = Ui.Text(title, head, sz.Body);
+            var l = Ui.Text(head, title, sz.Body);
             l.style.unityFontStyleAndWeight = FontStyle.Bold;
             Paint.Fg(l, Role.TextMuted);
             l.pickingMode = PickingMode.Ignore;
@@ -290,11 +290,11 @@ namespace Facet
 
             var text = Ui.Box(row);
             text.style.flexGrow = 1f;
-            var t = Ui.Text(title, text);
+            var t = Ui.Text(text, title);
             t.pickingMode = PickingMode.Ignore;
             if (!string.IsNullOrEmpty(note))
             {
-                var n = Ui.Muted(note, text);
+                var n = Ui.Muted(text, note);
                 n.pickingMode = PickingMode.Ignore;
             }
 
@@ -308,7 +308,7 @@ namespace Facet
         public static void MarkActive(VisualElement actions, string label = null)
         {
             var sz = Theme.For(actions).Sizes;
-            var tag = Ui.Text(label ?? "Active", actions, sz.Small, Role.Accent, label == null);
+            var tag = Ui.Text(actions, label ?? "Active", sz.Small, Role.Accent, label == null);
             tag.style.marginRight = sz.Gap;
             tag.SendToBack();
         }
@@ -384,7 +384,7 @@ namespace Facet
         public static Label Header(VisualElement parent, string text)
         {
             var sz = Theme.For(parent).Sizes;
-            var l = Ui.Text(text, parent, sz.Body);
+            var l = Ui.Text(parent, text, sz.Body);
             l.style.unityFontStyleAndWeight = FontStyle.Bold;
             Paint.Fg(l, Role.TextMuted);
             l.style.marginTop = sz.Pad;

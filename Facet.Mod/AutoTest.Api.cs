@@ -449,10 +449,10 @@ namespace Facet.Mod
                 Check(under && Ui.Stack.IndexOf(sw.Surface) > Ui.Stack.IndexOf(other), "a press on the settings window raises it over a later window");
                 other.BringToFront();
                 bool mine = false;
-                sw.Window.OnRaise = () => mine = true;   // a consumer's own raise behaviour
+                sw.Window.Raised += () => mine = true;   // a consumer's own raise behaviour
                 PointerAt(EventType.MouseDown, at, sw.Surface.Root);
                 PointerAt(EventType.MouseUp, at, sw.Surface.Root);
-                Check(mine && Ui.Stack.IndexOf(sw.Surface) > Ui.Stack.IndexOf(other), "with a consumer's OnRaise assigned, a press runs it and still raises the settings window");
+                Check(mine && Ui.Stack.IndexOf(sw.Surface) > Ui.Stack.IndexOf(other), "with a consumer's Raised handler added, a press runs it and still raises the settings window");
 
                 bool before = LabelsWith(sw.Window.Body, "Gizmo") > 0;
                 sw.Window.Search.value = "Widget";
@@ -572,8 +572,8 @@ namespace Facet.Mod
                 });
                 b = new Surface(relHost, "FacetRelabelA", Layer.Window);
                 c = new Surface(relHost, "FacetRelabelB", Layer.Window);
-                var lb = Ui.Text("Alpha", b.Root);
-                var lc = Ui.Text("Alpha", c.Root);
+                var lb = Ui.Text(b.Root, "Alpha");
+                var lc = Ui.Text(c.Root, "Alpha");
                 sw = SettingsWindow.Open(relHost, "cvrelabel", "Relabel", new List<NavItem> { new NavItem("Alpha", p => Controls.Toggle(p, "Gizmo", Bind.Value(false))) });
                 yield return null; yield return null;
                 bool before = lb.text == "Alpha" && lc.text == "Alpha" && HasText(sw.Surface.Root, "Alpha");
@@ -599,7 +599,7 @@ namespace Facet.Mod
                 // A BCP-47 language tag.
                 var koHost = Host.Create("FacetLanguageProbe", o => { o.Language = () => "ko-KR"; o.Log = m => Main.Log("[lang] " + m); });
                 a = new Surface(koHost, "FacetLanguageProbe", Layer.Window);
-                var kl = Ui.Muted("Search", a.Root, own: true);
+                var kl = Ui.Muted(a.Root, "Search", own: true);
                 yield return null;
                 Check(koHost.Language == "ko" && kl.text == "\uAC80\uC0C9", "a host whose language is ko-KR reads as ko and shows Facet's Korean", koHost.Language + " / " + kl.text);
                 var face = Fonts.Regular(koHost);
@@ -676,6 +676,86 @@ namespace Facet.Mod
                 if (b != null) b.Dispose();
                 if (c != null) c.Dispose();
                 History.Clear();
+            }
+        }
+            // The 0.2 conventions: notifications are events (an InsetChanged handler is told the inset as it is added), the
+        // text helpers take the parent first, and Columns hands back both columns.
+        IEnumerator SectionCleanup()
+        {
+            Surface s = null;
+            Action throwing = () => throw new InvalidOperationException("cleanup apply"); var keepLog = History.Log;
+            try
+            {
+                bool flag = true;
+                var page = new List<VisualElement>();
+                var h = Host.Create("FacetCleanupProbe");
+                s = new Surface(h, "FacetCleanupProbe", Layer.Window);
+                var w = new Window(s.Root, "cleanupprobe", "Cleanup", new Rect(80, 80, 700, 420));
+                var nav = new Nav(w.Body, new[] { new NavItem("Probe", p =>
+                {
+                    page.Add(p);
+                    Controls.Toggle(p, "Flag", Bind.To(() => flag, v => flag = v), o => o.Id = "cleanup-flag");
+                }) });
+                var heard = new List<float>();
+                nav.InsetChanged += heard.Add;
+                Check(heard.Count == 1 && heard[0] == nav.Inset, "an InsetChanged handler added before any layout is called at once with Nav.Inset",
+                    heard.Count + " / " + nav.Inset);
+                yield return null; yield return null;
+                Check(heard.Count == 1, "...and not again when the first layout produces the same inset", heard.Count.ToString());
+                var late = new List<float>();
+                nav.InsetChanged += late.Add;
+                Check(late.Count == 1 && late[0] == nav.Inset, "one added after layout is also called once at once", late.Count.ToString());
+                nav.ToggleRail();
+                Check(heard.Count == 2 && late.Count == 2 && heard[1] == nav.Inset, "a changed inset reaches every handler once", heard.Count + " / " + late.Count);
+                nav.InsetChanged -= late.Add;
+                nav.ToggleRail();
+                Check(heard.Count == 3 && late.Count == 2, "a removed handler hears no more", heard.Count + " / " + late.Count);
+
+                int raised = 0;
+                w.Raised += () => raised++;
+                var at = w.Footer.worldBound.center;
+                PointerAt(EventType.MouseDown, at, s.Root);
+                PointerAt(EventType.MouseUp, at, s.Root);
+                Check(raised == 1, "a Window.Raised handler runs on a press", raised.ToString());
+
+                bool? told = null;
+                nav.CompactChanged += v => told = v;
+                nav.CompactButton = true;
+                yield return null;
+                var btn = w.Body.Q("rail-button");
+                if (btn != null) ClickEl(btn);
+                Check(nav.Compact && told == true, "CompactChanged reports the rail button's flip", nav.Compact + " / " + told);
+
+                // A throwing AfterApply subscriber: logged once, and the undo still shows in the same frame.
+                var input = s.Root.Q("cleanup-flag-input");
+                Func<bool> on = () => input != null && Near(input.style.backgroundColor.value, s.Theme[Role.Accent]);
+                Check(on(), "the probe toggle starts on");
+                var said = new List<string>();
+                History.Log = said.Add;
+                History.AfterApply += throwing;
+                History.Record("Flag", "cleanup-flag", () => flag = false, () => flag = true);
+                History.Undo();
+                Check(!on() && said.FindAll(m => m.Contains("cleanup apply")).Count == 1,
+                    "a throwing History.AfterApply subscriber is logged once, and an undo still shows the old value in the same frame", string.Join(" | ", said));
+
+                // Parent first, and the Columns handle.
+                var host = page.Count > 0 ? page[page.Count - 1] : w.Body;
+                var text = Ui.Text(host, "Probe text");
+                var btn2 = Ui.Btn(host, "Probe button", null);
+                var muted = Ui.Muted(host, "Probe muted");
+                var caps = Ui.Caps(host, "Probe caps");
+                Check(text.parent == host && btn2.parent == host && muted.parent == host && caps.parent == host && btn2.text == "Probe button",
+                    "Ui.Text, Btn, Muted and Caps take the parent first");
+                var cols = Controls.Columns(host, o => o.StackBelow = 0f);
+                var stage = Controls.Preview(cols.Right, "Probe preview");
+                Check(cols.Left.parent == cols.Root && cols.Right.parent == cols.Root && cols.Root.parent == host && stage != null && cols.Right.Contains(stage),
+                    "Controls.Columns(...).Right holds the preview, beside Left in Root");
+            }
+            finally
+            {
+                History.AfterApply -= throwing; History.Log = keepLog;
+                History.Clear();
+                if (s != null) s.Dispose();
             }
         }
     }

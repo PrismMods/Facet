@@ -77,12 +77,9 @@ namespace Facet
 
         private Label _footerHint, _footerRight;
 
-        /// Set by the panel that owns this window, to raise its surface. Window has no Surface of
-        /// its own — it is just the element tree inside one.
-        public Action OnRaise;
-
-        // Facet's own raise (SettingsWindow's), run before OnRaise so a consumer assigning OnRaise keeps it.
-        internal Action Raised;
+        /// Raised on any press in the window (title bar, grip and buttons included), for the panel that owns it to
+        /// raise its surface: Window has no Surface of its own — it is just the element tree inside one.
+        public event Action Raised;
 
         /// Raised by the close button. With no subscriber the window's surface hides; with any,
         /// only they decide (animate, veto, dispose).
@@ -172,7 +169,7 @@ namespace Facet
             _headerGap.style.width = RailAlign;
             _headerGap.style.flexShrink = 0f;
 
-            var label = Ui.Text(title, _headerGap, sz.Body);
+            var label = Ui.Text(_headerGap, title, sz.Body);
             label.style.unityFontStyleAndWeight = FontStyle.Bold;
             label.style.marginLeft = 2f;
             // Keeps the name off the search box when the rail is collapsed and the block is narrow.
@@ -197,7 +194,7 @@ namespace Facet
 
             /* × rather than a "Close" button, matching the mods' own panels. Sized as a square so
                it reads as a window control instead of as another toolbar button. */
-            var close = Ui.Btn("\u2715", RequestClose, TitleBarRight);
+            var close = Ui.Btn(TitleBarRight, "\u2715", RequestClose);
             Paint.Look(close, CloseLook);
             close.style.width = 30f;
             close.style.height = 26f;
@@ -231,17 +228,17 @@ namespace Facet
             Footer.style.paddingBottom = 4f;
             /* Version on the left, hint on the right beside the grip — the grip is a corner
                affordance and the hint explains the window, so they belong together. */
-            _footerRight = Ui.Muted("", Footer);
+            _footerRight = Ui.Muted(Footer, "");
             _footerRight.style.flexGrow = 1f;
-            _footerHint = Ui.Muted("", Footer);
+            _footerHint = Ui.Muted(Footer, "");
             _footerHint.style.marginRight = 14f;   // clear of the resize grip
 
             /* Click anywhere in the window to raise it above the other one. Trickle-down, because the title bar's drag,
                the resize grip and a Button's clickable stop the press before it would bubble here. */
             Events.On<PointerDownEvent>(Root, _ =>
             {
-                if (Raised != null) Safe.Run(_host, "Window.Raise", Raised);
-                if (OnRaise != null) Safe.Run(_host, "Window.OnRaise", OnRaise);
+                var raised = Raised;
+                if (raised != null) Safe.Run(_host, "Window.Raised", raised);
             }, TrickleDown.TrickleDown);
 
             MakeDraggable(bar);

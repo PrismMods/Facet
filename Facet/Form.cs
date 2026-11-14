@@ -84,7 +84,7 @@ namespace Facet
             catch (Exception e)
             {
                 Host.For(into).Log("Form '" + f.Label + "': " + e.Message);
-                try { Ui.Muted((f.Label ?? "?") + " — unavailable", into); } catch { }
+                try { Ui.Muted(into, (f.Label ?? "?") + " — unavailable"); } catch { }
             }
         }
 

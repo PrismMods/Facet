@@ -206,7 +206,7 @@ namespace Facet
         {
             if (_selected == null)
             {
-                Ui.Muted("Click the strip to add a stop.", _editor, true);
+                Ui.Muted(_editor, "Click the strip to add a stop.", true);
                 return;
             }
 
@@ -228,7 +228,7 @@ namespace Facet
             }), o => o.Format = "0.00");
 
             var row = Ui.Row(_editor);
-            Ui.Btn("Add stop", () =>
+            Ui.Btn(row, "Add stop", () =>
             {
                 float t = Mathf.Clamp01(sel.Position + 0.1f);
                 var stop = new GradientStop { Position = t, Colour = Evaluate(t) };
@@ -236,17 +236,17 @@ namespace Facet
                 Sort();
                 _selected = stop;
                 Changed();
-            }, row);
+            });
 
             // The last stop stays: a gradient with none evaluates to white and the strip vanishes,
             // which reads as a bug rather than as an empty state.
             if (_stops.Count > 1)
-                Ui.Btn("Remove stop", () =>
+                Ui.Btn(row, "Remove stop", () =>
                 {
                     _stops.Remove(sel);
                     _selected = _stops.Count > 0 ? _stops[0] : null;
                     Changed();
-                }, row);
+                });
         }
 
         private void Changed()

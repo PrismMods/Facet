@@ -102,14 +102,14 @@ namespace Facet
             _crumbs.Clear();
             _crumbs.style.paddingTop = sz.Gap;
             _crumbs.style.paddingBottom = sz.Gap;
-            var title = Ui.Text(Words.OwnF("Results for \u201c{0}\u201d", Host.For(_crumbs), _filter), _crumbs, sz.Title, own: true);
+            var title = Ui.Text(_crumbs, Words.OwnF("Results for \u201c{0}\u201d", Host.For(_crumbs), _filter), sz.Title, own: true);
             var shownFilter = _filter;
             Words.OnRelabel(title, () => title.text = Words.OwnF("Results for \u201c{0}\u201d", Host.For(title), shownFilter));   // follows a language switch
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
 
             _content.Clear();
             var hits = EnsureIndex().Find(_filter);
-            if (hits.Count == 0) { Ui.Muted("Nothing matches.", _content, true); return; }
+            if (hits.Count == 0) { Ui.Muted(_content, "Nothing matches.", true); return; }
 
             foreach (var hit in hits)
             {
@@ -120,7 +120,7 @@ namespace Facet
                 row.pickingMode = PickingMode.Position;
                 Ui.SetRadius(row, sz.Radius);
 
-                var label = Ui.Text(h.Label, row, sz.Body);
+                var label = Ui.Text(row, h.Label, sz.Body);
                 label.style.flexGrow = 1f;
                 label.pickingMode = PickingMode.Ignore;
 
@@ -131,7 +131,7 @@ namespace Facet
                 string at = host.Translate(h.Page);
                 if (h.Open == null && !string.IsNullOrEmpty(h.Tab)) at += " · " + host.Translate(h.Tab);
                 if (h.Open == null && !string.IsNullOrEmpty(h.Section)) at += " · " + host.Translate(h.Section);
-                var where = Ui.Text(at, row, sz.Small, Role.TextMuted, true);
+                var where = Ui.Text(row, at, sz.Small, Role.TextMuted, true);
                 where.pickingMode = PickingMode.Ignore;
 
                 Paint.Look(row, rowLook);
@@ -339,22 +339,36 @@ namespace Facet
         /// Hairline while the rail is open, knob-with-arrow once it is collapsed.
         /// Where the content pane starts. The header lines its search box up with this, so the two
         /// stay aligned as the rail is resized or collapsed.
-        public Action<float> OnInsetChanged;
-        private float _lastInset = float.NaN;
+        /// Each handler is called once as it is added, with the current Inset (known from construction, so one added
+        /// before the first layout needs no call of its own), then whenever the inset changes.
+        public event Action<float> InsetChanged
+        {
+            add
+            {
+                if (value == null) return;
+                // The first handler starts the count from now; later ones leave a change still to report to the others.
+                if (_insetChanged == null) _lastEventInset = Inset;
+                _insetChanged += value;
+                float inset = Inset;
+                Safe.Run(Host.For(_host), "Nav.InsetChanged", () => value(inset));
+            }
+            remove { _insetChanged -= value; }
+        }
+        private Action<float> _insetChanged;
+        private float _lastEventInset = float.NaN;
 
         private void ReportInset()
         {
             // No captured locals here: the check runs on every drag move and must not allocate.
-            if (OnInsetChanged == null || Inset == _lastInset) return;
-            NotifyInset();
+            if (_insetChanged != null && Inset != _lastEventInset) NotifyInsetChanged();
         }
 
-        private void NotifyInset()
+        private void NotifyInsetChanged()
         {
-            var f = OnInsetChanged;
+            var f = _insetChanged;
             float inset = Inset;
-            _lastInset = inset;
-            Safe.Run(Host.For(_host), "Nav.OnInsetChanged", () => f(inset));
+            _lastEventInset = inset;
+            Safe.Run(Host.For(_host), "Nav.InsetChanged", () => f(inset));
         }
 
         private void PaintHandle()
@@ -422,7 +436,7 @@ namespace Facet
             Ui.SetRadius(knob, sz.Radius);
             knob.style.display = DisplayStyle.None;
             knob.pickingMode = PickingMode.Ignore;
-            var knobArrow = Ui.Text("\u203A", knob, sz.Body, Role.TextMuted);
+            var knobArrow = Ui.Text(knob, "\u203A", sz.Body, Role.TextMuted);
             knobArrow.pickingMode = PickingMode.Ignore;
 
             _railLine = line;
@@ -663,7 +677,7 @@ namespace Facet
                 /* A heading has to be obviously NOT clickable, or it reads as a page that does
                    nothing. Upper case, smaller than the items under it, and muted — the opposite
                    of the treatment a selected item gets. */
-                var heading = Ui.Caps(item.Title, _rail);   // translated, then upper-cased
+                var heading = Ui.Caps(_rail, item.Title);   // translated, then upper-cased
                 heading.style.unityFontStyleAndWeight = FontStyle.Bold;
                 heading.style.marginTop = depth == 0 ? sz.Pad + 4f : sz.Gap;
                 heading.style.marginBottom = 4f;
@@ -700,7 +714,7 @@ namespace Facet
 
             if (item.IsBranch)
             {
-                var chev = Ui.Text(open ? "▾" : "▸", row, sz.Small, Role.TextMuted);
+                var chev = Ui.Text(row, open ? "▾" : "▸", sz.Small, Role.TextMuted);
                 chev.style.width = 14f;
                 chev.pickingMode = PickingMode.Ignore;
             }
@@ -725,7 +739,7 @@ namespace Facet
 
             // The row's look drives the text (muted, full on hover or selected); without hover
             // feedback nothing in the rail looks clickable until you click it.
-            var label = Ui.Text(item.Title, row, sz.Body);
+            var label = Ui.Text(row, item.Title, sz.Body);
             Paint.Inherit(label);
             label.style.flexGrow = 1f;
             label.pickingMode = PickingMode.Ignore;
@@ -798,11 +812,11 @@ namespace Facet
                 var back = Ui.Row(_content);
                 back.style.minHeight = sz.NavRowHeight;
                 back.pickingMode = PickingMode.Position;
-                var arrow = Ui.Text("\u2039  " + home, back, sz.Body, Role.Accent);
+                var arrow = Ui.Text(back, "\u2039  " + home, sz.Body, Role.Accent);
                 arrow.pickingMode = PickingMode.Ignore;
                 Events.On<ClickEvent>(back, _ => Pop());
 
-                var heading = Ui.Text(what, _content, sz.Title);
+                var heading = Ui.Text(_content, what, sz.Title);
                 heading.style.unityFontStyleAndWeight = FontStyle.Bold;
                 heading.style.marginBottom = sz.Gap;
             }
@@ -828,7 +842,7 @@ namespace Facet
         // Names whose page it was (the page's Owner, else the host), so the reader knows which mod to blame.
         internal static void FailedCard(VisualElement parent, string owner)
         {
-            var card = Ui.Muted("", parent);
+            var card = Ui.Muted(parent, "");
             Action say = () => card.text = Words.OwnF("{0}: this page failed to build — see the log.", Host.For(card), owner);
             say();
             Words.OnRelabel(card, say);

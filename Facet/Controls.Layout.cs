@@ -25,6 +25,16 @@ namespace Facet
         public float StackBelow { get; set; } = 560f;
     }
 
+    /// What Controls.Columns builds: the row (Root) and its two columns.
+    public sealed class Columns
+    {
+        public VisualElement Root { get; }
+        public VisualElement Left { get; }
+        public VisualElement Right { get; }
+
+        internal Columns(VisualElement root, VisualElement left, VisualElement right) { Root = root; Left = left; Right = right; }
+    }
+
     /// Id names the stage, and the pane around it Id-pane. VisibleWhen, EnabledWhen, Tooltip/TooltipText
     /// and ContextMenu(Items) act on the pane; hiding it through VisibleWhen runs Hide and stops the tick.
     /// Help is not shown.
@@ -59,11 +69,11 @@ namespace Facet
 
     public static partial class Controls
     {
-        /* Settings on the left, a preview on the right. Returns the left column; `right` is the other.
+        /* Settings on the left, a preview on the right, in one row.
            Sticky: the right column's translate.y keeps it at the enclosing ScrollView's viewport top,
            clamped to the columns. It is recomputed when the view scrolls or the geometry changes, so
            it reads layout only: no theme lookups (sizes are taken at build). */
-        public static VisualElement Columns(VisualElement parent, out VisualElement right, Action<ColumnsOptions> configure = null)
+        public static Columns Columns(VisualElement parent, Action<ColumnsOptions> configure = null)
         {
             var o = new ColumnsOptions();
             if (configure != null) Safe.Run(Host.For(parent), "configure Columns", () => configure(o));
@@ -147,8 +157,7 @@ namespace Facet
             Events.On(root, geo); Events.On(r, geo);
             Events.On(root, attach); Events.On(root, detach);
             if (root.panel != null) attach(null);
-            right = r;
-            return l;
+            return new Columns(root, l, r);
         }
 
         /* A pane the consumer draws in: a caps label, a stage that keeps its aspect, a note and a link.
@@ -164,7 +173,7 @@ namespace Facet
             var t = Theme.For(parent); var sz = t.Sizes;
             var root = Ui.Box(parent);
             root.style.marginBottom = sz.Gap;
-            Ui.Caps(label, root).style.marginBottom = sz.Gap / 2f;
+            Ui.Caps(root, label).style.marginBottom = sz.Gap / 2f;
             var stage = Ui.Box(root);
             Paint.Look(stage, t.Looks.Stage);
             Ui.SetBorderWidth(stage, sz.Line);
@@ -186,10 +195,10 @@ namespace Facet
                 line.Root.style.marginTop = sz.Gap / 2f;
                 line.Show(o.NoteText);
             }
-            else if (o.Note != null) { var n = Ui.Muted(o.Note, root); n.style.marginTop = sz.Gap / 2f; }
+            else if (o.Note != null) { var n = Ui.Muted(root, o.Note); n.style.marginTop = sz.Gap / 2f; }
             if (o.Link != null)
             {
-                var link = Ui.Btn(o.Link, () => { if (o.OnLink != null) o.OnLink(); }, root);
+                var link = Ui.Btn(root, o.Link, () => { if (o.OnLink != null) o.OnLink(); });
                 link.name = o.Id == null ? null : o.Id + "-link";
                 link.style.alignSelf = Align.FlexStart;
                 link.style.paddingLeft = 0f;

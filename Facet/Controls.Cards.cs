@@ -54,13 +54,13 @@ namespace Facet
                 head.style.minHeight = sz.RowHeight;
                 head.style.paddingLeft = sz.Pad;
                 head.style.paddingRight = sz.Pad;
-                var caps = Ui.Caps(title, head);
+                var caps = Ui.Caps(head, title);
                 caps.style.flexGrow = 1f;
                 caps.style.flexShrink = 1f;
                 caps.style.minWidth = 0f;
                 if (o.NoteText != null || !string.IsNullOrEmpty(o.Note))
                 {
-                    var note = Ui.Text(o.NoteText != null ? "" : o.Note, head, sz.Small, Role.TextMuted);
+                    var note = Ui.Text(head, o.NoteText != null ? "" : o.Note, sz.Small, Role.TextMuted);
                     // A Gap before the actions; with none after it, the note ends on the row-control edge.
                     if (o.Actions != null && o.Actions.Count > 0) note.style.marginRight = sz.Gap;
                     // A Control of its own: the refresher re-reads it, and a throwing NoteText dims only the note.
@@ -73,11 +73,11 @@ namespace Facet
                 {
                     if (i > 0)
                     {
-                        var dot = Ui.Text("·", head, sz.Small, Role.TextMuted, true);
+                        var dot = Ui.Text(head, "·", sz.Small, Role.TextMuted, true);
                         dot.style.marginLeft = sz.Gap / 2f;
                         dot.style.marginRight = sz.Gap / 2f;
                     }
-                    var link = Ui.Btn(acts[i].Key, acts[i].Value, head);
+                    var link = Ui.Btn(head, acts[i].Key, acts[i].Value);
                     link.style.paddingLeft = 0f;
                     link.style.paddingRight = 0f;
                     link.style.marginRight = 0f;
@@ -116,14 +116,14 @@ namespace Facet
             col.style.flexGrow = 1f;
             col.style.flexShrink = 1f;
             col.style.minWidth = 0f;
-            var head = Ui.Text(title, col, sz.Title);
+            var head = Ui.Text(col, title, sz.Title);
             head.style.unityFontStyleAndWeight = FontStyle.Bold;
             if (o.DescriptionText != null)
             {
-                var d = Ui.Text("", col, sz.Small, Role.TextMuted);
+                var d = Ui.Text(col, "", sz.Small, Role.TextMuted);
                 new Control<string>(d, null, title + " description", Bind.To(o.DescriptionText, null), s => d.text = s ?? "", new ControlOptions());
             }
-            else if (!string.IsNullOrEmpty(o.Description)) Ui.Muted(o.Description, col);
+            else if (!string.IsNullOrEmpty(o.Description)) Ui.Muted(col, o.Description);
 
             Action<bool> show = v => { };
             VisualElement track = null;
@@ -147,7 +147,7 @@ namespace Facet
             head.pickingMode = PickingMode.Position;
             Carded(head, sz);
             Paint.Look(head, t.Looks.Row);
-            var text = Ui.Text("", head, sz.Body, Role.TextMuted);
+            var text = Ui.Text(head, "", sz.Body, Role.TextMuted);
             text.pickingMode = PickingMode.Ignore;
 
             var body = Ui.Box(card);

@@ -73,7 +73,8 @@ namespace Facet
             const string upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", lower = "abcdefghijklmnopqrstuvwxyz";
             const string rest = "0123456789 !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
             Controls.PageHeader(page, upper, Bind.Value(true), o => o.Description = lower);
-            var left = Controls.Columns(page, out var right);
+            var cols = Controls.Columns(page);
+            VisualElement left = cols.Left, right = cols.Right;
             var card = Controls.Card(left, upper, o =>
             {
                 o.NoteText = () => lower;

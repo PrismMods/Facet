@@ -294,14 +294,14 @@ namespace Facet
                loses its text measure (UI Toolkit drops it on Insert), so it shrank to its padding and a
                long item overflowed instead of widening it. */
             var cell = Ui.Box(right);
-            b = Ui.Btn("", () => Popup.Menu(b, items, c.Mixed ? -1 : index(c.Value), i => c.Set(value(i)), itemFont, itemFace), cell);
+            b = Ui.Btn(cell, "", () => Popup.Menu(b, items, c.Mixed ? -1 : index(c.Value), i => c.Set(value(i)), itemFont, itemFace));
             var t = Theme.For(b); var sz = t.Sizes;
             Paint.Look(b, t.Looks.Field);
             b.style.marginRight = 0f;   // the box fills its cell, so the arrow is pinned inside the box's border
             b.style.minWidth = sz.DropdownWidth;
             b.style.unityTextAlign = TextAnchor.MiddleLeft;
             b.style.paddingRight = sz.ControlPad + sz.Small + sz.Gap;   // room for the arrow
-            var arrow = Ui.Text("\u25be", cell, sz.Small, Role.TextMuted, true);
+            var arrow = Ui.Text(cell, "\u25be", sz.Small, Role.TextMuted, true);
             arrow.name = o.Id != null ? o.Id + "-arrow" : "arrow";
             arrow.pickingMode = PickingMode.Ignore;
             arrow.style.position = Position.Absolute;
@@ -449,7 +449,7 @@ namespace Facet
                 if (!ok) end(false);
                 return active || ok;
             };
-            b = Ui.Btn("", () => start(), right);
+            b = Ui.Btn(right, "", () => start());
             Data.Get<KeyStart>(b).Begin = start;
             Events.On<DetachFromPanelEvent>(b, _ => cancel());
             b.style.marginRight = 0f;
@@ -487,11 +487,11 @@ namespace Facet
                 Action<VisualElement> build = box =>
                 {
                     var sz = Theme.For(box).Sizes;
-                    var l = Ui.Text("", box, sz.Body);
+                    var l = Ui.Text(box, "", sz.Body);
                     Words.Label(l, chord ? "Press a key or chord" : "Press a key", true);
                     l.style.marginBottom = sz.Gap;
                     l.style.marginLeft = sz.ControlPad; l.style.marginRight = sz.ControlPad;
-                    var x = Ui.Btn("Cancel", () => { if (mine == gen()) cancel(); }, box, true);
+                    var x = Ui.Btn(box, "Cancel", () => { if (mine == gen()) cancel(); }, true);
                     x.name = "key-prompt-cancel";
                     x.style.alignSelf = Align.FlexEnd;
                     x.style.marginRight = 0f;
@@ -578,7 +578,7 @@ namespace Facet
             var right = Controls.Row(parent, label);
             right.style.flexShrink = 1f;
             right.style.maxWidth = Length.Percent(65f);
-            var v = Ui.Muted("", right);
+            var v = Ui.Muted(right, "");
             Spaced(v, Theme.For(right).Sizes);
             v.style.whiteSpace = WhiteSpace.Normal;
             v.style.unityTextAlign = TextAnchor.MiddleRight;
@@ -611,12 +611,12 @@ namespace Facet
             if (string.IsNullOrEmpty(label)) Noted(right.parent, button);   // no label: search finds the row by its button
             Button b = null;
             // One write around the click: the rows onClick writes and what it changed show in this frame, in one pass.
-            b = Ui.Btn(button, () =>
+            b = Ui.Btn(right, button, () =>
             {
                 var r = Refresher.Enter(null, b);
                 try { if (onClick != null) onClick(); }
                 finally { Refresher.Exit(r); }
-            }, right);
+            });
             b.style.marginRight = 0f;
             Hook(right.parent, b, label, o);
             return b;
@@ -656,7 +656,7 @@ namespace Facet
         {
             Button b = null;
             bool armed = false;
-            b = Ui.Btn(text, () =>
+            b = Ui.Btn(parent, text, () =>
             {
                 if (!armed)
                 {
@@ -669,7 +669,7 @@ namespace Facet
                 Words.Label(b, text);
                 Paint.Select(b, false);
                 Safe.Run(Host.For(b), "Danger handler", () => { if (onConfirm != null) onConfirm(); });
-            }, parent);
+            });
             Paint.Look(b, Theme.For(b).Looks.DangerButton);
             b.style.marginRight = 0f;
             return b;

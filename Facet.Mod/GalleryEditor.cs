@@ -150,7 +150,7 @@ namespace Facet.Mod
             // Wide enough that the Canvas page's right column (64 of 100) gives the stage about the width a whole page did.
             _win = new Window(Surface.Root, "editor", "Facet Editor", new Rect(40, 40, 1300, 700));
             _win.CloseRequested += _ => Close();
-            _win.OnRaise = () => { if (Surface != null) Surface.BringToFront(); };   // a press raises it, so its shortcuts answer
+            _win.Raised += () => { if (Surface != null) Surface.BringToFront(); };   // a press raises it, so its shortcuts answer
             Nav = new Nav(_win.Body, new[] { NavItem.Heading(null, UndoItem = new NavItem("Undo", Undo), CanvasItem = new NavItem("Canvas", CanvasPage),
                 ListsItem = new NavItem("Lists", Lists), ApiItem = new NavItem("API", Api), new NavItem("Regions", Regions),
                 CardsItem = new NavItem("Cards", Cards)) });
@@ -203,7 +203,7 @@ namespace Facet.Mod
                 Surface = new Surface(Gallery.Host, "FacetGalleryEditorB", Layer.Window);
                 var win = new Window(Surface.Root, "editor-b", "Facet Editor B", new Rect(50, 300, 440, 300));   // over the first editor's rail and left column, clear of its canvas
                 win.CloseRequested += _ => Close();
-                win.OnRaise = () => { if (Surface != null) Surface.BringToFront(); };
+                win.Raised += () => { if (Surface != null) Surface.BringToFront(); };
                 Canvas<GalleryBox> c = null;
                 Bar = Controls.MenuBar(win.Body, MenuItems = new List<MenuItem>
                 {
@@ -341,10 +341,10 @@ namespace Facet.Mod
         {
             Page = p;
             Canvas<GalleryBox> c = null;
-            VisualElement right;
-            var left = Controls.Columns(p, out right, o => { o.Left = 36f; o.Right = 64f; o.RightFill = true; });
+            var cols = Controls.Columns(p, o => { o.Left = 36f; o.Right = 64f; o.RightFill = true; });
+            VisualElement left = cols.Left, right = cols.Right;
             Right = right;
-            Ui.Muted("Select boxes on the canvas; the inspector edits every selected box at once.", left).style.whiteSpace = WhiteSpace.Normal;
+            Ui.Muted(left, "Select boxes on the canvas; the inspector edits every selected box at once.").style.whiteSpace = WhiteSpace.Normal;
             Bar = Controls.MenuBar(right, MenuItems = BuildMenus(() => c));
             var drawn = new Dictionary<string, VisualElement>();
             var order = new List<string>();
@@ -386,17 +386,17 @@ namespace Facet.Mod
             draw = () => Draw(c, drawn, order);
             c.Changed += draw;
             draw();
-            Ui.Btn("Replace", () =>
+            Ui.Btn(left, "Replace", () =>
             {
                 // New objects with the same keys, as an import or an undo that rebuilds its document would make.
                 var l = Model.Tab == 0 ? Model.Boxes : Model.Other;
                 for (int i = 0; i < l.Count; i++) l[i] = l[i].Copy();
                 c.Refresh();
                 draw();
-            }, left).name = "ed-replace";
+            }).name = "ed-replace";
             Left = left;
             Controls.Live(left, () => Shown.Count, BoxList);
-            Footer = Ui.Muted("Edits here change the Gallery's own boxes; nothing is saved.", p);
+            Footer = Ui.Muted(p, "Edits here change the Gallery's own boxes; nothing is saved.");
             Footer.style.whiteSpace = WhiteSpace.Normal;
             InspectorScroll = Ui.Scroll(right);
             InspectorScroll.name = "ed-inspector";
@@ -458,27 +458,27 @@ namespace Facet.Mod
         static void Lists(VisualElement p)
         {
             ListsPage = p;
-            Ui.Muted("Drag a row to reorder it; double-click it to rename it; right-click it for its menu.", p).style.whiteSpace = WhiteSpace.Normal;
+            Ui.Muted(p, "Drag a row to reorder it; double-click it to rename it; right-click it for its menu.").style.whiteSpace = WhiteSpace.Normal;
             var status = Status = Controls.Status(p);
             RowList = Group(p, "Rows", () => Model.Rows, "ed-rows", t => status.Show(() => t.Name), true, false);
             Controls.Info(p, "Rows", () => Model.Rows.Count == 0 ? "none" : "some", o => { o.Id = "ed-rows-count"; o.Tone = () => Model.Rows.Count == 0 ? Role.Danger : Role.TextMuted; });
-            Ui.Btn("Clear rows", () => Popup.Confirm(p, "Clear every row?", "The list empties; undo does not bring it back.", yes =>
+            Ui.Btn(p, "Clear rows", () => Popup.Confirm(p, "Clear every row?", "The list empties; undo does not bring it back.", yes =>
             {
                 if (!yes) return;
                 Model.Rows.Clear();
                 RowList.Refresh();
                 status.Show("Cleared", Role.Accent, 2f);
-            }, o => { o.Ok = "Clear"; o.Danger = true; }), p).name = "ed-clear";
+            }, o => { o.Ok = "Clear"; o.Danger = true; })).name = "ed-clear";
         }
 
         /// Two card grids: click picks, double-click makes a card active, right-click opens its menu (Rename, Use),
         /// the add card adds one; each thumbnail is a plain box tinted by its key.
         static void Cards(VisualElement p)
         {
-            Ui.Muted("Click a card; double-click it to use it; right-click it to rename it.", p).style.whiteSpace = WhiteSpace.Normal;
-            Ui.Caps("Group A", p);
+            Ui.Muted(p, "Click a card; double-click it to use it; right-click it to rename it.").style.whiteSpace = WhiteSpace.Normal;
+            Ui.Caps(p, "Group A");
             GroupA = CardSet(p, "ed-cards-a", () => Model.CardsA, true);
-            Ui.Caps("Group B", p);
+            Ui.Caps(p, "Group B");
             GroupB = CardSet(p, "ed-cards-b", () => Model.CardsB, false);
         }
 
@@ -559,9 +559,9 @@ namespace Facet.Mod
             pad.name = "api-pad";
             pad.style.height = 80f;
             Paint.Look(pad, Theme.For(p).Looks.Stage);
-            var at = Ui.Muted("Press and drag here", pad);
+            var at = Ui.Muted(pad, "Press and drag here");
             Ui.Pointer(pad, (v, b) => at.text = "down " + b + " at " + v, v => at.text = "at " + v, (v, b) => at.text = "up " + b + " at " + v);
-            var clock = Ui.Muted("", p);
+            var clock = Ui.Muted(p, "");
             Ui.Every(clock, 250, () => clock.text = DateTime.Now.ToString("HH:mm:ss"));
         }
 
@@ -596,7 +596,7 @@ namespace Facet.Mod
         {
             HueRow = null;
             var sel = c.Selection;
-            if (sel.Count == 0) { Ui.Muted("Nothing selected.", box); return; }
+            if (sel.Count == 0) { Ui.Muted(box, "Nothing selected."); return; }
             bool even = true;
             for (int i = 0; i < sel.Count; i++) even &= Number(sel[i]) % 2 == 0;
             var pages = new List<NavItem> { new NavItem("Box", b => BoxRows(b, c)), new NavItem("Style", b => StyleRows(b, c)) };
@@ -667,7 +667,7 @@ namespace Facet.Mod
                     order.Add(b.Key);
                     var e = drawn[b.Key] = Plain(c.Content, new Color(0.25f, 0.45f, 0.8f, 0.85f));
                     e.name = "ed-box-" + b.Key;
-                    Ui.Text(b.Name, e).pickingMode = PickingMode.Ignore;
+                    Ui.Text(e, b.Name).pickingMode = PickingMode.Ignore;
                 }
             }
             for (int i = 0; i < items.Count; i++) Place(drawn[items[i].Key], items[i].Rect);

@@ -43,14 +43,21 @@ static class FacetTest {
         t = 6; History.Record("x", "k", () => { }, () => { });
         History.Undo();
         Check(History.CanUndo, "records 1 s apart (past CoalesceSeconds) stay separate");
-        // Ruling R14: Facet's refresh is its own hook, run first; a consumer assigning AfterApply cannot drop it.
+        // Ruling R14: Facet's refresh is its own hook, run first; AfterApply is an event, so one subscriber
+        // never drops another, and a throwing one neither stops the next nor the refresh.
         string ran = "";
         History.RefreshAll = () => ran += "r";
-        History.AfterApply = () => ran += "x";
-        History.AfterApply = () => ran += "a";   // a consumer assigns rather than adds
+        var al = new List<string>(); var keepAl = History.Log; History.Log = al.Add;
+        Action boomA = () => { throw new InvalidOperationException("applied boom"); };
+        Action ev = () => ran += "e", ev2 = () => ran += "a";
+        History.AfterApply += boomA; History.AfterApply += ev; History.AfterApply += ev2;
         History.Undo();
-        Check(ran == "ra", "an undo runs Facet's RefreshAll, then the consumer's AfterApply", ran);
-        History.RefreshAll = null; History.AfterApply = null;
+        Check(ran == "rea" && al.FindAll(m => m.Contains("applied boom")).Count == 1,
+            "an undo runs RefreshAll, then AfterApply's handlers in order, each under its own guard", ran + " / " + string.Join(" | ", al));
+        History.AfterApply -= boomA; History.AfterApply -= ev; History.AfterApply -= ev2; History.Log = keepAl;
+        ran = ""; History.Record("x", null, () => { }, () => { }); History.Undo();
+        Check(ran == "r", "a handler removed with -= no longer runs", ran);
+        History.RefreshAll = null;
         // Ruling R20: one throwing Changed handler leaves the handlers after it running, logged once.
         var hl = new List<string>(); var oldLog = History.Log; History.Log = hl.Add;
         int after = 0;

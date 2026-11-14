@@ -92,7 +92,7 @@ namespace Facet
             if (o.Colour.HasValue) { Paint.Forget(edge); edge.style.backgroundColor = o.Colour.Value; }
             else Paint.Look(edge, lk.Indicator);
 
-            var l = Ui.Text(label, tile, sz.Body);
+            var l = Ui.Text(tile, label, sz.Body);
             l.style.flexGrow = 1f;
             l.style.flexShrink = 1f;
             l.style.minWidth = 0f;

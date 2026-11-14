@@ -18,30 +18,16 @@ namespace Facet
            The mods need this for the same reason each of them already guards its own panels: the
            editor zooms on the scroll wheel and the game reacts to clicks, so scrolling a list or
            dragging a window inside a Facet panel would also drive the world behind it. A mod checks
-           AnyWindowOpen in its own zoom/click path — it cannot be enforced from here, because the
+           Input.AnyWindowOpen in its own zoom/click path — it cannot be enforced from here, because the
            input belongs to the game and the patch belongs to the mod.
 
            A counter rather than a bool: two windows can be open, and closing one must not tell the
            editor it is free again. */
-        public static int OpenWindows;
-
-        public static bool AnyWindowOpen => Input.AnyWindowOpen;
-
-        public static bool BlocksGameInput => Input.BlocksGameInput;
-
-        public static bool PointerOverWindow(Vector2 pointerScreen) => Input.PointerOverWindow(pointerScreen);
-
-        public static bool TextFocused => Input.TextFocused;
-
-        public static void TickWheel(Vector2 pointerScreen, float delta) => Input.TickWheel(pointerScreen, delta);
+        public static int OpenWindows { get; internal set; }   // Surface keeps it
 
         /* Open surfaces, bottom first: by layer, then by raise order (Surface.BringToFront keeps it
            so). Per loaded Facet; Input coordinates across versions through Shared. */
         internal static readonly List<Surface> Stack = new List<Surface>();
-
-        public static bool HandleEscape() => Input.HandleEscape();
-
-        public static void ConsumeEscape() => Input.ConsumeEscape();
 
         public static VisualElement Box(VisualElement parent = null)
         {
@@ -81,8 +67,8 @@ namespace Facet
             return e;
         }
 
-        /// size: null is the theme's Body.
-        public static Label Text(string text, VisualElement parent = null, float? size = null, Role role = Role.Text, bool own = false)
+        /// size: null is the theme's Body. The parent comes first, as in every Facet part; parent may be null.
+        public static Label Text(VisualElement parent, string text, float? size = null, Role role = Role.Text, bool own = false)
         {
             var l = NewLabel(parent, size ?? Theme.For(parent).Sizes.Body);
             Words.Label(l, text, own);   // after Add: the parent says which host's table answers
@@ -102,12 +88,12 @@ namespace Facet
             return l;
         }
 
-        public static Label Muted(string text, VisualElement parent = null, bool own = false)
-            => Text(text, parent, Theme.For(parent).Sizes.Small, Role.TextMuted, own);
+        public static Label Muted(VisualElement parent, string text, bool own = false)
+            => Text(parent, text, Theme.For(parent).Sizes.Small, Role.TextMuted, own);
 
         /// An upper-case header (a card title, a rail group): translated first, then upper-cased, and
         /// still upper-case after a relabel. Hangul and Han have no case and pass through unchanged.
-        public static Label Caps(string text, VisualElement parent = null, bool own = false)
+        public static Label Caps(VisualElement parent, string text, bool own = false)
         {
             var t = Theme.For(parent); var s = t.Sizes;
             var l = NewLabel(parent, s.Caps);
@@ -118,7 +104,7 @@ namespace Facet
         }
 
         /// The theme's Looks.Button: hover, pressed and selected (Paint.Select) are Paint's, not the caller's.
-        public static Button Btn(string text, Action onClick, VisualElement parent = null, bool own = false)
+        public static Button Btn(VisualElement parent, string text, Action onClick, bool own = false)
         {
             var b = new Button();
             if (onClick != null) b.clicked += () => Safe.Run(Host.For(b), "Button '" + b.text + "'", onClick);
@@ -142,7 +128,7 @@ namespace Facet
         /// an English key, translated like a label.
         public static Button IconButton(VisualElement parent, Background icon, string tooltip, Action click)
         {
-            var b = Btn("", click, parent);
+            var b = Btn(parent, "", click);
             var s = Theme.For(b).Sizes;
             Paint.Look(b, Bare);
             SetPadding(b, 0f);
@@ -164,7 +150,7 @@ namespace Facet
         /* A virtualized list. This is the reason for moving to UI Toolkit at all: ListView recycles
            rows, so a 50k-line log costs the same as a 50-line one. The uGUI framework had to be
            told how many rows to build. */
-        public static ListView List(Func<IList> source, Action<VisualElement, int> bind, VisualElement parent = null)
+        public static ListView List(VisualElement parent, Func<IList> source, Action<VisualElement, int> bind)
         {
             // Read once here: makeItem and bindItem run as rows recycle, and Dark's Sizes is a fresh copy per read.
             var sz = Theme.For(parent).Sizes;
@@ -178,7 +164,7 @@ namespace Facet
             };
             lv.makeItem = () =>
             {
-                var l = Text("", null, small);
+                var l = Text(null, "", small);
                 l.style.paddingLeft = 6f;
                 l.style.unityTextAlign = TextAnchor.MiddleLeft;
                 return l;

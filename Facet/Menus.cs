@@ -95,7 +95,7 @@ namespace Facet
             {
                 int index = i;
                 var m = _menus[i];
-                var title = Ui.Btn(m != null ? m.Text : "", () => Open(index), Root);
+                var title = Ui.Btn(Root, m != null ? m.Text : "", () => Open(index));
                 Paint.Look(title, Ui.Bare);
                 title.style.marginRight = 0f;
                 if (m != null && m.Id != null) title.name = m.Id;
@@ -169,7 +169,7 @@ namespace Facet
            the host's GetKeyDown) with exactly the held modifiers (Cmd counts as Ctrl), and returns true. The host calls
            it from its per-frame key poll. It acts only while owner's surface is the topmost visible surface of the
            Window, Popup and Modal layers: with two editors open only the front one answers (a window must raise its
-           surface on a press: Window.OnRaise), and nothing runs under an open menu, dropdown or dialog. Never while a
+           surface on a press: Window.Raised), and nothing runs under an open menu, dropdown or dialog. Never while a
            text field has focus, a key capture runs or a drag is in progress. Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y never
            run here: the undo chord owns them. A frame with no key down allocates nothing. */
         public static bool HandleKeys(VisualElement owner, IList<MenuItem> items, Func<KeyCode, bool> down, bool ctrlOrCmd, bool shift, bool alt)
@@ -293,7 +293,7 @@ namespace Facet
                     mark.style.marginRight = sz.Gap / 2f;
                 }
                 string shown = it.TextOf != null ? Safe.Get(host, "MenuItem.TextOf", it.TextOf, "") ?? "" : null;
-                var label = Ui.Text(shown != null ? "" : it.Text, row, sz.Small, it.Danger ? Role.Danger : Role.Text);
+                var label = Ui.Text(row, shown != null ? "" : it.Text, sz.Small, it.Danger ? Role.Danger : Role.Text);
                 if (shown != null) label.text = shown;
                 label.name = "text";
                 label.style.flexGrow = 1f;
@@ -319,7 +319,7 @@ namespace Facet
 
         private static Label Cell(VisualElement row, string text, Role role, string name, Sizes sz)
         {
-            var l = Ui.Text(text, row, sz.Small, role, true);
+            var l = Ui.Text(row, text, sz.Small, role, true);
             l.name = name;
             l.pickingMode = PickingMode.Ignore;
             return l;

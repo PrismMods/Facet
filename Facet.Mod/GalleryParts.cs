@@ -99,7 +99,8 @@ namespace Facet.Mod
         {
             Controls.PageHeader(p, "Judgement counter", Bind.To(() => Model.Feature, v => Model.Feature = v), o => { o.Id = "head"; o.Description = "Counts each judgement"; });
             Controls.PageHeader(p, "Other feature", null, o => { o.Id = "head2"; o.DescriptionText = () => Model.Desc; });
-            var left = Controls.Columns(p, out var right);
+            var cols = Controls.Columns(p);
+            VisualElement left = cols.Left, right = cols.Right;
             left.name = "feat-left"; right.name = "feat-right";
             var card = Controls.Card(left, "Rows");
             for (int i = 0; i < 30; i++) Controls.Toggle(card, "Row " + i, Bind.To(() => false, v => { }));
@@ -107,7 +108,7 @@ namespace Facet.Mod
             Controls.Slider(display, "Opacity", Bind.To(() => Model.Depth, v => Model.Depth = v));
             var grid = Controls.Tiles(left, o => o.Columns = 3);
             foreach (var n in new[] { "Trail", "Pulse", "Echo" }) Controls.Tile(grid, n, Bind.To(() => false, v => { }));
-            var tick = Ui.Text("", null, null, Role.Text, true);
+            var tick = Ui.Text(null, "", null, Role.Text, true);
             Controls.Preview(right, "Preview", o =>
             {
                 o.Id = "feat-preview";

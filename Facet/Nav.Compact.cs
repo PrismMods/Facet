@@ -29,7 +29,7 @@ namespace Facet
             set { if (value != _compact) { _compact = value; ApplyCompact(); } }
         }
 
-        /// A button at the top of the rail that flips Compact and raises OnCompactChanged.
+        /// A button at the top of the rail that flips Compact and raises CompactChanged.
         public bool CompactButton
         {
             get { return _compactButton; }
@@ -38,7 +38,7 @@ namespace Facet
 
         /// Raised after the rail's own button flips Compact, with the new value (the host keeps it);
         /// not when the host sets Compact.
-        public Action<bool> OnCompactChanged;
+        public event Action<bool> CompactChanged;
 
         /// Where the content pane starts, in the window body: the icon strip when Compact, else the open rail's width
         /// and its handle (7), or the handle alone with the rail shut. Window.SetContentInset takes it as it is.
@@ -142,8 +142,9 @@ namespace Facet
             {
                 if (!_compact) _armed = false;   // made compact under the pointer: it widens again only after the pointer leaves
                 Compact = !_compact;
-                var f = OnCompactChanged;
-                if (f != null) Safe.Run(Host.For(_host), "Nav.OnCompactChanged", () => f(_compact));
+                bool now = _compact;
+                var e = CompactChanged;
+                if (e != null) Safe.Run(Host.For(_host), "Nav.CompactChanged", () => e(now));
             });
         }
 

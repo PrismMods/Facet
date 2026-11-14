@@ -12,7 +12,7 @@ namespace Facet
        Every popup lives on one shared Surface in the Popup layer, so it draws above all windows
        whichever mod opened it. Each popup brings a transparent full-screen catcher under its card:
        a click outside closes the popup and goes no further, the way a desktop menu behaves, and
-       Ui.PointerOverWindow sees the catcher, so the editor behind does not take that click either.
+       Input.PointerOverWindow sees the catcher, so the editor behind does not take that click either.
        Popups stack in open order; Escape and an outside click close the newest first.
 
        A popup also closes when the window it came from hides, or when its anchor leaves the panel
@@ -110,7 +110,7 @@ namespace Facet
                     row.style.height = sz.ListRowHeight;
                     row.style.paddingLeft = sz.Gap; row.style.paddingRight = sz.Gap;
                     Ui.SetRadius(row, sz.Radius);
-                    var label = Ui.Text(items[i], row, sz.Small, i == selected ? Role.Accent : Role.Text);
+                    var label = Ui.Text(row, items[i], sz.Small, i == selected ? Role.Accent : Role.Text);
                     label.pickingMode = PickingMode.Ignore;
                     if (itemFont != null)
                     {
@@ -160,11 +160,11 @@ namespace Facet
             Ui.SetPadding(c, sz.Pad);
             c.style.minWidth = sz.DialogMinWidth;
             c.style.maxWidth = sz.DialogMaxWidth;
-            var t = Ui.Text(title, c, sz.Body);
+            var t = Ui.Text(c, title, sz.Body);
             t.style.whiteSpace = WhiteSpace.Normal;
             if (!string.IsNullOrEmpty(body))
             {
-                var b = Ui.Text(body, c, sz.Small, Role.TextMuted);
+                var b = Ui.Text(c, body, sz.Small, Role.TextMuted);
                 b.style.whiteSpace = WhiteSpace.Normal;
                 b.style.marginTop = sz.Gap / 2f;
             }
@@ -173,10 +173,10 @@ namespace Facet
             row.style.marginTop = sz.Pad;
             if (o.Cancel != null)
             {
-                var no = Ui.Btn(o.Cancel, p.Close, row, o.Cancel == "Cancel");
+                var no = Ui.Btn(row, o.Cancel, p.Close, o.Cancel == "Cancel");
                 no.name = "confirm-cancel";
             }
-            var ok = Ui.Btn(o.Ok ?? "OK", () => { yes = true; p.Close(); }, row, o.Ok == null || o.Ok == "OK");
+            var ok = Ui.Btn(row, o.Ok ?? "OK", () => { yes = true; p.Close(); }, o.Ok == null || o.Ok == "OK");
             ok.name = "confirm-ok";
             ok.style.marginRight = 0f;
             Paint.Look(ok, o.Danger ? looks.DangerButton : looks.AccentButton);

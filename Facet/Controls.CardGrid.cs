@@ -253,7 +253,7 @@ namespace Facet
         // Data, not a word: set by hand, so a relabel leaves it alone.
         private Label Text(VisualElement parent, string s, string name, float size, Role role)
         {
-            var l = Ui.Text("", parent, size, role);
+            var l = Ui.Text(parent, "", size, role);
             l.text = s;
             l.name = Root.name + name;
             l.pickingMode = PickingMode.Ignore;

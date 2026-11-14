@@ -321,7 +321,7 @@ One `MenuItem` list is a menu bar's menus, a context menu and the shortcuts a ho
   `owner`'s surface is the topmost visible window, menu, popup or modal (so nothing runs under an open menu, dropdown
   or dialog), never while a text field has focus, a key capture runs or a drag is in progress, and never for Ctrl+Z,
   Ctrl+Shift+Z or Ctrl+Y, which the undo chord owns (an Undo item may still show Ctrl+Z). A frame with no key down allocates nothing. **A window whose menus answer keys must raise its
-  surface when pressed** (`window.OnRaise = () => surface.BringToFront();`): otherwise a click into it leaves the
+  surface when pressed** (`window.Raised += () => surface.BringToFront();`): otherwise a click into it leaves the
   other window in front, and the keys go on answering there.
 
 ## Toolbar
@@ -351,7 +351,8 @@ nothing in History: an edit to the document is a labelled row such as `Choice`.
 An editor's inspector edits whatever is selected, one row per property, over every selected item at once.
 
 ```csharp
-var left = Controls.Columns(page, out var right, o => { o.Left = 36f; o.Right = 64f; o.RightFill = true; });
+var cols = Controls.Columns(page, o => { o.Left = 36f; o.Right = 64f; o.RightFill = true; });
+var right = cols.Right;
 var bar = Controls.MenuBar(right, menus);
 var canvas = Controls.Canvas<Item>(right, "Canvas", o => { /* ... */ });
 var scroll = Ui.Scroll(right);
@@ -608,9 +609,9 @@ Parts a consumer wires with plain delegates, for code that must not name a UI To
 
 `SettingsWindow.Open(host, id, title, pages, o => …)` builds the whole window in one call:
 
-- a Window-layer surface (shown), the `Window` on it (`id` keys its stored rect), raised when pressed (by Facet
-  itself: `Window.OnRaise` stays free for the consumer, and assigning it keeps the raise);
-- a `Nav` of `pages` in its body with the content inset applied (`Window.SetContentInset(Nav.Inset)`, kept in step);
+- a Window-layer surface (shown), the `Window` on it (`id` keys its stored rect), raised when pressed (a
+  `Window.Raised` handler of Facet's own; a consumer adds its own beside it);
+- a `Nav` of `pages` in its body with the content inset applied (`Nav.InsetChanged += Window.SetContentInset`);
 - with `Search` (default true) the title bar's search box filters through `Nav.Filter` (placeholder: the key
   `"Search"`, translated by the host, else Facet's own word);
 - `Icon`, a `Background` at the start of the title bar; `CompactRail` starts the rail as its icon strip;
@@ -636,15 +637,16 @@ and its 7 px handle, the handle alone with the rail shut, or the icon strip when
 | Wheel | `Input.TickWheel`, once per frame; `HostOptions.WheelSpeed`, panel px per wheel unit, linear on the polled and the panel's own wheel path (default: Facet's own steps) |
 | Fonts | `Fonts.Has`; zh and ja |
 | Theme | `Role.Rail/Line/Off/Guide`; `Theme.Sizes`, `Theme.Looks`, `Theme.Notify()`; `Sizes` (with `ControlPad`, `FieldPad`, `ItemHeight`, `RowPadY` above and below a row's text, `TabGap` under a tab row); `Looks` (with `Group`, `Stage`); `Look.SelectedBorder`, `Look.Copy()` |
-| Primitives | `Ui.Caps`; `Window.TitleBarLeft`; `Facet.Tokens` removed |
+| Primitives | `Ui.Caps`; `Ui.Text`, `Muted`, `Caps`, `Btn` and `List` take the parent first; `Window.TitleBarLeft`; `Facet.Tokens` removed |
+| Hook events | `Window.Raised`, `Nav.InsetChanged` (each handler is told the current `Nav.Inset` as it is added, then each change), `Nav.CompactChanged` |
 | Cards | `ControlOptions.Help`; `Controls.Card`/`CardOptions` (`Actions`; `Note`, an English key, or `NoteText`, re-read and untranslated); `Controls.Advanced`; `Form.Build(…, FormOptions)`; `Field.Help`/`Advanced` |
-| Page layout | `Controls.PageHeader`/`PageHeaderOptions`; `Controls.Columns`/`ColumnsOptions` (with `StackBelow`) |
+| Page layout | `Controls.PageHeader`/`PageHeaderOptions`; `Controls.Columns(parent, configure)` returns a `Columns` (`Root`, `Left`, `Right`); `ColumnsOptions` (with `StackBelow`) |
 | Preview | `Controls.Preview`/`PreviewOptions`: `Show`, `Tick`, `Hide` run only while its page, its window and its own `VisibleWhen` show it; `Id` names the stage, `Id-pane` the pane, which takes `VisibleWhen`, `EnabledWhen`, the tooltips and `ContextMenu` (not `Help`); `NoteText`, a live note (already translated, re-read on every refresh pass, named `Id-note`) that wins over `Note` |
 | Tiles | `Controls.Tiles`/`TilesOptions` (`Id`, `VisibleWhen`, `EnabledWhen`, the tooltips and `ContextMenu` act on the grid; in a `Card` it is a padded card row); `Controls.Tile`/`TileOptions` (no `Help`: use `Tooltip`) |
 | Switches | every switch (`Toggle`, `PageHeader`, `Tile`) flips on Submit (Enter/Space) as on a click |
 | Tabs | `Tabs.Pages`, `Tabs.Content`; `SearchIndex.Hit.Tab` |
 | Search | `Nav.AddSearchSource` with `SearchIndex.Entry` (`Label`, `Where`, `Open`, `Tip`; `Label` and `Where` are English keys, translated) for pages Facet did not build; `NavItem.OnHit` |
-| Sidebar | Nav draws a rule between groups; a skin gives `Looks.Rule` a colour (on Theme.Dark it is invisible); `Nav.Compact`, an icon strip that widens over the page after a 0.1 s hover; `Nav.CompactButton`, a button at the top of the rail that flips it and raises `Nav.OnCompactChanged`; `Nav.Collapsible` (default true), false for a host whose setting decides whether the rail shows: the handle stops at `MinRail`, `ToggleRail` never shuts the rail, and a shut rail opens |
+| Sidebar | Nav draws a rule between groups; a skin gives `Looks.Rule` a colour (on Theme.Dark it is invisible); `Nav.Compact`, an icon strip that widens over the page after a 0.1 s hover; `Nav.CompactButton`, a button at the top of the rail that flips it and raises `Nav.CompactChanged`; `Nav.Collapsible` (default true), false for a host whose setting decides whether the rail shows: the handle stops at `MinRail`, `ToggleRail` never shuts the rail, and a shut rail opens |
 | Rail icons | `NavItem.Icon`, a `Background` drawn left of the entry's title and tinted as the title, hover included (default: none); `Sizes.Icon`, its square size (16) |
 | Cursors | `HostOptions.Cursor`, a host hook asked first to set the OS cursor for a kind (and again every frame while held); false falls back to Facet's drawn cursor, so a hook returns false for a kind it does not know; `Cursors.Kind.Move`, `ResizeVertical`, `ResizeCornerNESW` (appended) |
 | Canvas | `Controls.Canvas<T>`; `CanvasOptions<T>`: `Items`, `Key`, `Find`, `GetRect`, `SetRect`, `Size`, `Selectable`, `Movable`, `Resizable`, `Ghosts`, `Grid`, `SnapDistance`, `SizeSnap`, `MinSize`, `Limit`, `Snap`, `ShowGrid`, `ShowGuides`, `Pane`, `Menu`, `Delete`, `ZOrder`, and from `ControlOptions` `Id`, `VisibleWhen`, `EnabledWhen`, `Tooltip`/`TooltipText`, `ContextMenu` and `ContextMenuItems` (on the pane), `Undoable`, `UndoDocument` (no `Help`); `Canvas<T>`: `Root`, `Stage`, `Content`, `Selection`, `Primary`, `SelectionVersion`, `Select`, `SelectAll`, `Clear`, `Refresh`, `Snap`, `ShowGrid`, `ShowGuides`, `SelectionChanged` (also on a `Refresh` remap), `Changed`, `Committed`, `Zoom`, `Pan`, `ZoomBy`, `Fit`, `Centre`, `ResetView`, `StageToCanvas`, `CanvasToStage`, `ViewCentre`, `HitTest`, `Nudge`, `DeleteSelection`, `StepZ`, `Focused`, `Hovered`, `PollKeys`, `ViewChanged`, `Activated`; `PreviewOptions.MinHeight`, `MaxHeight` (0: none); `Sizes.CanvasHandle`, `CanvasEdgeLong`, `CanvasEdgeShort`, `CanvasHit`, `CanvasOutline`; `Role.Guide` |
@@ -662,7 +664,23 @@ and its 7 px handle, the handle alone with the rail shut, or the icon strip when
 | Hooks | `Ui.Pointer`, `Ui.Every`, `Ui.WhileAttached` (delegates only); `Ui.Search`; `TextOptions.Live`, `TextOptions.Placeholder`, `TextOptions.MaxLength` |
 | Conveniences | `Theme.SetAccent`; `Host.RelabelSurfaces`, `Host.DisposeSurfaces`; BCP-47 language tags; a host answering Facet's own words under `Facet:` keys (`Words.Own(english, host)`, `Words.OwnF(format, host, args)`) |
 | Typed rows | `Controls.Dropdown<T>`/`DropdownOptions<T>` (`ItemFace`), `Controls.Choice<T>`/`ChoiceOptions<T>`, `Controls.Enum<TEnum>` |
-| Undo | `History.Step`, `History.BoundTo`, `History.Snapshot<T>`, `History.Invalidate`; stale steps are skipped; a null key never coalesces; `ControlOptions.Undoable`, `ControlOptions.UndoDocument`; an undo or redo of a row's or canvas's step raises its `Committed` inside the apply (`History.Applying` true) while it is on a panel, and otherwise only writes the bind or `SetRect` |
+| Undo | `History.Step`, `History.BoundTo`, `History.Snapshot<T>`, `History.Invalidate`, `History.AfterApply`; stale steps are skipped; a null key never coalesces; `ControlOptions.Undoable`, `ControlOptions.UndoDocument`; an undo or redo of a row's or canvas's step raises its `Committed` inside the apply (`History.Applying` true) while it is on a panel, and otherwise only writes the bind or `SetRect` |
+
+### Conventions
+
+- **Parent first everywhere.** Every part takes the element it is added to as its first argument, `Ui`'s text and
+  list helpers included (`Ui.Text(parent, "Speed")`, `Ui.Btn(parent, "Reset", click)`).
+- **Notifications are events; Escape is a `Func`.** Add a handler with `+=`, so one subscriber never drops another:
+  `Window.Raised`, `Nav.InsetChanged`, `Nav.CompactChanged`, `History.Changed`, `History.AfterApply` (after each undo
+  or redo, once Facet's own refresh has run; each handler under its own guard). `Surface.EscapeHandler` stays a
+  `Func<bool>`, because it answers whether it took the key.
+- **`Input` is the one home of the input queries** (`AnyWindowOpen`, `BlocksGameInput`, `BlocksGameKeys`,
+  `PointerOverWindow`, `TextFocused`, `TickWheel`, `HandleEscape`, `ConsumeEscape`, `HandleUndo`).
+- **One form of each.** These changed in place before 0.2.0 shipped, with no older form left beside them: the
+  text-first `Ui.Text(text, parent)` family, `Controls.Columns(parent, out right, …)`, the fields `Window.OnRaise`,
+  `Nav.OnInsetChanged`, `Nav.OnCompactChanged` and `History.AfterApply` (now an event; `History.Applied` folded
+  into it) and `Ui`'s copies of the `Input` queries are gone. `Ui.OpenWindows` is read-only: Facet keeps it.
+  A mod built against an earlier 0.2 build is rebuilt against this one.
 
 ## Coexistence
 

@@ -66,14 +66,14 @@ namespace Facet
 
         /// A button in the theme's Looks.Button; `text` is an English key.
         public Button Button(string text, Action click, Action<ControlOptions> configure = null)
-            => Hooked(Ui.Btn(text, click, Row), text, configure);
+            => Hooked(Ui.Btn(Row, text, click), text, configure);
 
         /// A button that shows selected (Paint.Select) while `on` is true and flips it on a click. Re-read on
         /// every refresh. A view switch (snap, grid): it records nothing in History.
         public Button Toggle(string text, Bind<bool> on, string tooltip = null)
         {
             Control<bool> c = null;
-            var b = Ui.Btn(text, () => c.Set(!c.Value), Row);
+            var b = Ui.Btn(Row, text, () => c.Set(!c.Value));
             Words.Tip(b, tooltip);
             c = new Control<bool>(b, null, text, on, v => Paint.Select(b, v), new ControlOptions());
             return Place(b);
@@ -82,7 +82,7 @@ namespace Facet
         /// Text re-read on every refresh and shown as returned (a zoom readout, a count).
         public Label Label(Func<string> text)
         {
-            var l = Ui.Text("", Row, Theme.For(Row).Sizes.Small);
+            var l = Ui.Text(Row, "", Theme.For(Row).Sizes.Small);
             new Control<string>(l, null, "Toolbar label", Bind.To(text, null), s => l.text = s ?? "", new ControlOptions());
             return Place(l);
         }
@@ -142,7 +142,7 @@ namespace Facet
             for (int i = 0; i < buttons.Length; i++)
             {
                 int idx = i;
-                var b = buttons[i] = Ui.Btn(names[i], () => pick(idx), row);
+                var b = buttons[i] = Ui.Btn(row, names[i], () => pick(idx));
                 b.style.marginRight = 0f;
                 if (i > 0) b.style.marginLeft = gap;
             }
@@ -162,7 +162,7 @@ namespace Facet
             Skin.When<TextField>(f, Skin.Field);
             Cursors.Set(f, Cursors.Kind.Text);
             box.Add(f);
-            clear = Ui.Btn("✕", () => f.value = "", box);
+            clear = Ui.Btn(box, "✕", () => f.value = "");
             clear.style.width = 24f;
             clear.style.marginLeft = -28f;   // sits inside the field's right edge
             clear.style.marginRight = 4f;
@@ -201,7 +201,7 @@ namespace Facet
            button rather than a wrong-looking one. */
         internal static Button Glyph(VisualElement parent, string glyph, Action onClick)
         {
-            var b = Ui.Btn(glyph, onClick, parent);
+            var b = Ui.Btn(parent, glyph, onClick);
             Paint.Look(b, Ui.Bare);
             b.style.width = 30f;
             b.style.height = 26f;

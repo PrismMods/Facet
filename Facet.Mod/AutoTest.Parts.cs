@@ -242,12 +242,12 @@ namespace Facet.Mod
                 w.TitleBarLeft.Insert(0, logo);
                 Check(w.TitleBarLeft.IndexOf(logo) == 0 && w.TitleBarLeft.Q<Label>()?.text == "Facet Gallery" && w.TitleBarLeft.parent == w.Root.hierarchy[0],
                     "Window.TitleBarLeft is the title bar's title block, and a logo goes in before the title");
-                var bc = Ui.Caps("Tint", flag);
+                var bc = Ui.Caps(flag, "Tint");
                 Check(bc.style.fontSize.value.value == 14f && bc.style.letterSpacing.value.value == 3f, "B: Ui.Caps is 14 with letter spacing 3",
                     bc.style.fontSize.value.value + " / " + bc.style.letterSpacing.value.value);
 
                 // Review Focus 4: translated first, upper-cased after, and still so through a relabel.
-                var cap = Ui.Caps("Tint", df);
+                var cap = Ui.Caps(df, "Tint");
                 try
                 {
                     Check(cap.text == "TINT", "Ui.Caps(\"Tint\") reads TINT", cap.text);
@@ -514,7 +514,8 @@ namespace Facet.Mod
                 // Review I3: in a parent that shrink-wraps, the mode must not flip between frames.
                 var wrap = Ui.Box(win.Body);
                 wrap.style.alignItems = Align.FlexStart;
-                var wl = Controls.Columns(wrap, out var wr);
+                var wc = Controls.Columns(wrap);
+                VisualElement wl = wc.Left, wr = wc.Right;
                 Controls.Info(wl, "In", () => "left"); Controls.Info(wr, "In", () => "right");
                 var seen = new List<bool>();
                 for (int i = 0; i < 5; i++) { yield return null; if (i >= 2) seen.Add(wr.worldBound.yMin >= wl.worldBound.yMax - 1f); }
