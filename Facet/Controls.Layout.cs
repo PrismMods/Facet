@@ -49,6 +49,9 @@ namespace Facet
         /// An English key: a muted line under the stage.
         public string Note { get; set; }
 
+        /// A live note: the text it returns (already translated) is re-read on every refresh pass. Wins over Note.
+        public Func<string> NoteText { get; set; }
+
         /// An English key shown as a link under the note; a click runs OnLink.
         public string Link { get; set; }
         public Action OnLink { get; set; }
@@ -176,7 +179,14 @@ namespace Facet
                 if (maxH > 0f && h > maxH) h = maxH;
                 if (stage.layout.width > 0f && Mathf.Abs(h - stage.layout.height) > 0.5f) stage.style.height = h;
             });
-            if (o.Note != null) { var n = Ui.Muted(o.Note, root); n.style.marginTop = sz.Gap / 2f; }
+            if (o.NoteText != null)
+            {
+                var line = Controls.Status(root);
+                line.Root.name = o.Id == null ? "note" : o.Id + "-note";
+                line.Root.style.marginTop = sz.Gap / 2f;
+                line.Show(o.NoteText);
+            }
+            else if (o.Note != null) { var n = Ui.Muted(o.Note, root); n.style.marginTop = sz.Gap / 2f; }
             if (o.Link != null)
             {
                 var link = Ui.Btn(o.Link, () => { if (o.OnLink != null) o.OnLink(); }, root);

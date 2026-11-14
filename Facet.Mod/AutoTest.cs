@@ -163,6 +163,7 @@ namespace Facet.Mod
                 yield return Run("SectionDialogStatus", SectionDialogStatus());
                 yield return Run("SectionHooks", SectionHooks());
                 yield return Run("SectionRegions", SectionRegions());
+                yield return Run("SectionConveniences", SectionConveniences());
                 yield return Run("SectionClose", SectionClose());
                 // Later tasks: yield return Run("Section...", Section...());
             }

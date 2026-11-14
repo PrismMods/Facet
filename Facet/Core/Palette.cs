@@ -29,7 +29,7 @@ namespace Facet {
             c[(int)Role.PanelBorder] = new[] { 1f, 1f, 1f, .09f };
             c[(int)Role.Text] = Lean(.92f, a, .04f * tint);
             c[(int)Role.TextMuted] = Lean(.745f, a, .17f * tint);
-            c[(int)Role.AccentText] = OnAccent(a);
+            c[(int)Role.AccentText] = Contrast(a[0], a[1], a[2]);
             c[(int)Role.Rail] = new[] { 0f, 0f, 0f, 0f };
             c[(int)Role.Line] = c[(int)Role.PanelBorder];
             c[(int)Role.Off] = control;
@@ -42,8 +42,10 @@ namespace Facet {
             return c;
         }
 
-        // Near-black or Dark's light Text, whichever has the higher WCAG contrast against the accent.
-        static float[] OnAccent(float[] a) {
+        /// The text colour on an accent (Role.AccentText): near-black or Dark's light Text, whichever has the higher
+        /// WCAG contrast against it. Theme.SetAccent uses it too.
+        internal static float[] Contrast(float r, float g, float b) {
+            var a = new[] { C01(r), C01(g), C01(b), 1f };
             var dark = new[] { .06f, .06f, .08f, 1f };
             var light = new[] { .92f, .92f, .94f, 1f };
             float la = Lum(a) + .05f, ld = Lum(dark) + .05f, ll = Lum(light) + .05f;

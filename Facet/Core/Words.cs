@@ -11,7 +11,9 @@ namespace Facet
        (remove its patch) came out as another's 실행 취소 (undo an edit). So the rules here take
        ONE translator at a time, never a list:
        - T(english, translator): the translator of the host whose string it is.
-       - Own(english, language): Facet's own table, for Facet's own words, whatever any host maps.
+       - Own(english, language): Facet's own table, for Facet's own words.
+       - Own(english, host): the host's answer to "Facet:" + english first, else Facet's own table. The prefix keeps
+         the rule: a host answers only Facet keys it chose to define, never by its own "Undo".
        The Unity-typed halves (a Host, a TextElement) are in the other part of this class. */
     public static partial class Words
     {
@@ -23,12 +25,26 @@ namespace Facet
             return string.IsNullOrEmpty(s) ? english : s;
         }
 
-        /// Facet's own words, from its own table only: Korean for "ko", else English.
+        /// Facet's own words, from its own table only: Korean for "ko" (or a tag such as "ko-KR"), else English.
         public static string Own(string english, string language)
         {
             string ko;
-            return !string.IsNullOrEmpty(english) && language == "ko" && Korean.TryGetValue(english, out ko) ? ko : english;
+            return !string.IsNullOrEmpty(english) && Primary(language) == "ko" && Korean.TryGetValue(english, out ko) ? ko : english;
         }
+
+        /// A BCP-47 tag's primary language subtag, lower-case: "ko-KR" and "KO_kr" give "ko". null and "" stay as they
+        /// are. An already-reduced tag comes back as the same string, so the common case allocates nothing.
+        internal static string Primary(string tag)
+        {
+            if (string.IsNullOrEmpty(tag)) return tag;
+            int end = tag.IndexOfAny(Separators);
+            if (end < 0) end = tag.Length;
+            bool lower = end == tag.Length;
+            for (int i = 0; lower && i < end; i++) lower = !char.IsUpper(tag[i]);
+            return lower ? tag : tag.Substring(0, end).ToLowerInvariant();
+        }
+
+        private static readonly char[] Separators = { '-', '_' };
 
         /// A word Facet picks that the host may still word its own way: the host's, else Facet's own when the
         /// host leaves the key unchanged.

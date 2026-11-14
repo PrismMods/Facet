@@ -323,6 +323,7 @@ static class FacetTest {
         Shortcuts();
         ManyBinds();
         BindThen();
+        Conveniences();
 
         Console.WriteLine(_fail == 0 ? "ALL PASS" : _fail + " FAILED");
     }
@@ -580,6 +581,16 @@ static class FacetTest {
               "every role has a colour in FromAccent", c.Length.ToString());
         var g = c[(int)Role.Guide];
         Check(g != null && g[3] > 0f, "Role.Guide has alpha > 0 in FromAccent", Show(g));
+    }
+
+    // A host's language tag reduced to the part Facet's tables know, and SetAccent's text colour.
+    static void Conveniences() {
+        Check(Words.Primary("ko-KR") == "ko" && Words.Primary("KO_kr") == "ko" && Words.Primary("zh-Hans-CN") == "zh"
+           && Words.Primary("en") == "en" && Words.Primary(null) == null && Words.Primary("") == "", "BCP-47 tags reduce to the language");
+        var acc = Palette.FromAccent(0.9f, 0.2f, 0.2f, 1f)[(int)Role.AccentText];
+        Check(string.Join(",", Palette.Contrast(0.9f, 0.2f, 0.2f)) == string.Join(",", acc), "SetAccent derives the same accent text");
+        Check(Words.Own("Search", "ko-KR") == "검색", "Facet's own table reads a full language tag");
+        Check(Cjk.Script("kor") == null && Cjk.Script("kO_kr") == "ko", "the CJK face reads the same primary subtag as Facet's words");
     }
 
     // Menu shortcut text: modifiers and a key named as Unity's KeyCode, shown the platform's way.

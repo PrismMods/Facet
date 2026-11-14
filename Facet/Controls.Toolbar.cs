@@ -221,9 +221,8 @@ namespace Facet
             var r = redo = Glyph(parent, "↷", () => History.Redo());
             Action refresh = () =>
             {
-                string lang = host.Language;
-                Enable(u, History.CanUndo, History.NextUndo == null ? Words.Own("Undo", lang) : Words.OwnF("Undo {0}", lang, History.NextUndoText));
-                Enable(r, History.CanRedo, History.NextRedo == null ? Words.Own("Redo", lang) : Words.OwnF("Redo {0}", lang, History.NextRedoText));
+                Enable(u, History.CanUndo, History.NextUndo == null ? Words.Own("Undo", host) : Words.OwnF("Undo {0}", host, History.NextUndoText));
+                Enable(r, History.CanRedo, History.NextRedo == null ? Words.Own("Redo", host) : Words.OwnF("Redo {0}", host, History.NextRedoText));
             };
             Events.On<AttachToPanelEvent>(u, _ => { History.Changed -= refresh; History.Changed += refresh; refresh(); });
             Events.On<DetachFromPanelEvent>(u, _ => History.Changed -= refresh);

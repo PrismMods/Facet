@@ -5,11 +5,11 @@ namespace Facet
     /// Which OS font files can draw Korean, Chinese or Japanese, by script. Paths only; Fonts loads them.
     internal static class Cjk
     {
-        /// "ko", "zh" or "ja" from the first two letters of a host language ("zh-CN", "ja_JP", any case); else null.
+        /// "ko", "zh" or "ja" from a host language's primary subtag ("zh-CN", "ja_JP", any case), read as
+        /// Facet's words read it; else null.
         public static string Script(string language)
         {
-            if (language == null || language.Length < 2) return null;
-            switch (language.Substring(0, 2).ToLowerInvariant())
+            switch (Words.Primary(language))
             {
                 case "ko": return "ko";
                 case "zh": return "zh";

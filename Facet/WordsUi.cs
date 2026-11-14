@@ -26,15 +26,41 @@ namespace Facet {
         internal static Func<string, string> Translator(VisualElement e)
         {
             var h = Host.For(e);
-            if (_ownScope > 0) return s => Own(s, h.Language);
+            if (_ownScope > 0) return s => Own(s, h);
             return h.Translate;
         }
 
         public static string T(string english, Host host) => T(english, host.Translate);
 
-        public static string Own(string english, Host host) => Own(english, host.Language);
+        /* Facet's own words as `host` shows them. The host is asked first, under "Facet:" + english, so a mod can word
+           Facet's parts in a language Facet's table lacks (Quartz's zh and ja players) while a host still answers only
+           keys it chose to define. No answer (null, empty, the key itself, or a throw) is Facet's own table. */
+        public static string Own(string english, Host host)
+        {
+            if (string.IsNullOrEmpty(english) || host == null) return Own(english, host?.Language);
+            string key = HostKey(english), s = host.Translate(key);
+            return string.IsNullOrEmpty(s) || s == key ? Own(english, host.Language) : s;
+        }
 
-        internal static string TOrOwn(string english, Host host) => TOrOwn(english, host.Translate, host.Language);
+        /// A sentence of Facet's own with a value in it, the pattern asked of `host` as Own does.
+        public static string OwnF(string englishFormat, Host host, params object[] args)
+            => Fill(Own(englishFormat, host), englishFormat, args);
+
+        // "Facet:" + english, built once per word: the header's tooltips and a Mixed field ask on every refresh.
+        // ponytail: grows by one entry per distinct word asked; only Facet's own (finite) words come here.
+        static readonly System.Collections.Generic.Dictionary<string, string> _hostKeys = new System.Collections.Generic.Dictionary<string, string>();
+        static string HostKey(string english)
+        {
+            string k;
+            if (!_hostKeys.TryGetValue(english, out k)) _hostKeys[english] = k = "Facet:" + english;
+            return k;
+        }
+
+        internal static string TOrOwn(string english, Host host)
+        {
+            var s = T(english, host);
+            return s == english ? Own(english, host) : s;
+        }
 
         /// The word as `host` shows it: Facet's table for its own words, else the host's.
         internal static string Show(string english, Host host, bool own)

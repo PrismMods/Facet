@@ -167,6 +167,8 @@ namespace Facet
                     Root.schedule.Execute(WarmUp.Run).StartingIn(500);
                 }
             }
+            // Last, once fully built: a constructor that throws leaves no half-made surface in the host's list.
+            Host.Surfaces.Add(this);
         }
 
         /// Re-translates every keyed text under Root (labels, buttons, tooltips, the title) in place.
@@ -313,6 +315,7 @@ namespace Facet
             var settings = _settings;
             if (settings == null) return;   // twice is harmless
             _settings = null;   // first, so a Hidden handler cannot show or raise it again
+            Host.Surfaces.Remove(this);
             _theme.Changed -= Retheme;
             if (_refresher != null) { _refresher.Stop(); _refresher = null; }
             Ui.Stack.Remove(this);

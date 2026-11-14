@@ -49,7 +49,9 @@ or `Facet.Input.HeldThisFrame` (the Escape that just closed a window is still do
 A host's `Theme` carries the whole look: a colour per `Role`, `Theme.Sizes` (radius, lines, padding, row
 heights, type, control sizes) and `Theme.Looks` (one `Look`, a per-state recipe of roles, per part element).
 Each host has its own, a copy of `Theme.Dark` unless it passes one (`o.Theme`); change it before you build.
-Colours re-theme open windows: set roles and call `Notify()`, or `Recolour(accent)`. Sizes and looks apply
+Colours re-theme open windows: set roles and call `Notify()`, or `Recolour(accent)`. `SetAccent(colour)` changes
+only the accent: `Accent` and `Focus` take the colour, `AccentText` the text colour `FromAccent` would give it, and
+every other role, the sizes and the looks stay (a skin keeps its panel colours and radius). Sizes and looks apply
 when a part builds, so a change shows on the next build. `Theme.Dark` is shared by every mod and frozen:
 its `Sizes` and `Looks` hand back a fresh copy on each read, so writing to them changes nothing.
 `Looks.Card` is the window shell and popups, `Looks.Group` a card of rows on a page, `Looks.Stage` a
@@ -68,7 +70,24 @@ version scrolls one notch.
 
 A host's `Language` picks the fonts: Korean (`ko`), Chinese (`zh`) and Japanese (`ja`) draw through the
 OS's CJK font, loaded on first use. Two CJK languages in one process share Han glyph forms: the first one
-loaded wins.
+loaded wins. A BCP-47 tag works too: `Host.Language` reads only its primary subtag, lower-cased (`ko-KR` and
+`KO_kr` are `ko`).
+
+After a language change, `host.RelabelSurfaces()` relabels every surface made for that host (its windows and a
+`SettingsWindow`'s) in place; `host.DisposeSurfaces()` disposes them all, and the host stays (`Host.Named` still
+returns it).
+
+**Facet's own words** (a Many row's "Mixed", the header's "Undo" and "Undo {0}", a canvas's "Move", a key row's "press a
+key…", search's "Nothing matches.") come from Facet's table, which has English and Korean. A host may answer them
+for other languages: Facet first asks the host's `Translate` for `"Facet:" + english` (`Facet:Mixed`,
+`Facet:Undo {0}`). A null or empty answer, the key itself, or a throw falls back to Facet's table, so a host
+answers only the keys it chose to define and its own "Undo" never reaches Facet's. The keys are Facet's English
+words exactly as `Facet/Core/Words.cs` lists them (its Korean table holds every one): `Nothing matches.`,
+`Search`, `Results for “{0}”`, `{0}: this page failed to build — see the log.`, `Run`, `Undo`, `Redo`,
+`Undo {0}`, `Redo {0}`, `Sure?`, `Active`, `unbound`, `press a key…`, `Click the strip to add a stop.`,
+`Stop colour`, `Position`, `Add stop`, `Remove stop`, `unavailable, see the log`, `Advanced`,
+`Collapse sidebar`, `Expand sidebar`, `Move`, `Resize`, `Nudge`, `Delete`, `Bring forward`, `Send backward`,
+`Mixed`, `OK`, `Cancel`. A pattern with `{0}` is filled after it is translated.
 
 ## History
 
@@ -443,7 +462,9 @@ Parts a consumer wires with plain delegates, for code that must not name a UI To
   and `detached` whenever it leaves.
 - **`Ui.Search(parent, changed, placeholder)`** is the toolbar's search field on its own (a ✕ that clears it);
   `changed` runs on every keystroke. **`TextOptions.Live`** does the same for a `Text` row, whose bind is still written
-  only on Enter or blur; **`TextOptions.Placeholder`** is an English key shown while the field is empty.
+  only on Enter or blur; **`TextOptions.Placeholder`** is an English key shown while the field is empty;
+  **`TextOptions.MaxLength`** (0: none) is the most characters the field takes, and longer text is cut before `Live`
+  or the bind sees it.
 - **`Controls.AfterChange(container, after)`** runs `after` once per `Committed` of any row under `container`: once
   per click, typed commit or finished drag (not per drag frame), and once per undo or redo of a row's step while
   that row is on a panel. Nested containers each run theirs, innermost first. A canvas's commits are not rows'.
@@ -527,7 +548,7 @@ and its 7 px handle, the handle alone with the rail shut, or the icon strip when
 | Primitives | `Ui.Caps`; `Window.TitleBarLeft`; `Facet.Tokens` removed |
 | Cards | `ControlOptions.Help`; `Controls.Card`/`CardOptions` (`Actions`; `Note`, an English key, or `NoteText`, re-read and untranslated); `Controls.Advanced`; `Form.Build(…, FormOptions)`; `Field.Help`/`Advanced` |
 | Page layout | `Controls.PageHeader`/`PageHeaderOptions`; `Controls.Columns`/`ColumnsOptions` (with `StackBelow`) |
-| Preview | `Controls.Preview`/`PreviewOptions`: `Show`, `Tick`, `Hide` run only while its page, its window and its own `VisibleWhen` show it; `Id` names the stage, `Id-pane` the pane, which takes `VisibleWhen`, `EnabledWhen`, the tooltips and `ContextMenu` (not `Help`) |
+| Preview | `Controls.Preview`/`PreviewOptions`: `Show`, `Tick`, `Hide` run only while its page, its window and its own `VisibleWhen` show it; `Id` names the stage, `Id-pane` the pane, which takes `VisibleWhen`, `EnabledWhen`, the tooltips and `ContextMenu` (not `Help`); `NoteText`, a live note (already translated, re-read on every refresh pass, named `Id-note`) that wins over `Note` |
 | Tiles | `Controls.Tiles`/`TilesOptions` (`Id`, `VisibleWhen`, `EnabledWhen`, the tooltips and `ContextMenu` act on the grid; in a `Card` it is a padded card row); `Controls.Tile`/`TileOptions` (no `Help`: use `Tooltip`) |
 | Switches | every switch (`Toggle`, `PageHeader`, `Tile`) flips on Submit (Enter/Space) as on a click |
 | Tabs | `Tabs.Pages`, `Tabs.Content`; `SearchIndex.Hit.Tab` |
@@ -546,7 +567,8 @@ and its 7 px handle, the handle alone with the rail shut, or the icon strip when
 | Settings window | `SettingsWindow.Open` (`Surface`, `Window`, `Nav`, `Tick`, `Dispose`), `SettingsWindowOptions` (`Initial`, `InitialFraction`, `Search`, `CompactRail`, `Icon`, `RailWidth`); `Nav.Inset` (public) |
 | Regions | `Controls.When`, `Controls.Hook`, `Controls.ToggleGroup(…, out toggle, …)`, `Controls.Section(…, Action<SectionOptions>)`/`SectionOptions.Open`; `HostOptions.LabelIds` |
 | Composition | `Bind<T>.Then`; `Controls.AfterChange`; a row's write or an `Action` click refreshes its surface in the same frame |
-| Hooks | `Ui.Pointer`, `Ui.Every`, `Ui.WhileAttached` (delegates only); `Ui.Search`; `TextOptions.Live`, `TextOptions.Placeholder` |
+| Hooks | `Ui.Pointer`, `Ui.Every`, `Ui.WhileAttached` (delegates only); `Ui.Search`; `TextOptions.Live`, `TextOptions.Placeholder`, `TextOptions.MaxLength` |
+| Conveniences | `Theme.SetAccent`; `Host.RelabelSurfaces`, `Host.DisposeSurfaces`; BCP-47 language tags; a host answering Facet's own words under `Facet:` keys (`Words.Own(english, host)`, `Words.OwnF(format, host, args)`) |
 | Typed rows | `Controls.Dropdown<T>`/`DropdownOptions<T>` (`ItemFace`), `Controls.Choice<T>`/`ChoiceOptions<T>`, `Controls.Enum<TEnum>` |
 | Undo | `History.Step`, `History.BoundTo`, `History.Snapshot<T>`, `History.Invalidate`; stale steps are skipped; a null key never coalesces; `ControlOptions.Undoable`, `ControlOptions.UndoDocument`; an undo or redo of a row's or canvas's step raises its `Committed` inside the apply (`History.Applying` true) while it is on a panel, and otherwise only writes the bind or `SetRect` |
 

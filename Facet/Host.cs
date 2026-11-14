@@ -107,6 +107,22 @@ namespace Facet {
             public void Dispose() { _current = _prev; }
         }
 
+        // Every live surface made for this host, in creation order: a surface adds itself and leaves on Dispose.
+        internal readonly System.Collections.Generic.List<Surface> Surfaces = new System.Collections.Generic.List<Surface>();
+
+        /// Relabel every surface made for this host (its windows, a SettingsWindow's), after a language change.
+        public void RelabelSurfaces()
+        {
+            foreach (var s in Surfaces.ToArray()) Safe.Run(this, "Surface '" + s.Name + "' relabel", s.Relabel);
+        }
+
+        /// Dispose every surface made for this host. The host itself stays: Host.Named still returns it.
+        /// One surface that throws is logged and the rest are still disposed (the same holds for RelabelSurfaces).
+        public void DisposeSurfaces()
+        {
+            foreach (var s in Surfaces.ToArray()) Safe.Run(this, "Surface '" + s.Name + "' dispose", s.Dispose);
+        }
+
         public void Log(string m) { _log(m); }
 
         public string Translate(string s) {
@@ -115,13 +131,18 @@ namespace Facet {
             return string.IsNullOrEmpty(t) ? s : t;
         }
 
-        /// "ko" for Korean; anything else is English. Never null or empty: Nav keys its indexes by it.
+        /// The host's language reduced to its primary subtag ("ko-KR" reads "ko"); Facet's table knows "ko", anything
+        /// else is English. Never null or empty: Nav keys its indexes by it.
         public string Language {
             get {
                 string l = _o.Language == null ? null : Safe.Get(Name, "Host.Language", _o.Language, "en", _log);
-                return string.IsNullOrEmpty(l) ? "en" : l;
+                if (string.IsNullOrEmpty(l)) return "en";
+                // A host answering a full tag ("ko-KR") on every read pays the reduction once per tag, not per read.
+                if (l != _rawLanguage) { _language = Words.Primary(l); _rawLanguage = l; }
+                return _language;
             }
         }
+        private string _rawLanguage, _language;
 
         public string Read(string key) {
             return _o.Read == null ? null : Safe.Get(Name, "Host.Read", () => _o.Read(key), null, _log);

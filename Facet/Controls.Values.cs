@@ -55,6 +55,8 @@ namespace Facet
         public Action<string> Live { get; set; }
         /// An English key shown greyed while the field is empty.
         public string Placeholder { get; set; }
+        /// The most characters the field takes (0: no limit). Longer text is cut before Live or the bind sees it.
+        public int MaxLength { get; set; }
     }
 
     public class ColourOptions : Options<Color>
@@ -310,7 +312,11 @@ namespace Facet
             f.style.fontSize = Theme.For(right).Sizes.Small;
             Cursors.Set(f, Cursors.Kind.Text);
             right.Add(f);
-            var c = TrackedRow(right.parent, f, parent, label, o, bind, null, (v, mixed) => f.SetValueWithoutNotify(mixed ? "" : v ?? ""));
+            int max = o.MaxLength;
+            if (max > 0) f.maxLength = max;
+            // What the row last showed, read back after the field's own maxLength had its say: text equal to it is no edit.
+            string shown = null;
+            var c = TrackedRow(right.parent, f, parent, label, o, bind, null, (v, mixed) => { f.SetValueWithoutNotify(mixed ? "" : v ?? ""); shown = f.value; });
             Placeholder(f, o.Placeholder, Host.For(right));
             var live = o.Live;
             if (live != null)
@@ -320,14 +326,18 @@ namespace Facet
                 var site = "TextOptions.Live '" + label + "'";
                 string typed = null;
                 Action run = () => live(typed);
-                Events.On<ChangeEvent<string>>(f, e => { typed = e.newValue; Safe.Run(host, site, run); });
+                Events.On<ChangeEvent<string>>(f, e => { typed = Cut(e.newValue, max); Safe.Run(host, site, run); });
             }
             /* On commit, not per keystroke: a setter that persists to disk should not run once per
-               character typed. Mixed shows empty, and leaving it empty writes nothing: only typing does. */
+               character typed. Mixed shows empty, and leaving it empty writes nothing: only typing does.
+               Untouched text writes nothing either, so a focus and blur never cuts a longer stored value. */
             OnTyped(f, c, text =>
             {
                 text = text ?? "";
+                if (text == shown) return true;
+                if (max > 0 && text.Length > max) { text = text.Substring(0, max); f.SetValueWithoutNotify(text); }
                 if (c.Mixed ? text.Length > 0 : text != (c.Value ?? "")) c.Set(text);
+                shown = text;
                 return true;
             }, null);
             return c;
@@ -424,6 +434,8 @@ namespace Facet
         }
 
         // A number box's text while its row is bound to many items that disagree.
+        private static string Cut(string s, int max) => max > 0 && s != null && s.Length > max ? s.Substring(0, max) : s;
+
         private static string MixedText(VisualElement e) { return Words.Own("Mixed", Host.For(e)); }
 
         /// Read-only text beside a label that wraps when long, instead of a TextField that cuts it off. With Tone the

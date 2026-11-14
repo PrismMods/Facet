@@ -93,6 +93,18 @@ namespace Facet
             Notify();
         }
 
+        /// Recolour only the accent, in place: Accent and Focus become `c`, AccentText the text that reads on it
+        /// (as FromAccent derives it). Every other role, the Sizes and the Looks are kept; redraws what wears it.
+        public void SetAccent(Color c)
+        {
+            Writable();
+            _c[(int)Role.Accent] = c;
+            _c[(int)Role.Focus] = c;
+            var t = Palette.Contrast(c.r, c.g, c.b);
+            _c[(int)Role.AccentText] = new Color(t[0], t[1], t[2], t[3]);
+            Notify();
+        }
+
         /// Redraw whatever wears this scheme: raises Changed, each subscriber in its own Safe. Call it
         /// after setting roles with the indexer.
         public void Notify()

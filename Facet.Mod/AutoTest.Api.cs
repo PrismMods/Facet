@@ -510,5 +510,173 @@ namespace Facet.Mod
                 History.Clear();
             }
         }
+        static bool HasText(VisualElement root, string text) => root != null && root.Query<TextElement>().ToList().Exists(t => t.text == text);
+
+        // Theme.SetAccent, a host's surfaces relabelled and disposed together, BCP-47 languages, live preview notes,
+        // a text length limit, and a host answering Facet's own words under Facet: keys.
+        /* Heap growth over 100000 Language reads with the collector paused; `junk` is 100000 boxed ints' growth, about
+           the size of one short string. Many reads: partly free blocks take a few thousand small objects unseen. */
+        static void LanguageProbe(Host h, out long grew, out long junk)
+        {
+            object keep = null;
+            string l = null;
+            var mode = GarbageCollector.GCMode;
+            l = h.Language;   // the first read may reduce the tag
+            try
+            {
+                GarbageCollector.GCMode = GarbageCollector.Mode.Disabled;
+                long a = GC.GetTotalMemory(false);
+                for (int i = 0; i < 100000; i++) keep = i;
+                junk = GC.GetTotalMemory(false) - a;
+                a = GC.GetTotalMemory(false);
+                for (int i = 0; i < 100000; i++) l = h.Language;
+                grew = GC.GetTotalMemory(false) - a;
+            }
+            finally { GarbageCollector.GCMode = mode; }
+            GC.KeepAlive(keep); GC.KeepAlive(l);
+        }
+
+        IEnumerator SectionConveniences()
+        {
+            Surface a = null, b = null, c = null;
+            SettingsWindow sw = null;
+            try
+            {
+                // SetAccent on a theme with its own radius and panel colour.
+                var th = new Theme();
+                th.Sizes.Radius = 11f;
+                var panel = new Color(0.2f, 0.3f, 0.1f, 1f);
+                th[Role.Panel] = panel;
+                var accHost = Host.Create("FacetAccentProbe", o => { o.Theme = th; o.Log = m => Main.Log("[accent] " + m); });
+                a = new Surface(accHost, "FacetAccentProbe", Layer.Window);
+                var aw = new Window(a.Root, "accentprobe", "Accent", new Rect(60, 60, 400, 300));
+                var dot = Ui.Box(aw.Body);
+                Paint.Bg(dot, Role.Accent);
+                yield return null;
+                var red = new Color(0.9f, 0.2f, 0.2f, 1f);
+                th.SetAccent(red);
+                var want = Theme.FromAccent(red)[Role.AccentText];
+                Check(th[Role.Accent] == red && th[Role.Focus] == red && th[Role.AccentText] == want,
+                    "SetAccent sets Accent and Focus to the colour and AccentText to its contrast", th[Role.Accent] + " " + th[Role.Focus] + " " + th[Role.AccentText]);
+                Check(th[Role.Panel] == panel && th.Sizes.Radius == 11f, "...keeps the other roles and the sizes", th[Role.Panel] + " r=" + th.Sizes.Radius);
+                Check(Near(dot.style.backgroundColor.value, red), "...and re-paints an open window", dot.style.backgroundColor.value.ToString());
+                a.Dispose(); a = null;
+
+                // RelabelSurfaces and DisposeSurfaces: every surface of one host, its SettingsWindow's included.
+                string lang = "en";
+                var relHost = Host.Create("FacetRelabelProbe", o =>
+                {
+                    o.Language = () => lang;
+                    o.Translate = k => lang == "ko" && k == "Alpha" ? "\uC54C\uD30C" : null;
+                    o.Log = m => Main.Log("[relabel] " + m);
+                });
+                b = new Surface(relHost, "FacetRelabelA", Layer.Window);
+                c = new Surface(relHost, "FacetRelabelB", Layer.Window);
+                var lb = Ui.Text("Alpha", b.Root);
+                var lc = Ui.Text("Alpha", c.Root);
+                sw = SettingsWindow.Open(relHost, "cvrelabel", "Relabel", new List<NavItem> { new NavItem("Alpha", p => Controls.Toggle(p, "Gizmo", Bind.Value(false))) });
+                yield return null; yield return null;
+                bool before = lb.text == "Alpha" && lc.text == "Alpha" && HasText(sw.Surface.Root, "Alpha");
+                lang = "ko";
+                relHost.RelabelSurfaces();
+                Check(before && lb.text == "\uC54C\uD30C" && lc.text == "\uC54C\uD30C", "RelabelSurfaces relabels two surfaces of one host after a language change", lb.text + " / " + lc.text);
+                Check(HasText(sw.Surface.Root, "\uC54C\uD30C"), "...and its SettingsWindow's surface");
+                var swSurface = sw.Surface;
+                // A surface that throws while disposing (here a shell with no host) must not stop the rest.
+                var bogus = (Surface)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(Surface));
+                var bogusSettings = ScriptableObject.CreateInstance<PanelSettings>();
+                typeof(Surface).GetField("_settings", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(bogus, bogusSettings);
+                relHost.Surfaces.Insert(0, bogus);
+                string threw = null;
+                try { relHost.DisposeSurfaces(); } catch (Exception e) { threw = e.GetType().Name; }
+                relHost.Surfaces.Remove(bogus);
+                UnityEngine.Object.Destroy(bogusSettings);
+                Check(threw == null, "DisposeSurfaces carries on past a surface that throws", threw);
+                Check(b.Root == null && c.Root == null && swSurface.Root == null, "DisposeSurfaces disposes all three");
+                Check(Host.Named("FacetRelabelProbe") == relHost, "...and Host.Named still returns the host");
+                b = c = null; sw = null;
+
+                // A BCP-47 language tag.
+                var koHost = Host.Create("FacetLanguageProbe", o => { o.Language = () => "ko-KR"; o.Log = m => Main.Log("[lang] " + m); });
+                a = new Surface(koHost, "FacetLanguageProbe", Layer.Window);
+                var kl = Ui.Muted("Search", a.Root, own: true);
+                yield return null;
+                Check(koHost.Language == "ko" && kl.text == "\uAC80\uC0C9", "a host whose language is ko-KR reads as ko and shows Facet's Korean", koHost.Language + " / " + kl.text);
+                var face = Fonts.Regular(koHost);
+                var used = kl.resolvedStyle.unityFontDefinition.fontAsset;
+                Check(used != null && used == face && Fonts.Has(used, kl.text), "...drawn in its CJK face", (used == null ? "null" : used.faceInfo.familyName) + " / " + (face == null ? "null" : face.faceInfo.familyName));
+                long lgrew, ljunk;
+                LanguageProbe(koHost, out lgrew, out ljunk);
+                Main.Log("[perf] full-tag host Language: heap grew " + lgrew + " bytes over 100000 reads (100000 boxed ints grew it " + ljunk + ")");
+                Check(ljunk > 0 && lgrew == 0, "reading Language from a host that answers ko-KR allocates nothing", lgrew + " bytes over 100000 reads");
+                a.Dispose(); a = null;
+
+                // NoteText and MaxLength.
+                a = new Surface(Gallery.Host, "FacetConveniencesProbe", Layer.Window);
+                var w = new Window(a.Root, "convprobe", "Conveniences", new Rect(60, 60, 600, 500));
+                string note = "One";
+                Controls.Preview(w.Body, "Stage", o => { o.Note = "Fixed note"; o.NoteText = () => note; });
+                a.Refresh(); yield return null;
+                bool first = HasText(w.Body, "One") && !HasText(w.Body, "Fixed note");
+                note = "Two"; a.Refresh(); yield return null;
+                Check(first && HasText(w.Body, "Two") && !HasText(w.Body, "One"), "PreviewOptions.NoteText follows its Func on refresh and wins over Note");
+                string named = "", liveSeen = null;
+                var text = Controls.Text(w.Body, "Short", Bind.To(() => named, v => named = v), o => { o.MaxLength = 5; o.Live = v => liveSeen = v; });
+                var tf = text.Input as TextField;
+                Type(tf, "abcdefg"); yield return null;
+                Check(named == "abcde", "TextOptions.MaxLength 5: typing abcdefg writes abcde", named);
+                using (var ce = ChangeEvent<string>.GetPooled("", "abcdefg")) { ce.target = tf; tf.SendEvent(ce); }
+                yield return null;
+                Check(tf.maxLength == 5 && liveSeen == "abcde", "...the field's own limit is 5 and Live sees a 7-character change cut to abcde", tf.maxLength + " / " + liveSeen);
+                string stored = "abcdefgh";
+                var longer = Controls.Text(w.Body, "Stored", Bind.To(() => stored, v => stored = v), o => o.MaxLength = 5);
+                a.Refresh(); yield return null;
+                string nextUndo = History.NextUndo;
+                var lf = longer.Input as TextField;
+                lf.Focus(); yield return null;
+                (lf.focusController?.focusedElement as VisualElement)?.Blur(); yield return null;
+                Check(stored == "abcdefgh" && History.NextUndo == nextUndo,
+                    "...and a focus and blur with no typing leaves a longer stored value and History untouched", stored + " / " + History.NextUndo);
+                a.Dispose(); a = null;
+
+                // A host answering Facet's own words.
+                History.Clear();
+                var trHost = Host.Create("FacetOwnWordsProbe", o =>
+                {
+                    o.Translate = k => k == "Facet:Mixed" ? "X" : k == "Facet:Undo" ? "Y" : k == "Facet:Undo {0}" ? "Y {0}" : null;
+                    o.Log = m => Main.Log("[ownwords] " + m);
+                });
+                a = new Surface(trHost, "FacetOwnWordsProbe", Layer.Window);
+                var tw = new Window(a.Root, "ownwordsprobe", "Own words", new Rect(60, 60, 600, 400));
+                var items = new List<float[]> { new[] { 1f }, new[] { 2f } };
+                Controls.Slider(tw.Body, "Mixed probe", Bind.Many(() => items, x => x[0], (x, v) => x[0] = v), o => o.Id = "cv-mixed");
+                a.Refresh(); yield return null;
+                var num = tw.Body.Q<TextField>("cv-mixed-number");
+                Check(num != null && num.value == "X", "a host mapping Facet:Mixed to X shows X in a mixed Many slider", num?.value);
+                var head = tw.TitleBarRight.Query<Button>().ToList().Find(x => x.text == "\u21B6");
+                History.Record(null, null, () => { }, () => { });
+                Check(head != null && head.tooltip == "Y", "...and Facet:Undo to Y shows Y in its window header's undo tooltip", head?.tooltip);
+                History.Record("Thing", null, () => { }, () => { });
+                Check(head != null && head.tooltip == "Y Thing", "...and Facet:Undo {0} formats the named step", head?.tooltip);
+                History.Clear();
+                a.Dispose(); a = null;
+
+                var echoHost = Host.Create("FacetEchoProbe", o => { o.Translate = k => k; o.Log = m => Main.Log("[echo] " + m); });
+                a = new Surface(echoHost, "FacetEchoProbe", Layer.Window);
+                var ew = new Window(a.Root, "echoprobe", "Echo", new Rect(60, 60, 600, 400));
+                Controls.Slider(ew.Body, "Mixed probe", Bind.Many(() => items, x => x[0], (x, v) => x[0] = v), o => o.Id = "cv-echo");
+                a.Refresh(); yield return null;
+                var en = ew.Body.Q<TextField>("cv-echo-number");
+                Check(en != null && en.value == "Mixed", "a host whose translator returns the key it was given shows Facet's own Mixed", en?.value);
+            }
+            finally
+            {
+                if (sw != null) sw.Dispose();
+                if (a != null) a.Dispose();
+                if (b != null) b.Dispose();
+                if (c != null) c.Dispose();
+                History.Clear();
+            }
+        }
     }
 }

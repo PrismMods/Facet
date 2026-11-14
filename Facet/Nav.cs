@@ -102,9 +102,9 @@ namespace Facet
             _crumbs.Clear();
             _crumbs.style.paddingTop = sz.Gap;
             _crumbs.style.paddingBottom = sz.Gap;
-            var title = Ui.Text(Words.OwnF("Results for \u201c{0}\u201d", Host.For(_crumbs).Language, _filter), _crumbs, sz.Title, own: true);
+            var title = Ui.Text(Words.OwnF("Results for \u201c{0}\u201d", Host.For(_crumbs), _filter), _crumbs, sz.Title, own: true);
             var shownFilter = _filter;
-            Words.OnRelabel(title, () => title.text = Words.OwnF("Results for \u201c{0}\u201d", Host.For(title).Language, shownFilter));   // follows a language switch
+            Words.OnRelabel(title, () => title.text = Words.OwnF("Results for \u201c{0}\u201d", Host.For(title), shownFilter));   // follows a language switch
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
 
             _content.Clear();
@@ -829,7 +829,7 @@ namespace Facet
         internal static void FailedCard(VisualElement parent, string owner)
         {
             var card = Ui.Muted("", parent);
-            Action say = () => card.text = Words.OwnF("{0}: this page failed to build — see the log.", Host.For(card).Language, owner);
+            Action say = () => card.text = Words.OwnF("{0}: this page failed to build — see the log.", Host.For(card), owner);
             say();
             Words.OnRelabel(card, say);
         }
