@@ -365,11 +365,12 @@ namespace Facet
 
         private void NotifyInsetChanged()
         {
-            var f = _insetChanged;
-            float inset = Inset;
-            _lastEventInset = inset;
-            Safe.Run(Host.For(_host), "Nav.InsetChanged", () => f(inset));
+            _lastEventInset = Inset;
+            Safe.Run(Host.For(_host), "Nav.InsetChanged", _raiseInset ?? (_raiseInset = RaiseInset));
         }
+
+        private Action _raiseInset;   // one delegate for every change: a flip or a drag move allocates nothing for it
+        private void RaiseInset() { var f = _insetChanged; if (f != null) f(_lastEventInset); }
 
         private void PaintHandle()
         {
@@ -382,6 +383,10 @@ namespace Facet
         public Nav(VisualElement parent, IEnumerable<NavItem> items, float railWidth = 200f)
         {
             _host = parent;
+            // The window's main Nav: the first in its body, or this one once that one has left the body (a rebuild).
+            _window = Window.Of(parent);
+            var main = _window?.MainNav;
+            if (_window != null && (main == null || !_window.Body.Contains(main._railScroll))) _window.MainNav = this; else _window = null;
             _roots = new List<NavItem>(items ?? new NavItem[0]);
 
             var split = Ui.Row(parent);
@@ -472,6 +477,7 @@ namespace Facet
 
             PaintHandle();
             ReportInset();
+            TitleToggle();   // a toggle left by a Nav this one replaced shows only if this one asks for it
 
             // Open the first leaf, so the pane is never blank on arrival.
             var first = FirstLeaf(_roots);
@@ -640,7 +646,7 @@ namespace Facet
             _rail.Clear();
             _pendingRule = false;
             var t = Theme.For(_rail);   // once per rebuild, not per entry
-            if (_compactButton) AddRailButton(t.Sizes, t.Looks);
+            if (RailHasButton) AddRailButton(t.Sizes, t.Looks);
             foreach (var i in _roots) AddRailItem(i, 0, t.Sizes, t.Looks);
             if (_compact && !_widened) Titles(0f, false);
             DrawRailButton();
@@ -667,7 +673,7 @@ namespace Facet
             {
                 // An untitled group is a rule between groups, drawn only once a row follows it: a
                 // group that hides entirely leaves no rule, and none sits above the first entry.
-                if (_rail.childCount > (_compactButton ? 1 : 0)) _pendingRule = true;   // the button is not an entry
+                if (_rail.childCount > (RailHasButton ? 1 : 0)) _pendingRule = true;   // the button is not an entry
                 foreach (var c in item.Children) AddRailItem(c, depth, sz, k);
                 return;
             }

@@ -18,6 +18,12 @@ namespace Facet
         private float _compactWidth;
         private bool _compact, _compactButton, _widened, _armed = true;
         private IVisualElementScheduledItem _dwell;
+        // The window this Nav is the main one of (null outside a window, or for a second Nav), and its title-bar
+        // toggle, which the window keeps: null once a rebuilt Nav has taken it.
+        private readonly Window _window;
+        private Button Toggle => _window != null && _window.MainNav == this ? _window.SidebarToggle : null;
+        // The button sits in the rail only when there is no window title bar to put it in.
+        private bool RailHasButton => _compactButton && _window == null;
 
         /// The rail as an icon strip (an entry's padding, its icon, the padding again) that widens over the
         /// page, which does not move, once the pointer has rested on it for 0.1 s, and narrows when it leaves.
@@ -29,14 +35,15 @@ namespace Facet
             set { if (value != _compact) { _compact = value; ApplyCompact(); } }
         }
 
-        /// A button at the top of the rail that flips Compact and raises CompactChanged.
+        /// A button that flips Compact and raises CompactChanged: `sidebar-toggle` at the left of the owning
+        /// Window's title bar for the window's first Nav, else a `rail-button` at the top of the rail.
         public bool CompactButton
         {
             get { return _compactButton; }
-            set { if (value != _compactButton) { _compactButton = value; RebuildRail(); } }
+            set { if (value != _compactButton) { _compactButton = value; TitleToggle(); RebuildRail(); } }
         }
 
-        /// Raised after the rail's own button flips Compact, with the new value (the host keeps it);
+        /// Raised after the Nav's own button flips Compact, with the new value (the host keeps it);
         /// not when the host sets Compact.
         public event Action<bool> CompactChanged;
 
@@ -113,12 +120,18 @@ namespace Facet
         }
 
         // Every label in the rail: entry titles, group headings, branch chevrons (the button's glyph is an image).
-        private void Titles(float opacity, bool animate)
+        private void Titles(float opacity, bool animate) => Titles(_rail, opacity, animate);
+
+        // A walk rather than a query with a closure: a flip allocates nothing of its own.
+        private static void Titles(VisualElement e, float opacity, bool animate)
         {
-            _rail.Query<Label>().ForEach(l =>
+            var h = e.hierarchy;
+            for (int i = 0; i < h.childCount; i++)
             {
-                if (animate) Anim.Fade(l, opacity, Anim.Fast); else l.style.opacity = opacity;
-            });
+                var c = h[i];
+                if (c is Label l) { if (animate) Anim.Fade(l, opacity, Anim.Fast); else l.style.opacity = opacity; }
+                Titles(c, opacity, animate);
+            }
         }
 
         // At the top of the rail, its glyph in the icons' column: » widens the strip for good, « makes it one.
@@ -141,20 +154,58 @@ namespace Facet
             Events.On<ClickEvent>(row, _ =>
             {
                 if (!_compact) _armed = false;   // made compact under the pointer: it widens again only after the pointer leaves
-                Compact = !_compact;
-                bool now = _compact;
-                var e = CompactChanged;
-                if (e != null) Safe.Run(Host.For(_host), "Nav.CompactChanged", () => e(now));
+                Flip();
             });
         }
 
-        private void DrawRailButton()
+        // Internal for the autotest's heap probe: a flip allocates nothing beyond what Compact's motion does.
+        internal void Flip()
         {
+            Compact = !_compact;
+            if (CompactChanged != null) Safe.Run(Host.For(_host), "Nav.CompactChanged", _raiseCompact ?? (_raiseCompact = RaiseCompact));
+        }
+
+        private Action _raiseCompact;   // one delegate for every flip
+        private void RaiseCompact() { var e = CompactChanged; if (e != null) e(_compact); }
+
+        /* In the window's title bar, just before the title (after any logo put in front of it), sized as its ↶ ↷ ×.
+           The window keeps the button and it flips whichever Nav is the window's main one now. It leaves the hover
+           rule alone: the pointer that pressed it is not on the rail, so the strip may widen as soon as it comes over it. */
+        private void TitleToggle()
+        {
+            if (_window == null || _window.MainNav != this) return;
+            var w = _window;
+            var b = w.SidebarToggle;
+            if (b == null && _compactButton)
+            {
+                b = w.SidebarToggle = Ui.IconButton(w.TitleBarLeft, Background.FromTexture2D(Tex.Sidebar()), "Collapse sidebar", null);
+                b.name = "sidebar-toggle";
+                b[0].style.backgroundSize = new BackgroundSize(BackgroundSizeType.Contain);   // the 4:3 glyph unstretched in the square icon
+                Events.On<ClickEvent>(b, _ => w.MainNav?.Flip());   // as the rail button: a ClickEvent sent to it flips it too
+                b.style.width = 30f;
+                b.style.height = 26f;
+                b.style.flexShrink = 0f;
+                b.style.alignSelf = Align.Center;
+                b.style.marginRight = Theme.For(b).Sizes.Gap;
+                w.TitleBarLeft.Insert(Math.Max(0, w.TitleBarLeft.IndexOf(w.TitleLabel)), b);   // after a logo, before the title
+            }
+            if (b != null) b.style.display = _compactButton ? DisplayStyle.Flex : DisplayStyle.None;
+            DrawRailButton();
+        }
+
+        private void DrawRailButton() => DrawButtons(_compact);
+
+        // The buttons' glyph and tip as for `compact` (internal for the autotest's heap probe).
+        internal void DrawButtons(bool compact)
+        {
+            string tip = compact ? "Expand sidebar" : "Collapse sidebar";
+            var t = Toggle;
+            if (t != null) Words.Tip(t, tip, true);
             var b = _rail.childCount > 0 && _rail[0].name == "rail-button" ? _rail[0] : null;
             var g = b == null ? null : b.Q("rail-glyph");
             if (g == null) return;
-            g.style.backgroundImage = Background.FromTexture2D(Tex.Chevrons(!_compact));
-            Words.Tip(b, _compact ? "Expand sidebar" : "Collapse sidebar", true);
+            g.style.backgroundImage = Background.FromTexture2D(Tex.Chevrons(!compact));
+            Words.Tip(b, tip, true);
         }
     }
 }

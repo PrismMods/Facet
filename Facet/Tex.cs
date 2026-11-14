@@ -6,7 +6,7 @@ namespace Facet
 
        A mod has no image assets at runtime, and UI Toolkit will not compile a USS gradient either,
        so anything that is not a flat rectangle has to be built in code. These are the handful a
-       colour picker needs, and the rail button's chevrons. Each is made once and kept: they are tiny, they never change, and a
+       colour picker needs, the rail button's chevrons and the sidebar toggle. Each is made once and kept: they are tiny, they never change, and a
        picker that rebuilt them per open would allocate a texture every time.
 
        Built with hideFlags DontSave so a scene change does not destroy them under a live panel. */
@@ -74,6 +74,27 @@ namespace Facet
             });
             if (left) _chevronsLeft = t; else _chevronsRight = t;
             return t;
+        }
+
+        private static Texture2D _sidebar;
+
+        /// A sidebar panel, white on clear for a tint: an outlined rounded rectangle about 4:3 with a bar inside
+        /// near its left edge, stroked as Chevrons are. One glyph for both states of the sidebar toggle.
+        internal static Texture2D Sidebar()
+        {
+            if (_sidebar != null) return _sidebar;
+            const int w = 64, h = 48;
+            const float half = 3.5f, hx = 27f, hy = 20f, r = 8f, bar = w / 2f - hx + 15f;
+            _sidebar = Make(w, h, (x, y) =>
+            {
+                var p = new Vector2(x + 0.5f, y + 0.5f);
+                // Distance to the rounded rectangle's outline (its centre line), then to the bar.
+                var q = new Vector2(Mathf.Abs(p.x - w / 2f) - (hx - r), Mathf.Abs(p.y - h / 2f) - (hy - r));
+                float box = Mathf.Abs(new Vector2(Mathf.Max(q.x, 0f), Mathf.Max(q.y, 0f)).magnitude + Mathf.Min(Mathf.Max(q.x, q.y), 0f) - r);
+                float d = Mathf.Min(box, ToSegment(p, new Vector2(bar, h / 2f - hy), new Vector2(bar, h / 2f + hy)));
+                return new Color(1f, 1f, 1f, Mathf.Clamp01(half + 0.5f - d));
+            });
+            return _sidebar;
         }
 
         private static float ToSegment(Vector2 p, Vector2 a, Vector2 b)

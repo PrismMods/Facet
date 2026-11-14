@@ -42,12 +42,26 @@ namespace Facet
 
         private VisualElement _headerGap;
 
+        /* The Nav the title bar's sidebar toggle drives: the first one built in the body, or the next one built
+           once that one has left it (a host that clears the body and builds its Nav again). The window keeps the
+           toggle, so a rebuilt Nav takes the same button. Found from the body through Data. */
+        internal Nav MainNav;
+        internal Button SidebarToggle;
+        internal Label TitleLabel;
+        internal sealed class Owner { public Window W; }
+
+        internal static Window Of(VisualElement e)
+        {
+            for (; e != null; e = e.parent) { var o = Data.Find<Owner>(e); if (o != null) return o.W; }
+            return null;
+        }
+
         /// Keep the search box lined up with a content pane whose left edge moves.
         public void SetContentInset(float inset)
         {
-            // Never narrower than a mod name: with the rail collapsed the block would otherwise
-            // shrink to nothing and the title would sit against the search box.
-            if (_headerGap != null) _headerGap.style.width = Mathf.Max(inset, 110f);
+            // Never narrower than a mod name, nor than what it holds (a logo, the sidebar toggle, the title):
+            // with the rail collapsed the block would otherwise shrink and the title run into the search box.
+            if (_headerGap != null) _headerGap.style.minWidth = Mathf.Max(inset, 110f);
         }
 
         public void ShowSearch(string placeholder, Action<string> onChange) { ShowSearch(placeholder, onChange, false); }
@@ -166,10 +180,10 @@ namespace Facet
                do it: the title's own width pushed the box further right by however long the mod's
                name happened to be. */
             _headerGap = Ui.Row(bar);
-            _headerGap.style.width = RailAlign;
+            _headerGap.style.minWidth = RailAlign;   // its width is its content's, never less than this
             _headerGap.style.flexShrink = 0f;
 
-            var label = Ui.Text(_headerGap, title, sz.Body);
+            var label = TitleLabel = Ui.Text(_headerGap, title, sz.Body);
             label.style.unityFontStyleAndWeight = FontStyle.Bold;
             label.style.marginLeft = 2f;
             // Keeps the name off the search box when the rail is collapsed and the block is narrow.
@@ -207,6 +221,7 @@ namespace Facet
             close.style.fontSize = sz.Body;
 
             Body = Ui.Box(Root);
+            Data.Get<Owner>(Body).W = this;
             Body.style.flexGrow = 1f;
             /* The one element that MUST absorb slack. Ui.Box defaults to flexShrink 0 so rows keep
                their height, but the window body is the opposite case: it has to shrink to whatever

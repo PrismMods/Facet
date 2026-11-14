@@ -436,8 +436,8 @@ namespace Facet.Mod
                 var placed = sw.Window.Rect;
                 Check(Close(placed, CentredIn(panel, 0.8f), 2f), "SettingsWindow.Open shows its window at 80% of the panel, centred (2 px)", placed + " in " + panel);
                 Check(store.ContainsKey("window.swprobe"), "...and stores that rect once shown");
-                Check(sw.Nav.Inset == 207f && Mathf.Abs(sw.Window.TitleBarLeft.style.width.value.value - sw.Nav.Inset) < 0.01f,
-                    "the content inset is Nav.Inset (207 with the default rail): the header lines up with it", sw.Nav.Inset + " / " + sw.Window.TitleBarLeft.style.width.value.value);
+                Check(sw.Nav.Inset == 207f && Mathf.Abs(sw.Window.TitleBarLeft.style.minWidth.value.value - sw.Nav.Inset) < 0.01f,
+                    "the content inset is Nav.Inset (207 with the default rail): the header lines up with it", sw.Nav.Inset + " / " + sw.Window.TitleBarLeft.style.minWidth.value.value);
 
                 other = new Surface(Gallery.Host, "FacetRegionsOther", Layer.Window);
                 new Window(other.Root, "regionsother", "Other", new Rect(100, 100, 300, 200));
@@ -722,9 +722,9 @@ namespace Facet.Mod
                 nav.CompactChanged += v => told = v;
                 nav.CompactButton = true;
                 yield return null;
-                var btn = w.Body.Q("rail-button");
+                var btn = w.Root.Q("sidebar-toggle");
                 if (btn != null) ClickEl(btn);
-                Check(nav.Compact && told == true, "CompactChanged reports the rail button's flip", nav.Compact + " / " + told);
+                Check(nav.Compact && told == true, "CompactChanged reports the sidebar toggle's flip", nav.Compact + " / " + told);
 
                 // A throwing AfterApply subscriber: logged once, and the undo still shows in the same frame.
                 var input = s.Root.Q("cleanup-flag-input");
