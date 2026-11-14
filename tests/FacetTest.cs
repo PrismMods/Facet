@@ -690,10 +690,15 @@ static class FacetTest {
             Motion.Speed = 3f;   // a bridge's per-frame write
             Check(Motion.Speed == 1f && !Motion.Smooth, "a held speed ignores other writers");
             using (Motion.Hold(0.25f, true)) Check(Motion.Speed == 0.25f && Motion.Smooth, "the newest hold wins");
-            Check(Motion.Speed == 1f, "disposing a nested hold restores the outer one");
+            Check(Motion.Speed == 1f && !Motion.Smooth, "disposing a nested hold restores the outer one, smooth scroll included");
         }
         Check(Motion.Speed == 3f, "with no hold the store's last write shows");
         Motion.Speed = 1f;
+        bool keepSmooth = Motion.Smooth;
+        Motion.Smooth = true;
+        using (Motion.Hold(1f, false)) { }
+        Check(Motion.Smooth, "disposing the last hold gives smooth scroll back as the store had it");
+        Motion.Smooth = keepSmooth;
     }
 
     // One row over many items: the first item's value, a mixed state, and per-item undo.

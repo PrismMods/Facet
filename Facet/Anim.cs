@@ -71,7 +71,10 @@ namespace Facet
         public static void Move(VisualElement e, float toLeft, int ms = Fast)
         {
             if (e == null) return;
-            float from = e.resolvedStyle.left;
+            /* From the left it was given (a slide in progress writes it too): the resolved one counts the parent's
+               border and is snapped to pixels, so a knob would jump by a line as its slide started. */
+            var set = e.style.left;
+            float from = set.keyword == StyleKeyword.Undefined && set.value.unit == LengthUnit.Pixel ? set.value.value : e.resolvedStyle.left;
             if (float.IsNaN(from)) from = toLeft;
             Run(e, from, toLeft, ms, (el, v) => el.style.left = v);
         }

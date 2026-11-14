@@ -391,7 +391,8 @@ puts the canvas, and with it the page, in that closure).
   wheel over it scrolls it, not the page. Stacked (below `StackBelow`) the column is its content's height again.
 - **`Controls.Live(parent, key, build)`** builds once, then rebuilds whenever `key()` changes (`object.Equals`; a
   `Func<int>` key such as a selection's version is compared by value and allocates nothing per pass),
-  checked on every refresh pass and every `Surface.Refresh()`. A rebuild runs in the context of the first build (its
+  checked on every refresh pass and every `Surface.Refresh()`; `Controls.Live(parent, build)` builds once and never
+  rebuilds (`Live(parent, null, build)` does not compile: both keyed forms take a null). A rebuild runs in the context of the first build (its
   Nav page and tab), so a `Tabs.Pages` inside keeps its chosen tab while the new tabs still have that name and falls
   back to the first otherwise. Rows built inside, including a tab's rows built later on a click, have the rebuild
   count of every enclosing Live region in their history key: rows of two builds never coalesce, even over one

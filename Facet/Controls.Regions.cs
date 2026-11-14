@@ -127,6 +127,10 @@ namespace Facet
             }), build);
         }
 
+        /// A box built once and never rebuilt, in the same build context. `Live(parent, null, build)` cannot pick between
+        /// the keyed forms, so this is the form with no key.
+        public static VisualElement Live(VisualElement parent, Action<VisualElement> build) => Region(parent, null, build);
+
         /// The same, keyed on a version number compared by value: no allocation per refresh pass.
         public static VisualElement Live(VisualElement parent, Func<int> version, Action<VisualElement> build)
         {

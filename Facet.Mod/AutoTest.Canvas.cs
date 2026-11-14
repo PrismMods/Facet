@@ -133,6 +133,16 @@ namespace Facet.Mod
                 yield return Tap(Mid("k5"));
                 yield return Pull(band0, band1, EventModifiers.Control);
                 Check(Keys(c) == "k5,k1,k2", "...and with Ctrl held it adds them to [5]", Keys(c));
+                yield return Tap(Mid("k5"));
+                Send(EventType.MouseDown, band0); yield return null;
+                Send(EventType.MouseDrag, (band0 + band1) / 2f); yield return null;
+                Send(EventType.MouseDrag, band1); yield return null;
+                string inBand = Keys(c);
+                var bandCancel = Input.Gesture;
+                if (bandCancel != null) bandCancel();
+                Check(inBand == "k1,k2" && Keys(c) == "k5" && c.Marquee == null, "cancelling a band puts back the selection it started from", inBand + " -> " + Keys(c));
+                Send(EventType.MouseUp, band1); yield return null;
+                Check(Keys(c) == "k5", "...and the release after it leaves that selection", Keys(c));
                 yield return Tap(empty);
                 yield return Pull(StageOf(new Rect(285, 10, 0, 0)).position, StageOf(new Rect(420, 50, 0, 0)).position);
                 Check(Keys(c) == "k4", "a ghost under the band is never selected", Keys(c));
@@ -298,17 +308,20 @@ namespace Facet.Mod
                 var unityLines = new List<string>();
                 Application.LogCallback hear = (line, _, __) => { if (line.Contains("[Facet]")) unityLines.Add(line); };
                 Application.logMessageReceived += hear;
-                var m1 = Mid("k1");
-                Send(EventType.MouseDown, m1); yield return null;
-                Send(EventType.MouseDrag, m1 + new Vector2(10f, 0f)); yield return null;
-                Send(EventType.MouseDrag, m1 + new Vector2(20f, 0f)); yield return null;
-                GalleryEditor.Model.Boxes.RemoveAll(b => b.Key == "k3");
-                c.Refresh();
-                Send(EventType.MouseDrag, m1 + new Vector2(30f, 0f)); yield return null;
-                Send(EventType.MouseUp, m1 + new Vector2(30f, 0f)); yield return null;
-                Check(BoxOf("k1").Rect.x != was("k1").x && History.NextUndo == "Move", "removing a box mid-drag still records one step", BoxOf("k1").Rect.ToString());
-                Check(History.Undo() && !History.CanUndo && BoxOf("k1").Rect == was("k1"), "...over the rest, which an undo puts back", BoxOf("k1").Rect.ToString());
-                Application.logMessageReceived -= hear;
+                try
+                {
+                    var m1 = Mid("k1");
+                    Send(EventType.MouseDown, m1); yield return null;
+                    Send(EventType.MouseDrag, m1 + new Vector2(10f, 0f)); yield return null;
+                    Send(EventType.MouseDrag, m1 + new Vector2(20f, 0f)); yield return null;
+                    GalleryEditor.Model.Boxes.RemoveAll(b => b.Key == "k3");
+                    c.Refresh();
+                    Send(EventType.MouseDrag, m1 + new Vector2(30f, 0f)); yield return null;
+                    Send(EventType.MouseUp, m1 + new Vector2(30f, 0f)); yield return null;
+                    Check(BoxOf("k1").Rect.x != was("k1").x && History.NextUndo == "Move", "removing a box mid-drag still records one step", BoxOf("k1").Rect.ToString());
+                    Check(History.Undo() && !History.CanUndo && BoxOf("k1").Rect == was("k1"), "...over the rest, which an undo puts back", BoxOf("k1").Rect.ToString());
+                }
+                finally { Application.logMessageReceived -= hear; }
                 var since = LogSince(logAt);
                 Check(unityLines.Count == 0 && !since.Contains("[Gallery]"), "...and no error line is logged", string.Join(" | ", unityLines) + " / " + since.Trim());
 
@@ -524,89 +537,92 @@ namespace Facet.Mod
             var spacer = new VisualElement();
             spacer.style.height = 1500f; spacer.style.flexShrink = 0f;
             GalleryEditor.Page.Add(spacer);
-            yield return null; yield return null;
-            var sv = c.Stage.GetFirstAncestorOfType<ScrollView>();
-            Check(sv != null && sv.verticalScroller.highValue > 0f, "the page around the stage can scroll", sv == null ? "no ScrollView" : sv.verticalScroller.highValue.ToString());
-            Func<float> off = () => sv == null ? 0f : sv.scrollOffset.y;
-            var at = StageOf(BoxOf("k6").Rect).center;
-            int vc = 0; c.ViewChanged += () => vc++;
-
-            float o0 = off(); var p0 = c.Pan;
-            WheelOn(at, new Vector2(0f, 3f)); yield return null; yield return null;
-            Check(Mathf.Abs(c.Pan.y - p0.y) == 20f && c.Pan.x == p0.x && off() == o0 && vc == 1,
-                "one notch of the panel's wheel event over the stage pans 20 px on y, once, and the page does not scroll", (c.Pan - p0) + " / " + (off() - o0) + " / " + vc);
-            using (Motion.Hold(1f, true))
+            try
             {
-                p0 = c.Pan; o0 = off();
+                yield return null; yield return null;
+                var sv = c.Stage.GetFirstAncestorOfType<ScrollView>();
+                Check(sv != null && sv.verticalScroller.highValue > 0f, "the page around the stage can scroll", sv == null ? "no ScrollView" : sv.verticalScroller.highValue.ToString());
+                Func<float> off = () => sv == null ? 0f : sv.scrollOffset.y;
+                var at = StageOf(BoxOf("k6").Rect).center;
+                int vc = 0; c.ViewChanged += () => vc++;
+
+                float o0 = off(); var p0 = c.Pan;
+                WheelOn(at, new Vector2(0f, 3f)); yield return null; yield return null;
+                Check(Mathf.Abs(c.Pan.y - p0.y) == 20f && c.Pan.x == p0.x && off() == o0 && vc == 1,
+                    "one notch of the panel's wheel event over the stage pans 20 px on y, once, and the page does not scroll", (c.Pan - p0) + " / " + (off() - o0) + " / " + vc);
+                using (Motion.Hold(1f, true))
+                {
+                    p0 = c.Pan; o0 = off();
+                    WheelOn(at, new Vector2(0f, 3f));
+                    for (int i = 0; i < 20; i++) yield return null;
+                    Check(Mathf.Abs(c.Pan.y - p0.y) == 20f && off() == o0, "...and with smooth scrolling on, the page's glide leaves it to the canvas", (c.Pan - p0) + " / " + (off() - o0));
+                }
+                yield return null; yield return null;
+                p0 = c.Pan;
+                Input.TickWheel(ScreenOf(at), 1f); yield return null;
+                Check(Mathf.Abs(c.Pan.y - p0.y) == 20f && c.Pan.x == p0.x && off() == o0, "the polled wheel (Input.TickWheel, delta 1) over the stage pans 20 px on y too",
+                    (c.Pan - p0) + " / " + (off() - o0));
+                yield return null; yield return null;
+                p0 = c.Pan;
                 WheelOn(at, new Vector2(0f, 3f));
-                for (int i = 0; i < 20; i++) yield return null;
-                Check(Mathf.Abs(c.Pan.y - p0.y) == 20f && off() == o0, "...and with smooth scrolling on, the page's glide leaves it to the canvas", (c.Pan - p0) + " / " + (off() - o0));
+                Input.TickWheel(ScreenOf(at), -1f); yield return null;
+                Check(Mathf.Abs(c.Pan.y - p0.y) == 20f, "both in one frame pan once", (c.Pan - p0).ToString());
+                yield return null; yield return null;
+                p0 = c.Pan;
+                WheelOn(at, new Vector2(0f, 3f)); yield return null;
+                Input.TickWheel(ScreenOf(at), -1f); yield return null;
+                Check(Mathf.Abs(c.Pan.y - p0.y) == 20f, "a notch as the panel's event, then polled on the next frame, pans once", (c.Pan - p0).ToString());
+
+                // Covered stage: the polled wheel goes to the canvas only when the stage is what the pointer is on.
+                yield return null; yield return null;
+                var cover = new VisualElement { name = "test-cover" };
+                var wat = c.Stage.LocalToWorld(at);
+                cover.style.position = Position.Absolute;
+                cover.style.left = wat.x - 20f; cover.style.top = wat.y - 20f; cover.style.width = 40f; cover.style.height = 40f;
+                GalleryEditor.Surface.Root.Add(cover);
+                yield return null; yield return null;
+                p0 = c.Pan;
+                Input.TickWheel(ScreenOf(at), 1f); yield return null;
+                Check(c.Pan == p0, "the polled wheel over an element of the window that covers the stage leaves the canvas alone", (c.Pan - p0).ToString());
+                cover.RemoveFromHierarchy();
+                yield return null; yield return null;
+                var pop = Popup.Context(c.Stage, at, new List<MenuItem> { new MenuItem { Text = "Wheel cover" } });
+                yield return null; yield return null;
+                var row = LiveLabel("Wheel cover");
+                p0 = c.Pan;
+                var popAt = row == null ? at : (Vector2)c.Stage.WorldToLocal(row.worldBound.center);
+                bool overStage = row != null && c.Stage.ContainsPoint(popAt);
+                if (overStage) { Input.TickWheel(ScreenOf(popAt), 1f); yield return null; }
+                Check(overStage && c.Pan == p0, "...nor over a popup that covers the stage", overStage + " / " + (c.Pan - p0));
+                pop?.Close(); Popup.CloseAll();
+                yield return null; yield return null;
+                yield return null; yield return null;
+                p0 = c.Pan;
+                WheelOn(at, new Vector2(0f, 3f), EventModifiers.Shift); yield return null;
+                Check(Mathf.Abs(c.Pan.x - p0.x) == 20f && c.Pan.y == p0.y, "with Shift it pans on x", (c.Pan - p0).ToString());
+                p0 = c.Pan;
+                WheelOn(at, new Vector2(3f, 3f)); yield return null;
+                Check(Mathf.Abs(c.Pan.x - p0.x) == 20f && Mathf.Abs(c.Pan.y - p0.y) == 20f, "a wheel with both axes (a trackpad) pans on both", (c.Pan - p0).ToString());
+
+                var under = c.StageToCanvas(at);
+                WheelOn(at, new Vector2(0f, -3f), EventModifiers.Control); yield return null;
+                Check(Mathf.Abs(c.Zoom - 1.1f) < 1e-4f && NearV(c.CanvasToStage(under), at, 0.5f), "Ctrl+wheel zooms by 0.1 and keeps the canvas point under the pointer within 0.5 px",
+                    c.Zoom + " / " + c.CanvasToStage(under) + " vs " + at);
+                for (int i = 0; i < 40; i++) WheelOn(at, new Vector2(0f, -3f), EventModifiers.Control);
+                yield return null;
+                float top = c.Zoom;
+                for (int i = 0; i < 60; i++) WheelOn(at, new Vector2(0f, 3f), EventModifiers.Control);
+                yield return null;
+                Check(top == 4f && c.Zoom == 0.3f, "zoom stops at 4 and at 0.3", top + " / " + c.Zoom);
+                c.ResetView(); yield return null;
+
+                // The middle button pans at once.
+                var keys = Keys(c); History.Clear(); p0 = c.Pan;
+                yield return Pull(at, at + new Vector2(40f, 10f), EventModifiers.None, 4, null, 2);
+                Check(NearV(c.Pan - p0, new Vector2(40f, 10f), 1e-3f) && Keys(c) == keys && !History.CanUndo, "a middle drag of (40, 10) pans by exactly that, selects and records nothing",
+                    (c.Pan - p0) + " / " + Keys(c));
             }
-            yield return null; yield return null;
-            p0 = c.Pan;
-            Input.TickWheel(ScreenOf(at), 1f); yield return null;
-            Check(Mathf.Abs(c.Pan.y - p0.y) == 20f && c.Pan.x == p0.x && off() == o0, "the polled wheel (Input.TickWheel, delta 1) over the stage pans 20 px on y too",
-                (c.Pan - p0) + " / " + (off() - o0));
-            yield return null; yield return null;
-            p0 = c.Pan;
-            WheelOn(at, new Vector2(0f, 3f));
-            Input.TickWheel(ScreenOf(at), -1f); yield return null;
-            Check(Mathf.Abs(c.Pan.y - p0.y) == 20f, "both in one frame pan once", (c.Pan - p0).ToString());
-            yield return null; yield return null;
-            p0 = c.Pan;
-            WheelOn(at, new Vector2(0f, 3f)); yield return null;
-            Input.TickWheel(ScreenOf(at), -1f); yield return null;
-            Check(Mathf.Abs(c.Pan.y - p0.y) == 20f, "a notch as the panel's event, then polled on the next frame, pans once", (c.Pan - p0).ToString());
-
-            // Covered stage: the polled wheel goes to the canvas only when the stage is what the pointer is on.
-            yield return null; yield return null;
-            var cover = new VisualElement { name = "test-cover" };
-            var wat = c.Stage.LocalToWorld(at);
-            cover.style.position = Position.Absolute;
-            cover.style.left = wat.x - 20f; cover.style.top = wat.y - 20f; cover.style.width = 40f; cover.style.height = 40f;
-            GalleryEditor.Surface.Root.Add(cover);
-            yield return null; yield return null;
-            p0 = c.Pan;
-            Input.TickWheel(ScreenOf(at), 1f); yield return null;
-            Check(c.Pan == p0, "the polled wheel over an element of the window that covers the stage leaves the canvas alone", (c.Pan - p0).ToString());
-            cover.RemoveFromHierarchy();
-            yield return null; yield return null;
-            var pop = Popup.Context(c.Stage, at, new List<MenuItem> { new MenuItem { Text = "Wheel cover" } });
-            yield return null; yield return null;
-            var row = LiveLabel("Wheel cover");
-            p0 = c.Pan;
-            var popAt = row == null ? at : (Vector2)c.Stage.WorldToLocal(row.worldBound.center);
-            bool overStage = row != null && c.Stage.ContainsPoint(popAt);
-            if (overStage) { Input.TickWheel(ScreenOf(popAt), 1f); yield return null; }
-            Check(overStage && c.Pan == p0, "...nor over a popup that covers the stage", overStage + " / " + (c.Pan - p0));
-            pop?.Close(); Popup.CloseAll();
-            yield return null; yield return null;
-            yield return null; yield return null;
-            p0 = c.Pan;
-            WheelOn(at, new Vector2(0f, 3f), EventModifiers.Shift); yield return null;
-            Check(Mathf.Abs(c.Pan.x - p0.x) == 20f && c.Pan.y == p0.y, "with Shift it pans on x", (c.Pan - p0).ToString());
-            p0 = c.Pan;
-            WheelOn(at, new Vector2(3f, 3f)); yield return null;
-            Check(Mathf.Abs(c.Pan.x - p0.x) == 20f && Mathf.Abs(c.Pan.y - p0.y) == 20f, "a wheel with both axes (a trackpad) pans on both", (c.Pan - p0).ToString());
-
-            var under = c.StageToCanvas(at);
-            WheelOn(at, new Vector2(0f, -3f), EventModifiers.Control); yield return null;
-            Check(Mathf.Abs(c.Zoom - 1.1f) < 1e-4f && NearV(c.CanvasToStage(under), at, 0.5f), "Ctrl+wheel zooms by 0.1 and keeps the canvas point under the pointer within 0.5 px",
-                c.Zoom + " / " + c.CanvasToStage(under) + " vs " + at);
-            for (int i = 0; i < 40; i++) WheelOn(at, new Vector2(0f, -3f), EventModifiers.Control);
-            yield return null;
-            float top = c.Zoom;
-            for (int i = 0; i < 60; i++) WheelOn(at, new Vector2(0f, 3f), EventModifiers.Control);
-            yield return null;
-            Check(top == 4f && c.Zoom == 0.3f, "zoom stops at 4 and at 0.3", top + " / " + c.Zoom);
-            c.ResetView(); yield return null;
-
-            // The middle button pans at once.
-            var keys = Keys(c); History.Clear(); p0 = c.Pan;
-            yield return Pull(at, at + new Vector2(40f, 10f), EventModifiers.None, 4, null, 2);
-            Check(NearV(c.Pan - p0, new Vector2(40f, 10f), 1e-3f) && Keys(c) == keys && !History.CanUndo, "a middle drag of (40, 10) pans by exactly that, selects and records nothing",
-                (c.Pan - p0) + " / " + Keys(c));
-            spacer.RemoveFromHierarchy();
+            finally { spacer.RemoveFromHierarchy(); }
         }
 
         IEnumerator CanvasRight()

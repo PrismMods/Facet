@@ -151,7 +151,7 @@ namespace Facet
         private string[] _itemKeys = new string[0];
         private readonly List<T> _sel = new List<T>();
         private readonly ReadOnlyCollection<T> _view;
-        private readonly List<T> _scratch = new List<T>(), _bandBase = new List<T>();
+        private readonly List<T> _scratch = new List<T>(), _bandBase = new List<T>(), _bandWas = new List<T>();   // _bandWas: the selection a band started from, for its cancel
         private T _primary;
         private float _zoom = 1f;
         private Vector2 _pan;
@@ -519,6 +519,7 @@ namespace Facet
                     break;
                 case Mode.PressEmpty:
                     if (travel < 5f) return;
+                    _bandWas.Clear(); _bandWas.AddRange(_sel);
                     _mode = Mode.Band;
                     break;
                 case Mode.PressRight:
@@ -700,6 +701,7 @@ namespace Facet
             _guides = new Vector2(float.NaN, float.NaN);
             _banding = false;
             _bandBase.Clear();
+            _bandWas.Clear();
             return mode;
         }
 
@@ -731,6 +733,7 @@ namespace Facet
         // Input.Gesture: the items or the view go back where they started and nothing is recorded.
         private void Cancel()
         {
+            if (_mode == Mode.Band) { _scratch.Clear(); _scratch.AddRange(_bandWas); }   // Stop clears _bandWas
             var mode = Stop();
             if (mode == Mode.None) return;
             if (mode == Mode.Move || mode == Mode.Resize)
@@ -739,6 +742,7 @@ namespace Facet
                 Raise(Changed, _siteChanged);
             }
             else if (mode == Mode.Pan) SetView(_zoom, _panStart);
+            else if (mode == Mode.Band) SetSelection(_scratch);   // the selection as it was when the band started
             _count = 0;
             _press = null;
             Redraw();

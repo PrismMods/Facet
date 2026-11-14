@@ -96,8 +96,11 @@ namespace Facet.Mod
                 PointerAt(EventType.MouseUp, o + new Vector2(10f, 10f), root, 1);
                 Check(string.Join(" ", log) == "d" + at(10f, 10f) + "/1 u" + at(10f, 10f) + "/1", "a right press and release report button 1", string.Join(" ", log));
                 // A press still held when the element leaves its panel ends there: after re-attach a fresh press reports.
+                log.Clear();
+                string held = at(10f, 10f);
                 PointerAt(EventType.MouseDown, o + new Vector2(10f, 10f), root);
                 pad.RemoveFromHierarchy(); yield return null;
+                Check(string.Join(" ", log) == "d" + held + "/0 u" + held + "/0", "Ui.Pointer: a press held as its element leaves the panel ends with one release at the press position", string.Join(" ", log));
                 w.Body.Insert(0, pad); yield return null; yield return null;
                 log.Clear();
                 PointerAt(EventType.MouseDown, o + new Vector2(12f, 12f), root);

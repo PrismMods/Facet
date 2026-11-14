@@ -1498,6 +1498,25 @@ namespace Facet.Mod
             }
             e.RemoveFromHierarchy();
 
+            // A slide to where the element already is does not move it: Move starts from the left it set, not the resolved one,
+            // which counts the parent's border and is snapped to pixels.
+            var frame = new VisualElement();
+            frame.style.position = Position.Absolute; frame.style.left = 0f; frame.style.top = 0f; frame.style.width = 80f; frame.style.height = 40f;
+            frame.style.borderLeftWidth = 3f; frame.style.borderTopWidth = 3f;
+            var k = new VisualElement();
+            k.style.position = Position.Absolute; k.style.left = 20.3f; k.style.top = 0f; k.style.width = 10f; k.style.height = 10f;
+            frame.Add(k); Root.Add(frame);
+            yield return null; yield return null;
+            float resolvedLeft = k.resolvedStyle.left;
+            using (Motion.Hold(1f, false))
+            {
+                Anim.Move(k, 20.3f);
+                yield return null; yield return null;
+                Check(Mathf.Abs(k.style.left.value.value - 20.3f) < 0.01f, "a slide to the left an element already has starts there and leaves it still",
+                    k.style.left.value.value + " (resolved " + resolvedLeft + ")");
+            }
+            frame.RemoveFromHierarchy();
+
             // Ruling R20: a search hit's flash follows Anim.Speed too.
             var g = Gallery.Surface.Theme;
             var fl = Ui.Box(Root);
