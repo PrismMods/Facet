@@ -4,6 +4,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
+using UnityEngine.Scripting;
 using UnityEngine.UIElements;
 
 namespace Facet.Mod
@@ -732,11 +733,26 @@ namespace Facet.Mod
                 Controls.Preview(aw.Body, "A", o => o.Tick = _ => aticks++);
                 for (int i = 0; i < 20; i++) yield return null;
                 int n0 = aticks;
-                // Logged, not asserted: the frame loop, the scheduler and Unity itself allocate in the same window, so 0 is not a stable bound.
-                var per = new List<long>();
-                for (int i = 0; i < 30; i++) { long a = GC.GetAllocatedBytesForCurrentThread(); yield return null; per.Add(GC.GetAllocatedBytesForCurrentThread() - a); }
-                long total = 0; foreach (var x in per) total += x;
-                Main.Log("[perf] preview tick allocation: " + total + " bytes over 30 frames, " + (aticks - n0) + " ticks");
+                /* Logged, not asserted: the frame loop, the scheduler and Unity itself allocate in the same window, so 0 is
+                   not a stable bound. The game's runtime reads 0 from the per-thread counter, so this counts heap growth
+                   with the collector paused, beside a loop that allocates on purpose. */
+                long grew, junk;
+                object keep = null;
+                var mode = GarbageCollector.GCMode;
+                try
+                {
+                    GarbageCollector.GCMode = GarbageCollector.Mode.Disabled;
+                    long a = GC.GetTotalMemory(false);
+                    for (int i = 0; i < 2000; i++) keep = new byte[128];
+                    junk = GC.GetTotalMemory(false) - a;
+                    a = GC.GetTotalMemory(false);
+                    for (int i = 0; i < 30; i++) yield return null;
+                    grew = GC.GetTotalMemory(false) - a;
+                }
+                finally { GarbageCollector.GCMode = mode; }
+                GC.KeepAlive(keep);
+                Main.Log("[perf] preview tick allocation: heap grew " + grew + " bytes over 30 frames, " + (aticks - n0) + " ticks (2000 x 128-byte arrays grew it " + junk + ")");
+                Check(junk > 0, "the heap probe sees allocations", junk + " bytes");
                 Check(aticks - n0 >= 20, "the allocation probe's Tick ran", (aticks - n0).ToString());
             }
             finally { asf.Dispose(); }

@@ -8,7 +8,8 @@ namespace Facet
        [3] Func<bool> text focused, [4] Func<bool> blocks input, [5] Func<float,float,bool> pointer,
        [6] string key (assembly full name), [7] Func<int,float[]> orders of its surfaces in a layer,
        [8] Action<int,Func<float,float>> remap its surfaces in a layer,
-       [9] Action<float,float,float> wheel(x, y, delta) for this version's topmost visible surface.
+       [9] Action<float,float,float> wheel(x, y, delta) for this version's topmost visible surface,
+       [10] Func<bool> cancel this version's drag in progress (true when there was one).
 
        Cross-version contract: every loaded Facet version reads every other version's entry, so
        slots are only ever APPENDED, a reader checks e.Length before reading a slot (an older,
@@ -75,10 +76,19 @@ namespace Facet
             return false;
         }
 
-        // The entry with the highest top order (>= 0) takes it; false when none.
+        /* A drag in progress in any version takes it first (its window may not be the topmost); else the entry with the
+           highest top order (>= 0) takes it; false when none. */
         public static bool TakeEscape(List<object[]> entries, Action<string> log)
         {
             object[] best = null; float top = -1f;
+            lock (entries)
+                for (int n = 0; n < entries.Count; n++)
+                {
+                    var e = entries[n];
+                    var drag = Slot<Func<bool>>(e, 10);
+                    if (drag != null)
+                        try { if (drag()) return true; } catch (Exception ex) { Threw(e, ex, log); }
+                }
             lock (entries)
                 for (int n = 0; n < entries.Count; n++)
                 {

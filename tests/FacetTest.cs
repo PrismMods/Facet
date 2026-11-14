@@ -82,6 +82,15 @@ static class FacetTest {
         Coord.Any(ents, 2, lg);
         Check(logs.Count == 1, "...and is logged once");
         Check(Coord.TakeEscape(ents, lg), "Escape goes to the highest healthy entry despite a throwing one");
+        // A drag running in a lower version takes Escape before the top window does.
+        int topTook = 0, drags = 1;
+        var low = mk("Low", true, 1f); Array.Resize(ref low, 11);
+        low[10] = (Func<bool>)(() => drags-- > 0);
+        var high = mk("High", true, 5f); high[1] = (Func<bool>)(() => { topTook++; return true; });
+        var ge = new List<object[]> { low, high };
+        bool g1 = Coord.TakeEscape(ge, lg), g2 = Coord.TakeEscape(ge, lg);
+        Check(g1 && g2 && topTook == 1 && drags == -1, "a version's running drag takes Escape before the topmost window; once it ended the window does",
+            g1 + " / " + g2 + " / top " + topTook);
         // renumber across two versions keeps relative order and ends at the highest order
         var ao = new List<float> { 100f, 300f }; var bo = new List<float> { 200f, 400f };
         Func<List<float>, object[]> mr = l => { var e = mk("R" + l[0], true, 0f);

@@ -147,6 +147,9 @@ namespace Facet
                 // TextCore FontAsset, and TMP_FontAsset is NOT one. A mod that only has the TMP
                 // asset should pass the plain Font it was built from instead — see SetFont.
                 Skin.WatchWheel(Root);
+                // A press in a popup (the canvas's own context menu) keeps the canvas focused.
+                if (layer != Layer.Popup)
+                    Events.On<PointerDownEvent>(Root, e => CanvasAll.Pressed(e.target as VisualElement), TrickleDown.TrickleDown);
                 Events.On<FocusInEvent>(Root, e => TextIn = Input.InTextInput(e.target as VisualElement), TrickleDown.TrickleDown);
                 Events.On<FocusOutEvent>(Root, e => { if (Input.InTextInput(e.target as VisualElement)) TextIn = false; }, TrickleDown.TrickleDown);
                 if (font != null)

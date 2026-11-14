@@ -52,6 +52,7 @@ namespace Facet
         {
             if (!On || e.delta.y == 0f || e.actionKey) return;
             var target = e.target as VisualElement;
+            if (CanvasAll.OnStage(target)) return;   // a canvas pans or zooms on it; the page around it stays
             for (var sv = target as ScrollView ?? target?.GetFirstAncestorOfType<ScrollView>(); sv != null; sv = sv.GetFirstAncestorOfType<ScrollView>())
             {
                 if (sv.mode == ScrollViewMode.Horizontal) continue;

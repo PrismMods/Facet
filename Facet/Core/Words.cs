@@ -69,6 +69,10 @@ namespace Facet
             { "Expand sidebar", "사이드바 펼치기" },
             { "Move", "이동" },
             { "Resize", "크기 조절" },
+            { "Nudge", "미세 이동" },
+            { "Delete", "삭제" },
+            { "Bring forward", "앞으로 가져오기" },
+            { "Send backward", "뒤로 보내기" },
         };
     }
 }

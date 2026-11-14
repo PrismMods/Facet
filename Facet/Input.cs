@@ -31,7 +31,7 @@ namespace Facet
                 (Func<bool>)LocalText, (Func<bool>)LocalBlocks, (Func<float, float, bool>)LocalPointer,
                 typeof(Input).Assembly.FullName,
                 (Func<int, float[]>)LocalOrders, (Action<int, Func<float, float>>)LocalRemap,
-                (Action<float, float, float>)LocalWheel,
+                (Action<float, float, float>)LocalWheel, (Func<bool>)LocalGesture,
             });
         }
 
@@ -47,8 +47,8 @@ namespace Facet
             foreach (var s in Ui.Stack) if ((int)s.Layer == layer && s.Order >= 0f) s.Order = f(s.Order);
         }
 
-        /// The cancel of the drag in progress (a canvas move or resize), null when none: it puts the start back and
-        /// records nothing. Set by whoever starts the drag and cleared when it ends.
+        /// The cancel of the drag in progress (a canvas move, resize or pan), null when none: it puts the start back and
+        /// records nothing. Set by whoever starts the drag and cleared when it ends. It takes the frame's Escape first.
         internal static Action Gesture;
 
         public static void HoldThisFrame() => _holdFrame[0] = Time.frameCount;
@@ -64,8 +64,8 @@ namespace Facet
 
         public static bool PointerOverWindow(Vector2 screen) => Coord.Pointer(Entries, screen.x, screen.y, Host.Fallback.LogFn);
 
-        /* Escape, answered once per frame for every loaded version: the version whose topmost
-           escapable window sits highest takes it. Returns false when nothing was open, so the caller
+        /* Escape, answered once per frame for every loaded version: a drag in progress in any version
+           takes it, else the version whose topmost escapable window sits highest takes it. Returns false when nothing was open, so the caller
            lets the key through to the game. A mod that already spent this frame's Escape --
            cancelling a keybind capture -- says so with ConsumeEscape. */
         public static bool HandleEscape()
@@ -86,10 +86,23 @@ namespace Facet
             return -1f;
         }
 
-        // Walks the layers top-down: the first visible surface takes it. A focused text field gives
-        // up focus first, then the surface's own handler runs, else it hides.
+        /* A drag in progress in this copy takes Escape first, whichever version's host asked: it puts the drag's start
+           back and records nothing. */
+        private static bool LocalGesture()
+        {
+            var gesture = Gesture;
+            if (gesture == null) return false;
+            try { gesture(); } catch (Exception e) { Safe.Report("Facet", "Escape: gesture cancel", e, Host.Fallback.LogFn); }
+            Gesture = null;
+            return true;
+        }
+
+        // A drag in progress takes it first (for a version whose shared walk does not ask every copy). Then the layers,
+        // top-down: the first visible surface takes it. A focused text field gives up focus first, then a focused
+        // canvas in it clears its selection, then the surface's own handler runs, else it hides.
         private static bool TakeEscape()
         {
+            if (LocalGesture()) return true;
             for (int i = Ui.Stack.Count - 1; i >= 0; i--)
             {
                 var s = Ui.Stack[i];
@@ -99,6 +112,7 @@ namespace Facet
                 // The focus controller is the shared panel's, so only a field inside THIS surface counts.
                 if (focused != null && s.Root.Contains(focused))
                     if (InTextInput(focused)) { focused.Blur(); s.Host.Log("Escape: blurred a field in " + s.Name); return true; }
+                if (CanvasAll.Escape(s.Root)) { s.Host.Log("Escape: cleared a canvas selection in " + s.Name); return true; }
                 if (s.EscapeHandler != null)
                 {
                     bool r = Safe.Get(s.Host, "Escape handler of " + s.Name, s.EscapeHandler, true);
@@ -203,12 +217,14 @@ namespace Facet
 
         /* Deliberately NOT standing down when a WheelEvent arrives: that says only that one
            reached the panel, not that any ScrollView acted on it. Skin.Wheel skips a target that
-           already moved this frame, which is the honest version of the same check. */
+           already moved this frame, which is the honest version of the same check. Over a canvas's
+           stage the canvas takes it (it skips a frame its own wheel event fed). */
         private static void LocalWheel(float x, float y, float delta)
         {
             for (int i = Ui.Stack.Count - 1; i >= 0; i--)
             {
                 if (!Ui.Stack[i].Visible) continue;
+                if (CanvasAll.Wheel(Ui.Stack[i].Root, x, y, delta)) return;
                 Skin.Wheel(Ui.Stack[i].Root, new Vector2(x, y), delta);
                 return;
             }

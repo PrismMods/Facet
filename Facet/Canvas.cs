@@ -52,6 +52,18 @@ namespace Facet
         public bool ShowGrid { get; set; } = true;
         public bool ShowGuides { get; set; } = true;
 
+        /// A right click's menu (under 5 stage px of travel), at the press: T is the item under it, null on empty stage.
+        /// The item is selected first. Null or an empty list opens nothing.
+        public Func<T, IList<MenuItem>> Menu { get; set; }
+
+        /// Delete and Backspace on the focused canvas (and DeleteSelection): remove these items. Runs inside a "Delete"
+        /// step Facet opens, so it must record what it removed (History.Snapshot or Record) for the step to undo.
+        public Action<IReadOnlyList<T>> Delete { get; set; }
+
+        /// ] and [ (and StepZ): the whole item list in its new draw order. Runs inside a "Bring forward" or "Send
+        /// backward" step Facet opens, so it must record the change, as Delete does.
+        public Action<IReadOnlyList<T>> ZOrder { get; set; }
+
         /// The pane around the stage, a Controls.Preview (Note, Link, Show, Hide, MinHeight...). Aspect starts at
         /// Size.x / Size.y and MinHeight at 200 before this runs.
         public Action<PreviewOptions> Pane { get; set; }
@@ -105,7 +117,7 @@ namespace Facet
         /// commits its row; off a panel the undo only writes through SetRect.
         public event Action Committed;
 
-        private enum Mode { None, PressItem, PressHandle, PressEmpty, Move, Resize, Band }
+        private enum Mode { None, PressItem, PressHandle, PressEmpty, Move, Resize, Band, PressRight, Pan }
 
         private static readonly T[] Empty = new T[0];
 
@@ -186,7 +198,7 @@ namespace Facet
             _readKey = () => _gotKey = _keyOf(_cur);
             _cancel = Cancel;
             _applied = Applied;
-            _lost = Lost;
+            _lost = Gone;
             _view = _sel.AsReadOnly();
 
             var sz = Theme.For(parent).Sizes;   // read once: a drag never asks the theme
@@ -224,6 +236,7 @@ namespace Facet
             Stage.Add(_chrome);
             _badge = Badge(_chrome, sz);
             View();
+            ViewOptions(o, site);
 
             Events.On<PointerDownEvent>(Stage, Down);
             Events.On<PointerMoveEvent>(Stage, Moved);
@@ -310,7 +323,9 @@ namespace Facet
             r = default(Rect);
             if (_getRect == null || item == null) return false;
             _cur = item;
-            if (!Safe.Run(_host, _siteGet, _read)) return false;
+            bool ok = Safe.Run(_host, _siteGet, _read);
+            _cur = null;   // the cached calls must not keep the last item they were asked about
+            if (!ok) return false;
             r = _rect;
             return true;
         }
@@ -320,6 +335,7 @@ namespace Facet
             if (_setRect == null) return;
             _cur = item; _rect = r;
             Safe.Run(_host, _siteSet, _write);
+            _cur = null;
         }
 
         // A null predicate is true; a throwing one is false.
@@ -327,13 +343,17 @@ namespace Facet
         {
             if (f == null) return true;
             _asking = f; _cur = item;
-            return Safe.Run(_host, site, _ask) && _flag;
+            bool ok = Safe.Run(_host, site, _ask);
+            _cur = null;
+            return ok && _flag;
         }
 
         private string KeyOf(T item)
         {
             _cur = item; _gotKey = null;
-            return Safe.Run(_host, _siteKey, _readKey) ? _gotKey : null;
+            bool ok = Safe.Run(_host, _siteKey, _readKey);
+            _cur = null;
+            return ok ? _gotKey : null;
         }
 
         // The item Items() now holds for `old`: the same key, or the same reference without a Key. Null once it went.
@@ -367,6 +387,7 @@ namespace Facet
             }
             if (_primary != null) _primary = Locate(_primary);
             if (_press != null) _press = Locate(_press);
+            ForgetHit();
             int n = 0;
             for (int i = 0; i < _count; i++)
             {
@@ -385,22 +406,23 @@ namespace Facet
         {
             bool same = next.Count == _sel.Count;
             for (int i = 0; i < next.Count && same; i++) same = ReferenceEquals(next[i], _sel[i]);
+            if (!same) { _sel.Clear(); _sel.AddRange(next); }
+            _scratch.Clear();   // a working list: it must not hold items once they are the selection
             if (same) { Redraw(); return; }
-            _sel.Clear();
-            _sel.AddRange(next);
             SelectionDidChange();
         }
 
         private void SelectionDidChange()
         {
             SelectionVersion++;
+            ForgetNudge();
             Raise(SelectionChanged, _siteSelection);
             Redraw();
         }
 
         private void Raise(Action a, string site) { if (a != null) Safe.Run(_host, site, a); }
 
-        // ---- the view (zoom 1 and pan 0 until the view is added)
+        // ---- the view (zoom and pan: Canvas.View.cs)
 
         private Vector2 ToCanvas(Vector2 stage) { return (stage - _pan) / _zoom; }
 
@@ -410,8 +432,9 @@ namespace Facet
         {
             Content.style.translate = new Translate(_pan.x, _pan.y, 0f);
             Content.style.scale = new Scale(new Vector3(_zoom, _zoom, 1f));
-            _badgeText = Mathf.RoundToInt(_zoom * 100f) + "%";
-            _badge.text = _badgeText;
+            // A new string only when the percent changes: a pan calls this every frame.
+            int pct = Mathf.RoundToInt(_zoom * 100f);
+            if (pct != _badgePct) { _badgePct = pct; _badgeText = pct + "%"; _badge.text = _badgeText; }
             _chrome.MarkDirtyRepaint();
         }
 
@@ -431,9 +454,16 @@ namespace Facet
 
         private void Down(PointerDownEvent e)
         {
-            if (e.button != 0 || _mode != Mode.None || !Stage.enabledInHierarchy) return;
-            Refresh();
+            if (!Stage.enabledInHierarchy) return;
+            TakeFocus();
+            // The right and middle buttons are the canvas's: the pane's own context menu never sees them.
+            if (e.button == 1 || e.button == 2) e.StopPropagation();
+            if (_mode != Mode.None) return;
             var s = (Vector2)Stage.WorldToLocal(e.position);
+            if (e.button == 1 || e.button == 2) { PressPan(e, s); return; }
+            if (e.button != 0) return;
+            Refresh();
+            _button = 0;
             _downStage = s; _downCanvas = ToCanvas(s);
             _additive = e.ctrlKey || e.commandKey || e.shiftKey;
             _press = null; _latch = 0; _count = 0;
@@ -442,6 +472,7 @@ namespace Facet
             else
             {
                 var hit = ItemAt(_downCanvas);
+                Pressed(hit);
                 if (hit != null)
                 {
                     _mode = Mode.PressItem;
@@ -490,7 +521,12 @@ namespace Facet
                     if (travel < 5f) return;
                     _mode = Mode.Band;
                     break;
+                case Mode.PressRight:
+                    if (travel < 5f) return;
+                    _mode = Mode.Pan;
+                    break;
             }
+            if (_mode == Mode.Pan) { DoPan(s); return; }
             var c = ToCanvas(s);
             if (_mode == Mode.Move) DoMove(c, e.altKey, e.shiftKey);
             else if (_mode == Mode.Resize) DoResize(c, e.altKey, e.shiftKey);
@@ -499,14 +535,15 @@ namespace Facet
 
         private void Up(PointerUpEvent e)
         {
-            if (e.button != 0 || _mode == Mode.None || e.pointerId != _pointer) return;
-            Finish();
+            if (e.button != _button || _mode == Mode.None || e.pointerId != _pointer) return;
+            Finish(true);
         }
 
-        // Capture lost, the surface hidden, the stage off its panel: the gesture ends as a release does.
+        // Capture lost, the surface hidden, the stage off its panel: the gesture ends as a release does, but a right
+        // press opens no menu.
         private void Lost()
         {
-            if (_mode != Mode.None) Finish();
+            if (_mode != Mode.None) Finish(false);
         }
 
         private void Hover(Vector2 s)
@@ -662,6 +699,7 @@ namespace Facet
             if (Input.Gesture == _cancel) Input.Gesture = null;
             _guides = new Vector2(float.NaN, float.NaN);
             _banding = false;
+            _bandBase.Clear();
             return mode;
         }
 
@@ -670,7 +708,7 @@ namespace Facet
             if (Stage.panel != null && Stage.HasPointerCapture(_pointer)) Stage.ReleasePointer(_pointer);
         }
 
-        private void Finish()
+        private void Finish(bool released)
         {
             var mode = Stop();
             if (mode == Mode.PressItem && _pressWasSelected && _press != null)
@@ -687,9 +725,10 @@ namespace Facet
             _press = null;
             Redraw();
             Release();
+            if (mode == Mode.PressRight && released) OpenMenu();
         }
 
-        // Input.Gesture: the items go back where they started and nothing is recorded.
+        // Input.Gesture: the items or the view go back where they started and nothing is recorded.
         private void Cancel()
         {
             var mode = Stop();
@@ -699,6 +738,7 @@ namespace Facet
                 for (int i = 0; i < _count; i++) Put(_movers[i], _start[i]);
                 Raise(Changed, _siteChanged);
             }
+            else if (mode == Mode.Pan) SetView(_zoom, _panStart);
             _count = 0;
             _press = null;
             Redraw();
@@ -721,22 +761,37 @@ namespace Facet
             if (n == 0) return;
             if (_undoable)
             {
-                var p = new Part { Items = _itemsOf, Key = _keyOf, Find = _find, Set = _setRect, Host = _host, Name = _name,
-                                   Site = "Canvas '" + _name + "' " + label, Before = new Rect[n], After = new Rect[n] };
-                if (_keyOf != null) p.Keys = new string[n]; else p.Refs = new T[n];
+                var p = NewPart(label, n);
                 for (int i = 0, k = 0; i < _count; i++)
                 {
                     if (after[i] == _start[i]) continue;
                     if (p.Keys != null) p.Keys[k] = KeyOf(_movers[i]); else p.Refs[k] = _movers[i];
                     p.Before[k] = _start[i]; p.After[k] = after[i]; k++;
                 }
-                string key = "canvas/" + _name + "#" + (++CanvasAll.Gestures);
-                var valid = _document == null ? null : History.BoundTo(_document);
-                Action undo, redo;
-                Steps(p, out undo, out redo);
-                using (History.Step(label, key, valid, _translate)) History.Record(label, key, undo, redo, _translate);
+                Record(p, label, "canvas/" + _name + "#" + (++CanvasAll.Gestures));
             }
             Raise(Committed, _siteCommitted);
+        }
+
+        private string _partLabel, _partSite;
+
+        private Part NewPart(string label, int n)
+        {
+            if (!ReferenceEquals(label, _partLabel)) { _partLabel = label; _partSite = "Canvas '" + _name + "' " + label; }
+            var p = new Part { Items = _itemsOf, Key = _keyOf, Find = _find, Set = _setRect, Host = _host, Name = _name,
+                               Site = _partSite, Before = new Rect[n], After = new Rect[n] };
+            if (_keyOf != null) p.Keys = new string[n]; else p.Refs = new T[n];
+            return p;
+        }
+
+        // The step's redo, for a nudge run to extend in place.
+        private Action Record(Part p, string label, string key)
+        {
+            var valid = _document == null ? null : History.BoundTo(_document);
+            Action undo, redo;
+            Steps(p, out undo, out redo);
+            using (History.Step(label, key, valid, _translate)) History.Record(label, key, undo, redo, _translate);
+            return redo;
         }
 
         // The closures live here, over the part alone: a step must not keep the canvas or its page alive.
@@ -802,6 +857,7 @@ namespace Facet
             if (_attached) return;
             _attached = true;
             CanvasAll.Live.Add(_applied);
+            CanvasAll.Views.Add(this);
             _owner = Popup.OwnerOf(Stage);
             if (_owner != null) _owner.Hidden += _lost;
             Refresh();
@@ -811,8 +867,9 @@ namespace Facet
         {
             if (!_attached) return;
             _attached = false;
-            Lost();
+            Gone();
             CanvasAll.Live.Remove(_applied);
+            CanvasAll.Views.Remove(this);
             if (_owner != null) _owner.Hidden -= _lost;
             _owner = null;
         }
@@ -837,6 +894,54 @@ namespace Facet
         internal static int Gestures;
         internal static readonly List<Action<string>> Live = new List<Action<string>>();
         internal static readonly HashSet<string> Touched = new HashSet<string>();
+
+        // The focused canvas of this Facet copy (at most one), and every canvas on a panel.
+        internal static ICanvasView Focused;
+        internal static readonly List<ICanvasView> Views = new List<ICanvasView>();
+
+        // Every surface root's trickle-down press: a press outside the focused canvas's stage unfocuses it.
+        internal static void Pressed(VisualElement target)
+        {
+            var f = Focused;
+            if (f != null && !Within(target, f.Stage)) Focused = null;
+        }
+
+        private static bool Within(VisualElement e, VisualElement stage)
+        {
+            for (; e != null; e = e.hierarchy.parent) if (e == stage) return true;
+            return false;
+        }
+
+        // Is e on a canvas's stage? Its wheel is the canvas's, so a page's glide leaves it alone.
+        internal static bool OnStage(VisualElement e)
+        {
+            for (int i = 0; i < Views.Count; i++) if (Within(e, Views[i].Stage)) return true;
+            return false;
+        }
+
+        // Escape, after a focused text field: the focused canvas in this surface clears its selection, if it has one.
+        internal static bool Escape(VisualElement root)
+        {
+            var f = Focused;
+            return f != null && f.Stage.panel != null && root != null && Within(f.Stage, root) && f.TakeEscape();
+        }
+
+        /* The polled wheel at a screen point (origin bottom-left) for the topmost surface: the canvas whose stage is
+           what the pointer is on (picked, so an element over the stage keeps it) takes it, instead of the scrollers. */
+        internal static bool Wheel(VisualElement root, float x, float y, float delta)
+        {
+            if (root == null || root.panel == null || Views.Count == 0) return false;
+            var p = RuntimePanelUtils.ScreenToPanel(root.panel, new Vector2(x, Screen.height - y));
+            var picked = root.panel.Pick(p);
+            for (int i = 0; i < Views.Count; i++)
+            {
+                var st = Views[i].Stage;
+                if (st.panel != root.panel || !st.enabledInHierarchy || !Within(picked, st) || !Within(st, root)) continue;
+                Views[i].Polled(delta, st.WorldToLocal(p));
+                return true;
+            }
+            return false;
+        }
 
         static CanvasAll() { History.RefreshAll += After; }
 

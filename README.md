@@ -170,7 +170,8 @@ reads and writes them only through `GetRect` and `SetRect`, and every consumer d
   them. `Stage` takes the pointer, in stage px; `Root` is the pane.
 - **The pane** is a `Controls.Preview`: `Id` names its stage (`Id-pane` the pane), and
   `VisibleWhen`, `EnabledWhen`, `Tooltip`/`TooltipText`, `ContextMenu` and `ContextMenuItems` act on the pane, as on a preview's.
-  `EnabledWhen` false also stops the stage taking the pointer. `Help` is not shown.
+  `EnabledWhen` false also stops the stage taking the pointer. `Help` is not shown. The stage keeps its right and
+  middle presses from the pane, so the pane's context menu opens only around the stage; the stage's own is `Menu`.
 - **Selection.** A click selects the topmost selectable item, and Ctrl, Cmd or Shift toggles it in or out. A drag
   on empty stage draws a marquee (a modifier adds to the selection); a click there clears it. `Selection`,
   `Primary` (the item a drag snaps by), `SelectionVersion`, `Select`, `SelectAll`, `Clear`.
@@ -206,6 +207,54 @@ reads and writes them only through `GetRect` and `SetRect`, and every consumer d
   release does: one step and one `Committed`. A canvas drag has written every frame's rect to the model already,
   so the loss keeps what the user saw. A drag that changes nothing until its drop (a list reorder) cancels on a
   lost capture instead: there is nothing on screen yet to keep.
+- **Draw on `Changed`, save on `Committed`.** `Changed` comes on every move, nudge, delete and z-step (and after an
+  undo); `Committed` once at the end of each: a release, an arrow key let go, a delete or a z-step.
+
+### View
+
+- `Zoom` (0.3 to 4; setting it keeps the view centre), `Pan` (the stage position of canvas (0, 0)), `ZoomBy`,
+  `Fit` (every item with 40 px padding; with none, `ResetView`), `Centre` (the items at the current zoom),
+  `ResetView` (zoom 1, centred), `StageToCanvas`, `CanvasToStage`, `ViewCentre`, `HitTest`. `ViewChanged` fires
+  once per change, and the zoom badge follows. The first time the stage has a size the canvas runs `ResetView`, so
+  a stage point is `CanvasToStage` of a canvas point, never the canvas point itself.
+- **The wheel** over the stage pans 20 stage px a notch on both axes (a trackpad's sideways scroll included); Shift
+  turns a vertical-only wheel sideways; Ctrl or Cmd zooms at the pointer by 0.1 a notch. The panel's own
+  `WheelEvent` (3 a notch) and the host's polled `Input.TickWheel` (when the stage is what the pointer is on, not an
+  element over it, it feeds the canvas, not the page's scrollers; x and the modifiers are read from Unity's input in that call) feed one handler that takes at most one
+  of them a frame (the poll also skips the frame after an event's, which can carry the same notch), and the page
+  around the stage neither scrolls nor glides.
+- **The middle button** drags the view at once. **The right button** under 5 stage px of travel is a click: the
+  item under the press is selected (alone, unless it was selected) and `Menu(item)` opens there through
+  `Popup.Context` (null on empty stage; a null or empty list opens nothing). From 5 px it drags the view and opens
+  no menu.
+- **Double-click.** A second press on the same item within 0.3 s raises `Activated(item)` once.
+
+### Keys
+
+- **Focus.** A press on a stage focuses that canvas (and blurs a text field); one canvas of a Facet copy is
+  `Focused` at a time. A press anywhere else on a Facet surface, or the canvas's surface hiding, unfocuses it; a
+  press in a popup (picking from the canvas's own menu) does not.
+  `Hovered` follows the pointer.
+- **`PollKeys(down, held)`**, which the host calls every frame with its key reads. Nothing while a text field has
+  focus, a key capture or a drag runs, or Ctrl, Cmd or Alt is held (chords are the menus'; Shift is ignored).
+  Focused: the arrows nudge the selection 1 canvas unit whatever the snap, repeating after 0.4 s every 0.05 s, as
+  one "Nudge" step per selection (so a held or re-pressed arrow within 0.9 s is one step, whose end each repeat moves
+  in place, allocating nothing) with `Committed` when the
+  key is let go; Delete and Backspace run `DeleteSelection`; `]` and `[` run `StepZ(true/false)`. Focused or
+  hovered: `+`/`=` zoom in, `-` out, `0` `ResetView`. It returns true when it acted: an arrow that moved nothing
+  (nothing selected, or every item at the limit) returns false, so the host's menus get the key. A `Nudge` call
+  commits at once, and ends a key nudge so its release commits nothing more.
+- **The host's order:** `PollKeys` first, `Menus.HandleKeys` only when it returned false, so a key that is both a
+  canvas key and a menu shortcut (Edit › Delete on Delete) runs once.
+- **`Delete` and `ZOrder` must record.** `DeleteSelection` calls `Delete(selection)` and `StepZ` calls
+  `ZOrder(the whole list in its new draw order)` inside a step Facet opens ("Delete", "Bring forward", "Send
+  backward"; each its own step, never merged with the last); the callback records its change (`History.Snapshot`
+  or `Record`) or the step is empty and nothing is undoable. Then the canvas re-reads, raises `Changed` and
+  `Committed`. Menu items call `DeleteSelection` and `StepZ` too. Their undo needs no redraw of the consumer's own: the
+  canvas re-reads and raises `Changed` after the apply.
+- **Escape.** A drag in progress takes the frame's Escape first, whichever mod's host (and Facet version) asked:
+  the items (or the view) go back and nothing is recorded. Otherwise, after a focused text field, a focused canvas with a selection clears it, and the window
+  stays open; the next Escape reaches the window.
 
 ## Menus
 
@@ -278,8 +327,8 @@ nothing in History: an edit to the document is a labelled row such as `Choice`.
 | Sidebar | Nav draws a rule between groups; a skin gives `Looks.Rule` a colour (on Theme.Dark it is invisible); `Nav.Compact`, an icon strip that widens over the page after a 0.1 s hover; `Nav.CompactButton`, a button at the top of the rail that flips it and raises `Nav.OnCompactChanged`; `Nav.Collapsible` (default true), false for a host whose setting decides whether the rail shows: the handle stops at `MinRail`, `ToggleRail` never shuts the rail, and a shut rail opens |
 | Rail icons | `NavItem.Icon`, a `Background` drawn left of the entry's title and tinted as the title, hover included (default: none); `Sizes.Icon`, its square size (16) |
 | Cursors | `HostOptions.Cursor`, a host hook asked first to set the OS cursor for a kind (and again every frame while held); false falls back to Facet's drawn cursor, so a hook returns false for a kind it does not know; `Cursors.Kind.Move`, `ResizeVertical`, `ResizeCornerNESW` (appended) |
-| Canvas | `Controls.Canvas<T>`; `CanvasOptions<T>`: `Items`, `Key`, `Find`, `GetRect`, `SetRect`, `Size`, `Selectable`, `Movable`, `Resizable`, `Ghosts`, `Grid`, `SnapDistance`, `SizeSnap`, `MinSize`, `Limit`, `Snap`, `ShowGrid`, `ShowGuides`, `Pane`, and from `ControlOptions` `Id`, `VisibleWhen`, `EnabledWhen`, `Tooltip`/`TooltipText`, `ContextMenu` and `ContextMenuItems` (on the pane), `Undoable`, `UndoDocument` (no `Help`); `Canvas<T>`: `Root`, `Stage`, `Content`, `Selection`, `Primary`, `SelectionVersion`, `Select`, `SelectAll`, `Clear`, `Refresh`, `Snap`, `ShowGrid`, `ShowGuides`, `SelectionChanged` (also on a `Refresh` remap), `Changed`, `Committed`; `PreviewOptions.MinHeight`, `MaxHeight` (0: none); `Sizes.CanvasHandle`, `CanvasEdgeLong`, `CanvasEdgeShort`, `CanvasHit`, `CanvasOutline`; `Role.Guide` |
-| Menus | `MenuItem`; `Controls.MenuBar`/`MenuBar` (`Root`, `Left`, `Tools`, `IsOpen`, `Open`, `Close`); `Popup.Menu(anchor, IList<MenuItem>)`; `Popup.Context`; `ControlOptions.ContextMenuItems` (at the pointer, read at the right-click; also on a canvas's pane); `Menus.HandleKeys` |
+| Canvas | `Controls.Canvas<T>`; `CanvasOptions<T>`: `Items`, `Key`, `Find`, `GetRect`, `SetRect`, `Size`, `Selectable`, `Movable`, `Resizable`, `Ghosts`, `Grid`, `SnapDistance`, `SizeSnap`, `MinSize`, `Limit`, `Snap`, `ShowGrid`, `ShowGuides`, `Pane`, `Menu`, `Delete`, `ZOrder`, and from `ControlOptions` `Id`, `VisibleWhen`, `EnabledWhen`, `Tooltip`/`TooltipText`, `ContextMenu` and `ContextMenuItems` (on the pane), `Undoable`, `UndoDocument` (no `Help`); `Canvas<T>`: `Root`, `Stage`, `Content`, `Selection`, `Primary`, `SelectionVersion`, `Select`, `SelectAll`, `Clear`, `Refresh`, `Snap`, `ShowGrid`, `ShowGuides`, `SelectionChanged` (also on a `Refresh` remap), `Changed`, `Committed`, `Zoom`, `Pan`, `ZoomBy`, `Fit`, `Centre`, `ResetView`, `StageToCanvas`, `CanvasToStage`, `ViewCentre`, `HitTest`, `Nudge`, `DeleteSelection`, `StepZ`, `Focused`, `Hovered`, `PollKeys`, `ViewChanged`, `Activated`; `PreviewOptions.MinHeight`, `MaxHeight` (0: none); `Sizes.CanvasHandle`, `CanvasEdgeLong`, `CanvasEdgeShort`, `CanvasHit`, `CanvasOutline`; `Role.Guide` |
+| Menus | `MenuItem`; `Controls.MenuBar`/`MenuBar` (`Root`, `Left`, `Tools`, `IsOpen`, `Open`, `Close`); `Popup.Menu(anchor, IList<MenuItem>)`; `Popup.Context`; `ControlOptions.ContextMenuItems` (at the pointer, read at the right-click; also on a canvas's pane, around its stage); `Menus.HandleKeys` |
 | Toolbar | `Controls.Toolbar`/`Toolbar` (`Search`, `Chips`, `Icon`, `Glyph`, `Button`, `Toggle`, `Label`, `UndoRedo`, `Spacer`); `Controls.Chips<T>`; `Ui.IconButton`; `Paint.Tint` (public) |
 | Window | `Window.Scale` is clamped to 0.6-2.5 |
 | Undo | `History.Step`, `History.BoundTo`, `History.Snapshot<T>`, `History.Invalidate`; stale steps are skipped; a null key never coalesces; `ControlOptions.Undoable`, `ControlOptions.UndoDocument`; an undo or redo of a row's or canvas's step raises its `Committed` inside the apply (`History.Applying` true) while it is on a panel, and otherwise only writes the bind or `SetRect` |

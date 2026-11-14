@@ -19,6 +19,7 @@ namespace Facet
         private Rect _band;
         private bool _banding;
         private string _badgeText;
+        private int _badgePct = -1;
         private Color _drawnAccent;
 
         // The selection's rects, and the eight handles of a lone resizable item (reading order: TL, T, TR, L, R, BL, B, BR).

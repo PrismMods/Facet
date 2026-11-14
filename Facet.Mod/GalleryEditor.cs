@@ -31,8 +31,14 @@ namespace Facet.Mod
         public float Limit = 8000f;
 
         /// The Canvas page's menus count their runs; Fail makes File › New throw.
-        public int News, Recents, Removes, Undos, Copies, CopyStyles, Pastes;
+        public int News, Recents, Removes, Undos, Copies, CopyStyles, Pastes, Fronts;
         public bool Fail;
+
+        /// The canvas's Delete and ZOrder calls, and Edit > Delete's runs; the key of the item its context menu was last
+        /// asked for ("" for empty stage); NoMenu makes that menu null.
+        public int Deletes, ZSteps, MenuDeletes;
+        public string MenuFor;
+        public bool NoMenu;
     }
 
     /// A plain box on the Canvas page. Not "Box": Core's internal Box struct is visible to this assembly.
@@ -76,17 +82,27 @@ namespace Facet.Mod
             return _win;
         }
 
-        static readonly Func<KeyCode, bool> KeyDown = UnityEngine.Input.GetKeyDown;
+        static readonly Func<KeyCode, bool> KeyDown = UnityEngine.Input.GetKeyDown, KeyHeld = UnityEngine.Input.GetKey;
 
-        /// The host's per-frame key poll: the menus' shortcuts, while the menu bar is on screen.
-        public static void PollKeys()
+        /// False while the autotest drives the keys itself through PollKeys(down, held).
+        public static bool HostKeys = true;
+
+        /// The host's per-frame key poll.
+        public static void PollKeys() { if (HostKeys) PollKeys(KeyDown, KeyHeld); }
+
+        /// The canvas's keys first; the menus' shortcuts (while the menu bar is on screen) only when it did nothing, so a
+        /// key that is both (Delete) runs once.
+        /// True when the canvas took the keys.
+        internal static bool PollKeys(Func<KeyCode, bool> down, Func<KeyCode, bool> held)
         {
-            if (Surface == null || !Surface.Visible || Bar == null || MenuItems == null) return;
-            bool ctrl = UnityEngine.Input.GetKey(KeyCode.LeftControl) || UnityEngine.Input.GetKey(KeyCode.RightControl)
-                     || UnityEngine.Input.GetKey(KeyCode.LeftCommand) || UnityEngine.Input.GetKey(KeyCode.RightCommand);
-            bool shift = UnityEngine.Input.GetKey(KeyCode.LeftShift) || UnityEngine.Input.GetKey(KeyCode.RightShift);
-            bool alt = UnityEngine.Input.GetKey(KeyCode.LeftAlt) || UnityEngine.Input.GetKey(KeyCode.RightAlt);
-            Menus.HandleKeys(Bar.Root, MenuItems, KeyDown, ctrl, shift, alt);
+            if (Surface == null || !Surface.Visible) return false;
+            if (Canvas != null && Canvas.PollKeys(down, held)) return true;
+            if (Bar == null || MenuItems == null) return false;
+            bool ctrl = held(KeyCode.LeftControl) || held(KeyCode.RightControl) || held(KeyCode.LeftCommand) || held(KeyCode.RightCommand);
+            bool shift = held(KeyCode.LeftShift) || held(KeyCode.RightShift);
+            bool alt = held(KeyCode.LeftAlt) || held(KeyCode.RightAlt);
+            Menus.HandleKeys(Bar.Root, MenuItems, down, ctrl, shift, alt);
+            return false;
         }
 
         static void Undo(VisualElement p)
@@ -116,6 +132,8 @@ namespace Facet.Mod
                     new MenuItem { Text = "Copy", Shortcut = "Ctrl+C", Run = () => Model.Copies++ },
                     new MenuItem { Text = "Copy Style", Shortcut = "Ctrl+Shift+C", Run = () => Model.CopyStyles++ },
                     new MenuItem { Text = "Paste", Shortcut = "Ctrl+V", Enabled = () => false, Run = () => Model.Pastes++ },
+                    new MenuItem { Text = "Delete", Shortcut = "Delete", Run = () => { Model.MenuDeletes++; canvas()?.DeleteSelection(); } },
+                    new MenuItem { Text = "Bring to front", Shortcut = "Ctrl+]", Run = () => Model.Fronts++ },
                     MenuItem.Separator,
                     new MenuItem { Text = "Snap", Checked = () => canvas() != null && canvas().Snap, Run = () => { var c = canvas(); if (c != null) c.Snap = !c.Snap; } },
                 } },
@@ -131,12 +149,57 @@ namespace Facet.Mod
             return l;
         }
 
+        /// The 108-box page: a 12 x 9 grid of 60 x 60 boxes, 70 apart.
+        internal static List<GalleryBox> ManyBoxes()
+        {
+            var l = new List<GalleryBox>();
+            for (int i = 0; i < 108; i++) l.Add(new GalleryBox("k" + (i + 1), "Box " + (i + 1), new Rect(20 + i % 12 * 70, 20 + i / 12 * 70, 60, 60)));
+            return l;
+        }
+
+        static List<GalleryBox> Shown => Model.Tab == 0 ? Model.Boxes : Model.Other;
+
+        // The canvas's menu: the item's own commands, or the view's on empty stage.
+        static IList<MenuItem> MenuOf(GalleryBox b)
+        {
+            Model.MenuFor = b == null ? "" : b.Key;
+            if (Model.NoMenu) return null;
+            if (b == null)
+                return new List<MenuItem>
+                {
+                    new MenuItem { Text = "Fit", Run = () => Canvas?.Fit() },
+                    new MenuItem { Text = "Reset view", Run = () => Canvas?.ResetView() },
+                    new MenuItem { Text = "Select all", Run = () => Canvas?.SelectAll() },
+                };
+            return new List<MenuItem>
+            {
+                new MenuItem { Text = "Bring forward", Run = () => Canvas?.StepZ(true) },
+                new MenuItem { Text = "Send backward", Run = () => Canvas?.StepZ(false) },
+                MenuItem.Separator,
+                new MenuItem { Text = "Delete", Danger = true, Run = () => Canvas?.DeleteSelection() },
+            };
+        }
+
+        // The canvas opens the step; this records the list before and after it.
+        static void Change(Action<List<GalleryBox>> change)
+        {
+            var boxes = Shown;
+            History.Snapshot("Boxes", null, () => boxes.ToArray(), a => Restore(boxes, a), () => change(boxes));
+        }
+
+        // An undo or redo rewrites the list; the canvas re-reads it after the apply and its Changed redraws the page.
+        static void Restore(List<GalleryBox> boxes, GalleryBox[] to)
+        {
+            boxes.Clear(); boxes.AddRange(to);
+        }
+
         static void CanvasPage(VisualElement p)
         {
             Page = p;
             Canvas<GalleryBox> c = null;
             Bar = Controls.MenuBar(p, MenuItems = BuildMenus(() => c));
             var drawn = new Dictionary<string, VisualElement>();
+            var order = new List<string>();
             c = Canvas = Controls.Canvas<GalleryBox>(p, "Canvas", o =>
             {
                 o.Id = "ed-canvas";
@@ -149,12 +212,15 @@ namespace Facet.Mod
                 o.Ghosts = () => Ghosts;
                 o.UndoDocument = () => Model.BoxDoc;
                 o.Limit = Model.Limit;
+                o.Menu = MenuOf;
+                o.Delete = gone => { Model.Deletes++; Change(l => l.RemoveAll(b => Has(gone, b))); };
+                o.ZOrder = to => { Model.ZSteps++; Change(l => { l.Clear(); l.AddRange(to); }); };
             });
             Bar.Tools.Label(() => c.Selection.Count + " selected");
             Bar.Tools.Toggle("Snap", Bind.To(() => c.Snap, v => c.Snap = v), "Snap to the canvas centre, the grid and other boxes");
             Bar.Tools.UndoRedo();
             foreach (var g in Ghosts) Place(Plain(c.Content, new Color(0.6f, 0.6f, 0.65f, 0.25f)), g);
-            Action draw = () => Draw(c, drawn);
+            Action draw = () => Draw(c, drawn, order);
             c.Changed += draw;
             draw();
             Ui.Btn("Replace", () =>
@@ -167,18 +233,26 @@ namespace Facet.Mod
             }, p).name = "ed-replace";
         }
 
-        // Every box where its rect says, in the set Items shows; a different set of keys is drawn afresh.
-        static void Draw(Canvas<GalleryBox> c, Dictionary<string, VisualElement> drawn)
+        static bool Has(IReadOnlyList<GalleryBox> l, GalleryBox b)
         {
-            var items = Model.Tab == 0 ? Model.Boxes : Model.Other;
-            bool same = drawn.Count == items.Count;
-            for (int i = 0; i < items.Count && same; i++) same = drawn.ContainsKey(items[i].Key);
+            for (int i = 0; i < l.Count; i++) if (ReferenceEquals(l[i], b)) return true;
+            return false;
+        }
+
+        // Every box where its rect says, in the set Items shows; a different set of keys, or a new order, is drawn afresh.
+        static void Draw(Canvas<GalleryBox> c, Dictionary<string, VisualElement> drawn, List<string> order)
+        {
+            var items = Shown;
+            bool same = order.Count == items.Count;
+            for (int i = 0; i < items.Count && same; i++) same = ReferenceEquals(order[i], items[i].Key) || order[i] == items[i].Key;
             if (!same)
             {
                 foreach (var e in drawn.Values) e.RemoveFromHierarchy();
                 drawn.Clear();
+                order.Clear();
                 foreach (var b in items)
                 {
+                    order.Add(b.Key);
                     var e = drawn[b.Key] = Plain(c.Content, new Color(0.25f, 0.45f, 0.8f, 0.85f));
                     e.name = "ed-box-" + b.Key;
                     Ui.Text(b.Name, e).pickingMode = PickingMode.Ignore;

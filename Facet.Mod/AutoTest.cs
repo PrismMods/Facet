@@ -57,11 +57,11 @@ namespace Facet.Mod
             PointerAt(EventType.MouseMove, panel, root);
         }
 
-        IEnumerator Drag(Vector2 from, Vector2 to, int steps = 6, VisualElement via = null)
+        IEnumerator Drag(Vector2 from, Vector2 to, int steps = 6, VisualElement via = null, int button = 0)
         {
-            Pointer(EventType.MouseDown, from, 0, via); yield return null;
-            for (int i = 1; i <= steps; i++) { Pointer(EventType.MouseDrag, Vector2.Lerp(from, to, i / (float)steps), 0, via); yield return null; }
-            Pointer(EventType.MouseUp, to, 0, via); yield return null; yield return null;
+            Pointer(EventType.MouseDown, from, button, via); yield return null;
+            for (int i = 1; i <= steps; i++) { Pointer(EventType.MouseDrag, Vector2.Lerp(from, to, i / (float)steps), button, via); yield return null; }
+            Pointer(EventType.MouseUp, to, button, via); yield return null; yield return null;
         }
 
         // Down and up in the same frame: a real pointer's own move event between them would turn
@@ -152,6 +152,8 @@ namespace Facet.Mod
                 yield return Run("SectionRailCollapsible", SectionRailCollapsible());
                 yield return Run("SectionSmoothScroll", SectionSmoothScroll());
                 yield return Run("SectionCanvasEdit", SectionCanvasEdit());
+                yield return Run("SectionCanvasView", SectionCanvasView());
+                yield return Run("SectionCanvasPerf", SectionCanvasPerf());
                 yield return Run("SectionToolbar", SectionToolbar());
                 yield return Run("SectionMenus", SectionMenus());
                 yield return Run("SectionContextMenu", SectionContextMenu());

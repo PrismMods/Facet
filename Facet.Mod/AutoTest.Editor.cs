@@ -347,7 +347,7 @@ namespace Facet.Mod
             finally { Popup.CloseAll(); probe?.RemoveFromHierarchy(); History.Clear(); GalleryEditor.Close(); GalleryEditor.Model = new EditorModel(); }
         }
 
-        // A row's ContextMenuItems: read at the right-click, opened at the pointer; a canvas pane takes them too.
+        // A row's ContextMenuItems: read at the right-click, opened at the pointer. A canvas's stage keeps its right presses.
         IEnumerator SectionContextMenu()
         {
             GalleryEditor.Model = new EditorModel();
@@ -382,11 +382,14 @@ namespace Facet.Mod
                     o.GetRect = b => b.Rect;
                     o.SetRect = (b, r) => b.Rect = r;
                     o.Size = new Vector2(400, 100);
-                    o.ContextMenuItems = () => second;
+                    o.ContextMenuItems = () => first;
+                    o.Menu = _ => second;
                 });
                 yield return null; yield return null;
-                PressAt(cv.Stage.worldBound.center, win.Root, 1); yield return null; yield return null;
-                Check(LiveLabel("Ctx second") != null, "a right-click on a canvas opens its pane's ContextMenuItems");
+                PointerAt(EventType.MouseDown, cv.Stage.worldBound.center, win.Root, 1); yield return null; yield return null;
+                Check(LiveLabel("Ctx first") == null && LiveLabel("Ctx second") == null, "a right press on a canvas's stage opens nothing: the stage keeps it from the pane's ContextMenuItems");
+                PointerAt(EventType.MouseUp, cv.Stage.worldBound.center, win.Root, 1); yield return null; yield return null;
+                Check(LiveLabel("Ctx second") != null && LiveLabel("Ctx first") == null, "...and its release opens the canvas's Menu");
             }
             finally { Popup.CloseAll(); box?.RemoveFromHierarchy(); GalleryEditor.Close(); GalleryEditor.Model = new EditorModel(); }
         }
