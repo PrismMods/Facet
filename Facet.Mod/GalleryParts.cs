@@ -51,6 +51,7 @@ namespace Facet.Mod
         public static NavItem TilesItem { get; private set; }
         public static NavItem TabsItem { get; private set; }
         public static NavItem FormsItem { get; private set; }
+        public static NavItem ListsItem { get; private set; }
         /// The Tabs page's row and Combo's unnamed toggle, as last built.
         public static Tabs TabsRow { get; private set; }
         public static Control<bool> ComboToggle { get; private set; }
@@ -64,7 +65,7 @@ namespace Facet.Mod
             Nav = new Nav(_win.Body, new[]
             {
                 NavItem.Heading(null, CardsItem = new NavItem("Cards", Cards), FeatureItem = new NavItem("Feature", Feature)),
-                NavItem.Heading(null, TilesItem = new NavItem("Tiles", Tiles), TabsItem = new NavItem("Tabs", TabPages), FormsItem = new NavItem("Forms", GalleryForms.Build)),
+                NavItem.Heading(null, TilesItem = new NavItem("Tiles", Tiles), TabsItem = new NavItem("Tabs", TabPages), FormsItem = new NavItem("Forms", GalleryForms.Build), ListsItem = new NavItem("Lists", GalleryLists.Build)),
             });
             return _win;
         }

@@ -169,6 +169,7 @@ namespace Facet.Mod
                 yield return Run("SectionRegions", SectionRegions());
                 yield return Run("SectionConveniences", SectionConveniences());
                 yield return Run("SectionCardGrid", SectionCardGrid());
+                yield return Run("SectionImageCards", SectionImageCards());
                 yield return Run("SectionRows", SectionRows());
                 yield return Run("SectionCleanup", SectionCleanup());
                 yield return Run("SectionClose", SectionClose());

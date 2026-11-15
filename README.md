@@ -482,6 +482,46 @@ var grid = Controls.CardGrid<Layout>(page, o =>
 - Of the inherited options only `Id` (the grid; its parts are `Id-card`, `Id-thumb`, `Id-title`, `Id-mark`,
   `Id-note`, `Id-add` and `Id-rename`) and `Tooltip` apply.
 
+### Image cards
+
+`Controls.ImageCards<T>(parent, o => …)` is a list of cards over images that arrive late (thumbnails a download
+or a decoder hands in), one per row or a responsive grid, with full-width content under a card's row.
+
+```csharp
+var cards = Controls.ImageCards<Entry>(page, o =>
+{
+    o.Items = () => Doc.Entries; o.Key = e => e.Id; o.Grid = () => Settings.Grid;
+    o.Image = e => Thumbs.TryGet(e.Id);              // null: not ready yet
+    o.Body = (box, e) => Ui.Text(box, "").text = e.Name;
+    o.Click = e => Doc.Open(e);
+    o.Below = e => e == Doc.Expanded ? (Action<VisualElement>)(box => DrawDetails(box, e)) : null;
+});
+Thumbs.Ready += () => cards.ImagesChanged();
+```
+
+- **Keys.** On each `Refresh` (and each refresh pass of the surface) the cards follow `Items` by `Key`: new keys
+  build, gone keys go, kept cards move into place without a rebuild. `Body` runs once per key, and only while the
+  root is attached: a build into a detached element (a search index building a page) makes keyed empty cards, and
+  attaching fills them. `Redraw(item)` builds one card's `Body` (and its `Below`) again.
+- **Columns.** With `Grid` false or null there is one card per row. With it true the count is
+  `clamp(floor((width + Gap) / (MinWidth + Gap)), 1, MaxColumns)`, recomputed when the root's width changes;
+  a change regroups the rows without rebuilding a card. `Columns` reads it.
+- **Below.** `Below(item)` returns a builder for full-width content after the row that holds the item (after the
+  card in one column, after the whole row in a grid), or null. It is built when it turns from null to a builder,
+  removed when it turns back, and rebuilt on `Redraw`.
+- **The image window.** `Image` is asked only for cards in the window: the nearest ancestor `ScrollView`'s viewport
+  grown by `ImageMargin` above and below (0: one viewport height), or every card when there is no `ScrollView`. A
+  card is asked when it enters the window (attach, scroll, layout, a `Refresh` that adds it) and again on
+  `ImagesChanged`. A card that leaves the window drops its image, so a texture its owner has since destroyed is
+  never drawn; coming back asks again. Nothing is asked while the root is detached or not displayed. A texture is
+  assigned only when the reference changes; null clears it.
+- **Look.** The image fills the card behind its content, cropped to cover, under a `Role.Panel` scrim at `Scrim`
+  opacity, and fades in over 0.28 s (`Anim.Speed` scales it).
+- **Clicks.** With `Click` a card is a button: a click or Submit on it calls `Click`. Controls inside `Body` keep
+  their own clicks.
+- A throwing `Image`, `Body` or `Below` leaves that part of its card blank and is logged once per key.
+- Parts are named `image-cards`, `image-cards-card`, `-body`, `-below`, `-layer`, `-image` and `-scrim`.
+
 ## Rows: scrub and key capture
 
 - **Scrub.** `Controls.Number(…, o => o.Scrub = true)` makes the row's label a handle (the cursor shows
@@ -658,6 +698,7 @@ and its 7 px handle, the handle alone with the rail shut, or the icon strip when
 | Inspector | `Bind.Many` (by key), `Bind<T>.Mixed`, `Control<T>.Mixed`, `ColumnsOptions.RightFill`, `Ui.Scroll`, `Controls.Live` |
 | Lists | `Controls.Reorder<T>`/`Reorder<T>` (`Root`, `Refresh`, `BeginRename`), `ReorderOptions<T>` (`Items`, `Key`, `Text`, `Selected`, `Active`, `Select`, `Move`, `Rename`, `Menu`, `Add`, `Title`, `TitleMenu`, `Vertical`, `Scroll`, `Build`) |
 | Switcher and rows | `Controls.CardGrid<T>`/`CardGrid<T>` (`Root`, `Refresh`, `Redraw`, `BeginRename`), `CardGridOptions<T>` (`Items`, `Key`, `Title`, `Note`, `Active`, `Thumb`, `ThumbAspect`, `Click`, `DoubleClick`, `Menu`, `AddLabel`, `Add`, `Rename`); `Sizes.CardWidth` (168); `Controls.Repeat<T>`; `SliderOptions.Scrub`; `KeyOptions.Chord`, `Prompt`, `Mouse`; `Controls.BeginCapture`; `Input.ReadChord`, `Input.ChordCancel` |
+| Image cards | `Controls.ImageCards<T>`/`ImageCards<T>` (`Root`, `Columns`, `Refresh`, `Redraw`, `ImagesChanged`), `ImageCardsOptions<T>` (`Items`, `Key`, `Image`, `Body`, `Click`, `Below`, `Grid`, `MinWidth`, `MaxColumns`, `Gap`, `Scrim`, `ImageMargin`; not a `ControlOptions`) |
 | Dialogs | `Popup.Confirm`, `ConfirmOptions` (`Ok`, `Cancel`, null for a notice, `Danger`); `Sizes.DialogMinWidth`, `DialogMaxWidth` (280, 420) |
 | Status | `Controls.Status`/`StatusLine` (`Root`, `Show(key, role, seconds)`, `Show(func, role, seconds)`, `Clear`); `InfoOptions.Tone` (`Controls.Info` takes `Action<InfoOptions>`; its `Action<ControlOptions>` overload stays, so a mod built against it still loads) |
 | Window | `Window.Scale` is clamped to 0.6-2.5; `Window.HasStoredGeometry` |

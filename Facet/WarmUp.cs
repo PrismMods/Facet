@@ -107,7 +107,7 @@ namespace Facet
         private sealed class Spot { public string Name; public Rect R; }
 
         /* The editor's parts, as an editor page holds them: a menu bar with its tools, a tab strip, a canvas with two
-           items, a card grid with its add card, a scrolled inspector with a scrubbed number and a chord key row. Without
+           items, a card grid with its add card, image cards, a scrolled inspector with a scrubbed number and a chord key row. Without
            them an editor window opened straight after the warm-up paid their first run in its own frame. */
         private static void Parts(VisualElement page, string upper, string lower, string rest)
         {
@@ -131,6 +131,12 @@ namespace Facet
             {
                 o.Items = () => words; o.Title = x => x; o.Note = x => rest; o.Active = x => x == upper;
                 o.Thumb = (e, x) => { }; o.AddLabel = lower; o.Add = () => null;
+            });
+            var three = new List<string> { upper, lower, rest };
+            Controls.ImageCards<string>(page, o =>
+            {
+                o.Items = () => three; o.Key = x => x; o.Grid = () => true;
+                o.Image = x => null; o.Body = (e, x) => Ui.Text(e, "").text = x;
             });
             var scroll = Ui.Scroll(page);
             Controls.Live(scroll, () => 1, p =>

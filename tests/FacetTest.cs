@@ -334,6 +334,7 @@ static class FacetTest {
         UndoChord();
         MaskBits();
         RangeEnds();
+        CardColumns();
         TypedNumbers();
 
         Console.WriteLine(_fail == 0 ? "ALL PASS" : _fail + " FAILED");
@@ -714,6 +715,13 @@ static class FacetTest {
         Check(a == 20f && b == 80f, "a stored x > y shows swapped");
         RangeMath.Shown(20f, 80f, out a, out b);
         Check(a == 20f && b == 80f, "an ordered pair shows as stored");
+    }
+
+    static void CardColumns() {
+        Check(CardMath.Columns(860f, 268f, 8f, 6, 2) == 3, "three columns fit 860 px");
+        Check(CardMath.Columns(267f, 268f, 8f, 6, 2) == 1, "a narrow width still has one column");
+        Check(CardMath.Columns(5000f, 268f, 8f, 6, 2) == 6, "columns stop at the maximum");
+        Check(CardMath.Columns(0.5f, 268f, 8f, 6, 4) == 4, "no width yet keeps the previous count");
     }
 
     static void TypedNumbers() {
