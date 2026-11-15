@@ -325,6 +325,96 @@ namespace Facet
             if (attached != null && e.panel != null) Safe.Run(Host.For(e), "Ui.WhileAttached attached", attached);
         }
 
+        /* reached when e's end comes within margin of the bottom of the nearest ScrollView's viewport (or e is no taller
+           than it), checked after a scroll and after a geometry change of e or the viewport, while e is attached and
+           displayed; at most once per frame, under Safe. With no ScrollView, e counts as at the end. Disposing stops it. */
+        public static IDisposable ScrollEnd(VisualElement e, float margin, Action reached)
+        {
+            if (e == null) throw new ArgumentNullException("e");
+            return new ScrollEnding(e, margin, reached);
+        }
+
+        internal sealed class ScrollEnding : IDisposable
+        {
+            private VisualElement _e;
+            private readonly float _margin;
+            private readonly Action _reached;
+            private readonly Action<float> _scrolled;
+            private readonly EventCallback<GeometryChangedEvent> _geo;
+            private readonly EventCallback<AttachToPanelEvent> _attach;
+            private readonly EventCallback<DetachFromPanelEvent> _detach;
+            private ScrollView _sv;
+            private int _frame = -1;
+
+            internal ScrollEnding(VisualElement e, float margin, Action reached)
+            {
+                _e = e; _margin = margin; _reached = reached;
+                _scrolled = _ => Check();
+                _geo = _ => Check();
+                _attach = _ => Attach();
+                _detach = _ => Detach();
+                Events.On(e, _attach);
+                Events.On(e, _detach);
+                Events.On(e, _geo);
+                if (e.panel != null) Attach();
+            }
+
+            private void Attach()
+            {
+                Detach();
+                _sv = _e.GetFirstAncestorOfType<ScrollView>();
+                if (_sv != null)
+                {
+                    _sv.verticalScroller.valueChanged += _scrolled;
+                    Events.On(_sv.contentViewport, _geo);
+                }
+                Check();
+            }
+
+            private void Detach()
+            {
+                if (_sv == null) return;
+                _sv.verticalScroller.valueChanged -= _scrolled;
+                Events.Off(_sv.contentViewport, _geo);
+                _sv = null;
+            }
+
+            /// Calls reached when the end is near, unless it already ran this frame.
+            internal void Check()
+            {
+                if (_e == null || _e.panel == null || _reached == null || _frame == Time.frameCount || !Shown(_e)) return;
+                // Never laid out (shown before its first layout reads 0 x 0 and display Flex): its geometry change comes back here.
+                var size = _e.layout;
+                if (!(size.width > 0f) && !(size.height > 0f)) return;
+                if (_sv != null)
+                {
+                    float vp = _sv.contentViewport.layout.height, end = _e.worldBound.yMax - _sv.contentContainer.worldBound.y;
+                    if (!(vp > 0f) || float.IsNaN(end)) return;   // not laid out yet: its geometry change comes back here
+                    // Whole units: a scaled panel snaps layout to device pixels (a 600 view reads 599.75).
+                    if (!ListMath.NearEnd(Mathf.Round(_sv.scrollOffset.y), Mathf.Round(end), Mathf.Round(vp), _margin)) return;
+                }
+                _frame = Time.frameCount;
+                Safe.Run(Host.For(_e), "Ui.ScrollEnd", _reached);
+            }
+
+            public void Dispose()
+            {
+                if (_e == null) return;
+                Detach();
+                Events.Off(_e, _attach);
+                Events.Off(_e, _detach);
+                Events.Off(_e, _geo);
+                _e = null;
+            }
+        }
+
+        // e and every ancestor displayed (resolved: a just-set display shows after the next layout).
+        internal static bool Shown(VisualElement e)
+        {
+            for (var x = e; x != null; x = x.parent) if (x.resolvedStyle.display == DisplayStyle.None) return false;
+            return true;
+        }
+
         /// The toolbar's search field on its own: a ✕ that clears it, `placeholder` an English key, `changed` on every keystroke.
         public static TextField Search(VisualElement parent, Action<string> changed, string placeholder = null)
         {

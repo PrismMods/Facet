@@ -522,6 +522,51 @@ Thumbs.Ready += () => cards.ImagesChanged();
 - A throwing `Image`, `Body` or `Below` leaves that part of its card blank and is logged once per key.
 - Parts are named `image-cards`, `image-cards-card`, `-body`, `-below`, `-layer`, `-image` and `-scrim`.
 
+### Search list
+
+`Controls.SearchList(parent, o => …)` is a search row over a list the consumer draws in `Body`, with the list's
+loading, error, empty and paging states. It is not a `Control`: it has no label or row.
+
+```csharp
+var list = Controls.SearchList(page, o =>
+{
+    o.Query = Bind.To(() => Filter.Text, v => { Filter.Text = v; Store.Search(v); });
+    o.Placeholder = "Find an entry";
+    o.Tools = tb => tb.Chips(sortBind, sorts, s => s.Name);
+    o.State = () => Store.State; o.Message = () => Store.Message;
+    o.RetryLabel = "Retry"; o.Retry = Store.Reload;
+    o.More = () => Store.More; o.EndText = () => Store.Count + " entries"; o.LoadMore = Store.NextPage;
+});
+DrawEntries(list.Body);
+Store.Changed += list.Refresh;
+```
+
+- **Search row.** A `Toolbar` whose search field writes `Query` on every change, takes at most `MaxLength` characters
+  (128; a longer paste is cut), is single line and records nothing in History; `Tools` adds after it. Escape in the
+  field blurs it first. `Search` false leaves the field out (the row stays when there are `Tools`). While the field
+  is not focused a refresh shows `Query`'s value.
+- **States**, re-read on each `Refresh` and each refresh pass of the surface. `Body` shows only in `Ready`.
+  `Loading` shows a spinner and `Message()`; `Error` shows `Message()` wrapped, a `RetryLabel` button calling
+  `Retry` when `Retry` is set, and `ErrorExtra`, built anew each time Error begins; `Empty` shows `Message()` muted;
+  `Idle` shows nothing.
+- **Footer** under a `Ready` list: `More()` `Loading` shows a spinner, `Error` a `RetryLabel` button calling
+  `LoadMore`, `End` `EndText()` muted, `None` nothing.
+- **Paging.** `LoadMore` runs when `Body`'s end comes within `EndMargin` (400) of the viewport's bottom (`Ui.ScrollEnd`)
+  while the state is `Ready` and `More()` is `None`. `Refresh` runs the same test once more, so a footer back from
+  `Error` to `None` with nothing scrolled still pages. The consumer still guards repeats (`More()` going `Loading`
+  at once does it). A paged list belongs inside a `ScrollView`: with none, `Body` always counts as at the end, so
+  each page that lands asks for the next until `More()` is `End`.
+- Spinners turn through `Anim.Speed` (still at 0) and only while shown. Parts are named `search-list`,
+  `-field`, `-status`, `-spinner`, `-extra`, `-body` and `-footer`.
+
+### Scroll end
+
+`Ui.ScrollEnd(e, margin, reached)` calls `reached` when `e`'s end is within `margin` of the bottom of the nearest
+ancestor `ScrollView`'s viewport, or `e` is no taller than the viewport. It checks after a scroll and after a
+geometry change of `e` or the viewport, while `e` is attached, displayed and laid out, at most once per frame,
+under `Safe`; lengths compare in whole units, since a scaled panel snaps layout to device pixels. With no
+`ScrollView`, `e` counts as at the end. Detaching `e` pauses it; disposing the handle stops it.
+
 ## Rows: scrub and key capture
 
 - **Scrub.** `Controls.Number(…, o => o.Scrub = true)` makes the row's label a handle (the cursor shows
@@ -699,6 +744,7 @@ and its 7 px handle, the handle alone with the rail shut, or the icon strip when
 | Lists | `Controls.Reorder<T>`/`Reorder<T>` (`Root`, `Refresh`, `BeginRename`), `ReorderOptions<T>` (`Items`, `Key`, `Text`, `Selected`, `Active`, `Select`, `Move`, `Rename`, `Menu`, `Add`, `Title`, `TitleMenu`, `Vertical`, `Scroll`, `Build`) |
 | Switcher and rows | `Controls.CardGrid<T>`/`CardGrid<T>` (`Root`, `Refresh`, `Redraw`, `BeginRename`), `CardGridOptions<T>` (`Items`, `Key`, `Title`, `Note`, `Active`, `Thumb`, `ThumbAspect`, `Click`, `DoubleClick`, `Menu`, `AddLabel`, `Add`, `Rename`); `Sizes.CardWidth` (168); `Controls.Repeat<T>`; `SliderOptions.Scrub`; `KeyOptions.Chord`, `Prompt`, `Mouse`; `Controls.BeginCapture`; `Input.ReadChord`, `Input.ChordCancel` |
 | Image cards | `Controls.ImageCards<T>`/`ImageCards<T>` (`Root`, `Columns`, `Refresh`, `Redraw`, `ImagesChanged`), `ImageCardsOptions<T>` (`Items`, `Key`, `Image`, `Body`, `Click`, `Below`, `Grid`, `MinWidth`, `MaxColumns`, `Gap`, `Scrim`, `ImageMargin`; not a `ControlOptions`) |
+| Search list | `Controls.SearchList`/`SearchList` (`Root`, `Body`, `Refresh`), `SearchListOptions` (`Search`, `Query`, `Placeholder`, `MaxLength`, `Tools`, `State`, `Message`, `RetryLabel`, `Retry`, `ErrorExtra`, `More`, `EndText`, `LoadMore`, `EndMargin`; not a `ControlOptions`), `ListState`, `MoreState`; `Ui.ScrollEnd` |
 | Dialogs | `Popup.Confirm`, `ConfirmOptions` (`Ok`, `Cancel`, null for a notice, `Danger`); `Sizes.DialogMinWidth`, `DialogMaxWidth` (280, 420) |
 | Status | `Controls.Status`/`StatusLine` (`Root`, `Show(key, role, seconds)`, `Show(func, role, seconds)`, `Clear`); `InfoOptions.Tone` (`Controls.Info` takes `Action<InfoOptions>`; its `Action<ControlOptions>` overload stays, so a mod built against it still loads) |
 | Window | `Window.Scale` is clamped to 0.6-2.5; `Window.HasStoredGeometry` |

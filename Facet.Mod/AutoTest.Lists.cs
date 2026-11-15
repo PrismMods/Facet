@@ -8,7 +8,7 @@ using UnityEngine.UIElements;
 
 namespace Facet.Mod
 {
-    // List parts a browser page needs: image cards.
+    // List parts a browser page needs: image cards, the scroll-end hook, the search list.
     sealed partial class AutoTest
     {
         sealed class Pic { public int N; public string Name; }
@@ -235,6 +235,217 @@ namespace Facet.Mod
                 s.Dispose();
                 UnityEngine.Object.Destroy(tex); UnityEngine.Object.Destroy(tex2);
             }
+        }
+
+        // A column of n rows of 60 px.
+        static VisualElement Rows(VisualElement parent, int n)
+        {
+            var l = new VisualElement { name = "end-list" };
+            l.style.flexShrink = 0f;
+            for (int i = 0; i < n; i++) { var r = new VisualElement(); r.style.height = 60f; r.style.flexShrink = 0f; l.Add(r); }
+            if (parent != null) parent.Add(l);
+            return l;
+        }
+
+        static ScrollView View600(VisualElement stage)
+        {
+            var sv = Ui.Scroll(stage);
+            sv.style.height = 600f; sv.style.flexGrow = 0f;
+            return sv;
+        }
+
+        IEnumerator SectionScrollEnd()
+        {
+            var h = Host.Create("End", o => o.Log = m => Main.Log("[end] " + m));
+            var s = new Surface(h, "FacetEnd", Layer.Window);
+            s.Visible = true;
+            var w = new Window(s.Root, "end", "End", new Rect(60, 40, 1000, 760));
+            var stage = new VisualElement { name = "end-stage" };
+            stage.style.width = 860f; stage.style.flexShrink = 0f;
+            w.Body.Add(stage);
+            try
+            {
+                // 50 rows (3000 px) in a 600 px view, margin 400.
+                var sv = View600(stage);
+                var list = Rows(sv, 50);
+                int n = 0;
+                var hook = Ui.ScrollEnd(list, 400f, () => n++);
+                yield return null; yield return null;
+                sv.scrollOffset = new Vector2(0f, 1000f); yield return null;
+                sv.scrollOffset = new Vector2(0f, 1999f); yield return null; yield return null;
+                Check(n == 0, "ScrollEnd: the top 1999 px of 3000 in a 600 px view call nothing", n.ToString());
+                sv.scrollOffset = new Vector2(0f, 2000f); yield return null; yield return null; yield return null;
+                Check(n == 1, "ScrollEnd: scrolling to 2000 of 3000 calls once", n + " vp " + sv.contentViewport.layout.height.ToString("0.###")
+                    + " end " + (list.worldBound.yMax - sv.contentContainer.worldBound.y).ToString("0.###") + " at " + sv.scrollOffset.y.ToString("0.###"));
+                sv.scrollOffset = Vector2.zero; yield return null;
+                sv.scrollOffset = new Vector2(0f, 2000f); yield return null; yield return null;
+                Check(n == 2, "ScrollEnd: scrolling up and back down calls again", n.ToString());
+                yield return null;
+                sv.scrollOffset = new Vector2(0f, 2100f);
+                sv.scrollOffset = new Vector2(0f, 2200f);
+                Check(n == 3, "ScrollEnd: two scrolls at the end in one frame call once", n.ToString());
+                hook.Dispose();
+                yield return null;
+                sv.scrollOffset = Vector2.zero; yield return null;
+                sv.scrollOffset = new Vector2(0f, 2000f); yield return null; yield return null;
+                Check(n == 3, "ScrollEnd: disposed, it calls nothing", n.ToString());
+                sv.RemoveFromHierarchy();
+
+                // Short content, detached, hidden.
+                var sv2 = View600(stage);
+                int shortN = 0, detN = 0, hidN = 0;
+                Ui.ScrollEnd(Rows(sv2, 3), 400f, () => shortN++);
+                var loose = Rows(null, 3);
+                Ui.ScrollEnd(loose, 400f, () => detN++);
+                var hidden = Rows(null, 3);
+                hidden.style.display = DisplayStyle.None;
+                Ui.ScrollEnd(hidden, 400f, () => hidN++);
+                sv2.Add(hidden);
+                yield return null; yield return null; yield return null;
+                Check(shortN == 1, "ScrollEnd: a list shorter than the view calls once on attach", shortN.ToString());
+                Check(detN == 0, "ScrollEnd: detached, nothing is called", detN.ToString());
+                Check(hidN == 0, "ScrollEnd: hidden (display none), nothing is called", hidN.ToString());
+                hidden.style.display = DisplayStyle.Flex;
+                sv2.Add(loose);
+                yield return null; yield return null; yield return null;
+                Check(hidN == 1 && detN == 1, "ScrollEnd: shown or attached, a short list calls once", hidN + "/" + detN);
+                sv2.RemoveFromHierarchy();
+            }
+            finally { s.Dispose(); }
+        }
+
+        IEnumerator SectionSearchList()
+        {
+            var h = Host.Create("Search", o => o.Log = m => Main.Log("[search] " + m));
+            var s = new Surface(h, "FacetSearch", Layer.Window);
+            s.Visible = true;
+            var w = new Window(s.Root, "search", "Search", new Rect(60, 40, 1000, 760));
+            var stage = new VisualElement { name = "search-stage" };
+            stage.style.width = 860f; stage.style.flexShrink = 0f;
+            w.Body.Add(stage);
+            try
+            {
+                string q = ""; int writes = 0, retries = 0, extras = 0, loads = 0;
+                var state = ListState.Loading; var more = MoreState.None;
+                var sv = View600(stage);
+                var sl = Controls.SearchList(sv, o =>
+                {
+                    o.Query = Bind.To(() => q, v => { q = v; writes++; });
+                    o.Placeholder = "Find";
+                    o.State = () => state; o.Message = () => "Message " + state;
+                    o.RetryLabel = "Again"; o.Retry = () => retries++;
+                    o.ErrorExtra = e => { extras++; Ui.Text(e, "").text = "Extra"; };
+                    o.More = () => more; o.EndText = () => "The end";
+                    o.LoadMore = () => { loads++; more = MoreState.Loading; };
+                });
+                Rows(sl.Body, 50);
+                yield return null; yield return null;
+
+                var f = sl.Root.Q<TextField>("search-list-field");
+                f.value = "b"; f.value = "be";
+                Check(writes == 2 && q == "be", "SearchList: typing be writes the query twice", writes + " " + q);
+                f.value = new string('x', 200);
+                Check(q.Length == 128 && f.value.Length == 128 && f.maxLength == 128 && !f.multiline,
+                    "SearchList: MaxLength 128 cuts a 200-character paste; the field is single line", q.Length + "/" + f.value.Length);
+
+                Func<string, bool> on = n => { var e = sl.Root.Q(n); return e != null && e.style.display != DisplayStyle.None; };
+                var status = sl.Root.Q("search-list-status");
+                var spin = status.Q("search-list-spinner");
+                Button retry = status.Q<Button>();
+                Func<string> shown = () => status.Query<Label>().ToList().Select(l => l.text).FirstOrDefault(t => t.StartsWith("Message")) ?? "";
+                Func<bool> spinOn = () => spin.style.display != DisplayStyle.None;
+                Func<bool> retryOn = () => retry.style.display != DisplayStyle.None;
+                sl.Refresh();
+                bool loading = on("search-list-status") && !on("search-list-body") && spinOn() && !retryOn() && shown() == "Message Loading";
+                state = ListState.Empty; sl.Refresh();
+                bool empty = on("search-list-status") && !on("search-list-body") && !spinOn() && !retryOn() && shown() == "Message Empty";
+                state = ListState.Idle; sl.Refresh();
+                bool idle = !on("search-list-status") && !on("search-list-body") && !on("search-list-footer");
+                state = ListState.Loading; sl.Refresh();
+                state = ListState.Ready; sl.Refresh();
+                bool ready = !on("search-list-status") && on("search-list-body") && !spinOn();
+                Check(loading && empty && idle && ready, "SearchList: each state shows only its own content; Loading to Ready shows Body in one refresh",
+                    loading + "/" + empty + "/" + idle + "/" + ready);
+
+                state = ListState.Error; sl.Refresh(); sl.Refresh();
+                bool err = on("search-list-status") && !on("search-list-body") && retryOn() && !spinOn() && shown() == "Message Error"
+                    && status.Q("search-list-extra").childCount == 1;
+                using (var e = NavigationSubmitEvent.GetPooled()) { e.target = retry; retry.SendEvent(e); }
+                yield return null;
+                Check(err && retries == 1, "SearchList: Error shows the retry button; Submit calls Retry once", err + " " + retries);
+                int once = extras;
+                state = ListState.Ready; sl.Refresh();
+                state = ListState.Error; sl.Refresh();
+                Check(once == 1 && extras == 2, "SearchList: ErrorExtra builds once per entry into Error", once + " " + extras);
+                state = ListState.Ready; sl.Refresh();
+                yield return null; yield return null;
+
+                // Paging: 50 rows (3000 px) under the search row in a 600 px view.
+                Check(loads == 0, "SearchList: the top of a long Ready list does not page", loads.ToString());
+                sv.scrollOffset = new Vector2(0f, 2400f); yield return null; yield return null;
+                Check(loads == 1 && more == MoreState.Loading, "SearchList: scrolling near the end calls LoadMore once", loads.ToString());
+                sv.scrollOffset = new Vector2(0f, 2300f); yield return null;
+                sv.scrollOffset = new Vector2(0f, 2400f); yield return null;
+                Check(loads == 1, "SearchList: while More is Loading, the end calls nothing", loads.ToString());
+                sl.Refresh();
+                var foot = sl.Root.Q("search-list-footer");
+                bool footSpin = on("search-list-footer") && foot.Q("search-list-spinner").style.display != DisplayStyle.None;
+                more = MoreState.Error; sl.Refresh();
+                var footRetry = foot.Q<Button>();
+                bool footErr = footRetry.style.display != DisplayStyle.None;
+                using (var e = NavigationSubmitEvent.GetPooled()) { e.target = footRetry; footRetry.SendEvent(e); }
+                yield return null;
+                Check(footSpin && footErr && loads == 2, "SearchList: More Loading shows a spinner; More Error's retry (Submit) calls LoadMore", footSpin + "/" + footErr + "/" + loads);
+                more = MoreState.End; sl.Refresh();
+                var endL = foot.Query<Label>().ToList().FirstOrDefault(l => l.style.display != DisplayStyle.None && l.text == "The end");
+                Check(endL != null && footRetry.style.display == DisplayStyle.None, "SearchList: More End shows EndText");
+
+                more = MoreState.Error; sl.Refresh(); yield return null;
+                int before = loads;
+                more = MoreState.None; yield return null;
+                sl.Refresh(); sl.Refresh();
+                Check(loads == before + 1, "SearchList: at the end, More going Error to None pages on the next Refresh, once", (loads - before).ToString());
+
+                // A detached build reads its states and calls nothing.
+                int dLoads = 0;
+                var loose = Controls.SearchList(null, o => { o.State = () => ListState.Ready; o.More = () => MoreState.None; o.LoadMore = () => dLoads++; });
+                loose.Refresh();
+                Check(dLoads == 0 && loose.Body.style.display != DisplayStyle.None, "SearchList: detached, Refresh calls nothing", dLoads.ToString());
+
+                // The refresh pass runs on the surface's timer: past the first, it allocates nothing (heap growth, collector paused).
+                string pq = "find"; var pState = ListState.Empty; var pMore = MoreState.End;
+                var probe = Controls.SearchList(null, o =>
+                {
+                    o.Query = Bind.To(() => pq, v => pq = v);
+                    o.State = () => pState; o.Message = () => "Nothing found";
+                    o.More = () => pMore; o.EndText = () => "The end";
+                });
+                probe.Refresh(); pState = ListState.Ready; probe.Refresh();
+                long pgrew, pjunk; object pkeep = null;
+                var pmode = UnityEngine.Scripting.GarbageCollector.GCMode;
+                try
+                {
+                    UnityEngine.Scripting.GarbageCollector.GCMode = UnityEngine.Scripting.GarbageCollector.Mode.Disabled;
+                    long a = GC.GetTotalMemory(false);
+                    for (int i = 0; i < 2000; i++) pkeep = new byte[128];
+                    pjunk = GC.GetTotalMemory(false) - a;
+                    // Steady Empty (Message read), then steady Ready with End (EndText read); each state's entry is left out.
+                    pState = ListState.Empty; probe.Refresh();
+                    a = GC.GetTotalMemory(false);
+                    for (int i = 0; i < 1000; i++) probe.Refresh();
+                    pgrew = GC.GetTotalMemory(false) - a;
+                    pState = ListState.Ready; probe.Refresh();
+                    a = GC.GetTotalMemory(false);
+                    for (int i = 0; i < 1000; i++) probe.Refresh();
+                    pgrew += GC.GetTotalMemory(false) - a;
+                }
+                finally { UnityEngine.Scripting.GarbageCollector.GCMode = pmode; }
+                GC.KeepAlive(pkeep);
+                Main.Log("[perf] search list refresh: heap grew " + pgrew + " bytes over 2000 refreshes (2000 x 128-byte arrays grew it " + pjunk + ")");
+                Check(pjunk > 0 && pgrew == 0, "SearchList: a refresh (Empty and Ready with End, query read) allocates nothing", pgrew + " bytes over 2000 refreshes");
+                sv.RemoveFromHierarchy();
+            }
+            finally { s.Dispose(); }
         }
 
         // asked holds lo..hi, give or take one card at either end, each once.

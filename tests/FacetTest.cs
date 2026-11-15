@@ -335,6 +335,7 @@ static class FacetTest {
         MaskBits();
         RangeEnds();
         CardColumns();
+        ListEnd();
         TypedNumbers();
 
         Console.WriteLine(_fail == 0 ? "ALL PASS" : _fail + " FAILED");
@@ -722,6 +723,13 @@ static class FacetTest {
         Check(CardMath.Columns(267f, 268f, 8f, 6, 2) == 1, "a narrow width still has one column");
         Check(CardMath.Columns(5000f, 268f, 8f, 6, 2) == 6, "columns stop at the maximum");
         Check(CardMath.Columns(0.5f, 268f, 8f, 6, 4) == 4, "no width yet keeps the previous count");
+    }
+
+    static void ListEnd() {
+        Check(ListMath.NearEnd(0f, 500f, 600f, 400f), "content shorter than the view is at the end");
+        Check(!ListMath.NearEnd(0f, 3000f, 600f, 400f), "the top of a long list is not");
+        Check(ListMath.NearEnd(2000f, 3000f, 600f, 400f), "within the margin of the end is");
+        Check(!ListMath.NearEnd(1999f, 3000f, 600f, 400f), "just outside the margin is not");
     }
 
     static void TypedNumbers() {
