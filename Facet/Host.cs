@@ -10,7 +10,8 @@ namespace Facet {
         public Action<string, string> Write;
         public Theme Theme;
         /// Sets an OS cursor for a kind and says whether it did; false falls back to Facet's drawn one. Return false
-        /// for a kind you do not know: Cursors.Kind is appended to within a minor.
+        /// for a kind you do not know: Cursors.Kind is appended to within a minor. Null: Facet's own OS cursors
+        /// (macOS, Windows), drawn ones elsewhere.
         public Func<Cursors.Kind, bool> Cursor;
         /// Panel px one wheel unit scrolls (Input.mouseScrollDelta 1, a notch), linear on the polled and the
         /// panel's own wheel path alike; asked on every scroll, so a setting applies at once. null or <= 0

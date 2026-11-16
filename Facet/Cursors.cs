@@ -12,8 +12,9 @@ namespace Facet
        element that sets one must also clear it, and why leaving the window has to restore the
        system arrow rather than whatever was set last.
 
-       A host can show the OS's own cursors instead (HostOptions.Cursor): its hook is asked first on every
-       enter and leave, and every frame while it holds one; a kind it declines is drawn here.
+       The OS's own cursor is shown where there is one: the host's hook (HostOptions.Cursor) is asked first on every
+       enter and leave, and every frame while it holds one; with no hook, OsCursor (macOS, Windows). A kind neither
+       takes is drawn here.
 
        Deliberately only the ambiguous ones. A resize edge and a text field look like anything else
        until the cursor says otherwise; a button already looks like a button, and the pointing hand
@@ -73,7 +74,8 @@ namespace Facet
             return show;
         }
 
-        /// Swap to `kind` (Default: the system arrow) with Facet's drawn cursors; no host hook is asked.
+        /// Swap to `kind` (Default: the system arrow): the OS's cursor where it has one, else Facet's drawn one; no host
+        /// hook is asked.
         public static void Apply(Kind kind) { Apply(kind, null); }
 
         // True when the host's hook took it; else the drawn cursor is set (or cleared).
@@ -98,7 +100,7 @@ namespace Facet
         private static bool Native(Host host, Kind kind)
         {
             var hook = host == null ? null : host.CursorHook;
-            if (hook == null) return false;
+            if (hook == null) return OsCursor.Set(kind);
             _hook = hook; _asking = kind;
             return Safe.Get(host, "Cursors hook", AskHook, false);
         }
