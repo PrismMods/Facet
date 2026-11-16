@@ -27,6 +27,14 @@ namespace Facet
         public string Help;
         /// Built into its group's Advanced fold, after the group's other fields (Form.Build with Cards).
         public bool Advanced;
+        /// Names the built control (ControlOptions.Id); null: Label. The label still translates through the owner host.
+        public string Id;
+        /// Runs after each committed change: once per slider drag, typed commit, toggle or choice change, undo and redo.
+        /// Set still runs on every write.
+        public Action Committed;
+        /// The built control's ControlOptions.UndoDocument: a step recorded on one document does nothing once this
+        /// returns another. Null: none.
+        public Func<object> UndoDocument;
     }
 
     public sealed class FormOptions
@@ -104,15 +112,15 @@ namespace Facet
         static void Make(VisualElement p, Field f)
         {
             var bad = new bool[1];   // set by a failing getter; read after the build
-            Action<ControlOptions> common = o => { o.Id = f.Label; o.Tooltip = f.Tooltip; o.Help = f.Help; };
+            Action<ControlOptions> common = o => Common(o, f);
             string label = f.Label;
             switch (f.Kind)
             {
                 case FieldKind.Bool:
-                    Doom(Controls.Toggle(p, label, B(f, bad, x => Convert.ToBoolean(x)), o => { common(o); Def(o, f, x => Convert.ToBoolean(x)); }), bad[0]);
+                    Done(f, Controls.Toggle(p, label, B(f, bad, x => Convert.ToBoolean(x)), o => { common(o); Def(o, f, x => Convert.ToBoolean(x)); }), bad[0]);
                     break;
                 case FieldKind.Int:
-                    Doom(Controls.IntSlider(p, label, B(f, bad, x => Convert.ToInt32(x)), o =>
+                    Done(f, Controls.IntSlider(p, label, B(f, bad, x => Convert.ToInt32(x)), o =>
                     {
                         common(o); Def(o, f, x => Convert.ToInt32(x));
                         if (f.Max > f.Min) { o.Min = (int)f.Min; o.Max = (int)f.Max; }
@@ -128,25 +136,25 @@ namespace Facet
                     };
                     var fb = B(f, bad, x => Convert.ToSingle(x, CultureInfo.InvariantCulture));
                     // A Float with no range (Min == Max) is a Number: a slider needs both ends.
-                    Doom(f.Kind == FieldKind.Float && f.Max > f.Min ? Controls.Slider(p, label, fb, so) : Controls.Number(p, label, fb, so), bad[0]);
+                    Done(f, f.Kind == FieldKind.Float && f.Max > f.Min ? Controls.Slider(p, label, fb, so) : Controls.Number(p, label, fb, so), bad[0]);
                     break;
                 case FieldKind.Choice:
-                    Doom(Controls.Choice(p, label, B(f, bad, x => Convert.ToInt32(x)), o => { common(o); Def(o, f, x => Convert.ToInt32(x)); o.Items = f.Options; }), bad[0]);
+                    Done(f, Controls.Choice(p, label, B(f, bad, x => Convert.ToInt32(x)), o => { common(o); Def(o, f, x => Convert.ToInt32(x)); o.Items = f.Options; }), bad[0]);
                     break;
                 case FieldKind.Dropdown:
-                    Doom(Controls.Dropdown(p, label, B(f, bad, x => Convert.ToInt32(x)), o => { common(o); Def(o, f, x => Convert.ToInt32(x)); o.Items = f.Options; }), bad[0]);
+                    Done(f, Controls.Dropdown(p, label, B(f, bad, x => Convert.ToInt32(x)), o => { common(o); Def(o, f, x => Convert.ToInt32(x)); o.Items = f.Options; }), bad[0]);
                     break;
                 case FieldKind.Text:
-                    Doom(Controls.Text(p, label, B(f, bad, x => Convert.ToString(x, CultureInfo.InvariantCulture)), o => { common(o); Def(o, f, x => Convert.ToString(x, CultureInfo.InvariantCulture)); }), bad[0]);
+                    Done(f, Controls.Text(p, label, B(f, bad, x => Convert.ToString(x, CultureInfo.InvariantCulture)), o => { common(o); Def(o, f, x => Convert.ToString(x, CultureInfo.InvariantCulture)); }), bad[0]);
                     break;
                 case FieldKind.Key:
-                    Doom(Controls.Key(p, label, B(f, bad, x => Convert.ToString(x, CultureInfo.InvariantCulture)), o =>
+                    Done(f, Controls.Key(p, label, B(f, bad, x => Convert.ToString(x, CultureInfo.InvariantCulture)), o =>
                     {
                         common(o); Def(o, f, x => Convert.ToString(x, CultureInfo.InvariantCulture)); o.Capture = f.Capture;
                     }), bad[0]);
                     break;
                 case FieldKind.Info:
-                    Doom(Controls.Info(p, label, () => { try { return Convert.ToString(Need(f), CultureInfo.InvariantCulture); } catch { bad[0] = true; throw; } }, common), bad[0]);
+                    Done(f, Controls.Info(p, label, () => { try { return Convert.ToString(Need(f), CultureInfo.InvariantCulture); } catch { bad[0] = true; throw; } }, common), bad[0]);
                     break;
                 case FieldKind.Action:
                     Controls.Action(p, label, f.ActionLabel ?? label, () => { if (f.Set != null) f.Set(null); }, common);
@@ -167,9 +175,17 @@ namespace Facet
             return v;
         }
 
-        // The control's own first read failed in the constructor (one strike): take it to three so the row is unavailable now.
-        static void Doom<T>(Control<T> c, bool bad)
+        static void Common(ControlOptions o, Field f)
         {
+            o.Id = f.Id ?? f.Label; o.Tooltip = f.Tooltip; o.Help = f.Help; o.UndoDocument = f.UndoDocument;
+        }
+
+        // Hooks the field's Committed. The control's own first read failed in the constructor (one strike): take it to
+        // three so the row is unavailable now.
+        static void Done<T>(Field f, Control<T> c, bool bad)
+        {
+            var k = f.Committed;
+            if (k != null) c.Committed += _ => k();
             if (!bad) return;
             c.Refresh(); c.Refresh();
         }
@@ -214,14 +230,14 @@ namespace Facet
             });
             var ctl = Controls.Colour(p, f.Label, bind, o =>
             {
-                o.Id = f.Label; o.Tooltip = f.Tooltip; o.Help = f.Help; o.Alpha = alpha;
+                Common(o, f); o.Alpha = alpha;
                 Color d; bool tx, al;
                 if (f.Default != null && ToColour(f.Default, out d, out tx, out al)) o.Default = d;
             });
             // Value stays at its default when the first read failed; a failed probe means the getter is bad.
             bool bad = false;
             try { Color c; bool tx, al; bad = !ToColour(Need(f), out c, out tx, out al); } catch { bad = true; }
-            Doom(ctl, bad);
+            Done(f, ctl, bad);
         }
     }
 }

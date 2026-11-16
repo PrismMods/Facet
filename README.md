@@ -260,7 +260,8 @@ reads and writes them only through `GetRect` and `SetRect`, and every consumer d
   `WheelEvent` (3 a notch) and the host's polled `Input.TickWheel` (when the stage is what the pointer is on, not an
   element over it, it feeds the canvas, not the page's scrollers; x and the modifiers are read from Unity's input in that call) feed one handler that takes at most one
   of them a frame (the poll also skips the frame after an event's, which can carry the same notch), and the page
-  around the stage neither scrolls nor glides.
+  around the stage neither scrolls nor glides. Both paths pan the same way for the same swipe; `InvertWheelPan`
+  (a `Func<bool>`, read at each step) pans with the swipe instead, on both axes, and leaves zoom alone.
 - **The middle button** drags the view at once. **The right button** under 5 stage px of travel is a click: the
   item under the press is selected (alone, unless it was selected) and `Menu(item)` opens there through
   `Popup.Context` (null on empty stage; a null or empty list opens nothing). From 5 px it drags the view and opens
@@ -438,8 +439,12 @@ var tabs = Controls.Reorder<Profile>(row, o =>
   another item.
 - **Menus.** A right-click opens `Menu(item)` at the pointer. `Add` puts a ＋ after the items that opens its menu
   under it; `TitleMenu` makes the `Title` caption a button that opens its menu under it.
-- Of the inherited options only `Id` (the group; its parts are `Id-item`, `Id-text`, `Id-mark`, `Id-title`,
-  `Id-add`, `Id-drop` and `Id-rename`) and `Tooltip` apply.
+- **Drags from the text.** With `DragFromText` an item puts its mark and text on a row of their own (`<Id>-head`)
+  with its `Build` content under it, and only a press on that row picks, drags, renames or opens the item's menu. A
+  press inside the `Build` content (a slider, a nested `Reorder`) is left to that content, so a nested list's drag
+  moves only its own items. Off, an item is one row and a press anywhere on it is the item's.
+- Of the inherited options only `Id` (the group; its parts are `Id-item`, `Id-head` (with `DragFromText`),
+  `Id-text`, `Id-mark`, `Id-title`, `Id-add`, `Id-drop` and `Id-rename`) and `Tooltip` apply.
 
 ### Repeat
 
@@ -725,12 +730,12 @@ and its 7 px handle, the handle alone with the rail shut, or the icon strip when
 | Theme | `Role.Rail/Line/Off/Guide`; `Theme.Sizes`, `Theme.Looks`, `Theme.Notify()`; `Sizes` (with `ControlPad`, `FieldPad`, `ItemHeight`, `RowPadY` above and below a row's text, `TabGap` under a tab row); `Looks` (with `Group`, `Stage`); `Look.SelectedBorder`, `Look.Copy()` |
 | Primitives | `Ui.Caps`; `Ui.Text`, `Muted`, `Caps`, `Btn` and `List` take the parent first; `Window.TitleBarLeft`; `Facet.Tokens` removed |
 | Hook events | `Window.Raised`, `Nav.InsetChanged` (each handler is told the current `Nav.Inset` as it is added, then each change), `Nav.CompactChanged` |
-| Cards | `ControlOptions.Help`; `Controls.Card`/`CardOptions` (`Actions`; `Note`, an English key, or `NoteText`, re-read and untranslated); `Controls.Advanced`; `Form.Build(…, FormOptions)`; `Field.Help`/`Advanced` |
+| Cards | `ControlOptions.Help`; `Controls.Card`/`CardOptions` (`Actions`; `Note`, an English key, or `NoteText`, re-read and untranslated); `Controls.Advanced`; `Form.Build(…, FormOptions)`; `Field.Help`/`Advanced`; `Field.Id` (the control's `Id`; null: `Label`, which still translates through the owner host), `Field.Committed` (once per slider drag, typed commit, toggle or choice change, undo and redo; `Set` still runs on every write) and `Field.UndoDocument` (the control's `UndoDocument`: a step recorded on one document does nothing once it returns another) |
 | Page layout | `Controls.PageHeader`/`PageHeaderOptions`; `Controls.Columns(parent, configure)` returns a `Columns` (`Root`, `Left`, `Right`); `ColumnsOptions` (with `StackBelow`) |
 | Preview | `Controls.Preview`/`PreviewOptions`: `Show`, `Tick`, `Hide` run only while its page, its window and its own `VisibleWhen` show it; `Id` names the stage, `Id-pane` the pane, which takes `VisibleWhen`, `EnabledWhen`, the tooltips and `ContextMenu` (not `Help`); `NoteText`, a live note (already translated, re-read on every refresh pass, named `Id-note`) that wins over `Note` |
 | Tiles | `Controls.Tiles`/`TilesOptions` (`Id`, `VisibleWhen`, `EnabledWhen`, the tooltips and `ContextMenu` act on the grid; in a `Card` it is a padded card row); `Controls.Tile`/`TileOptions` (no `Help`: use `Tooltip`) |
 | Mask tiles | `Controls.MaskTiles(parent, Bind<int>, IList<MaskTile>, MaskTilesOptions)` binds a tile grid to the bits of an `int`: each `MaskTile` (label, bit, `TileOptions`) is a switch tile over its one bit, and bits no tile names never change. `MaskTiles.SetAll(on)` writes every listed bit at once as one undo step, and records nothing when the mask is already there |
-| Dual range | `Controls.Range(parent, lowLabel, highLabel, Bind<Vector2>, RangeOptions)` edits a pair (x the low end, y the high one) in one row: the low label, a number named `<Id>-input`, a track with two thumbs and an `Accent` span between them, a number named `<HighId>-input` and the high label. `RangeOptions` has `Min`, `Max`, `Step` (counted from `Min`), `Format` and `HighId` (default: the high label; `Id` defaults to the low label). An end moved past the other pushes it to the same value; a stored x > y shows swapped and writes nothing until an end changes. One undo step per drag and per typed number; both labels are found by search |
+| Dual range | `Controls.Range(parent, lowLabel, highLabel, Bind<Vector2>, RangeOptions)` edits a pair (x the low end, y the high one) in one row: the low label, a number named `<Id>-input`, a track with two thumbs and an `Accent` span between them, a number named `<HighId>-input` and the high label. `RangeOptions` has `Min`, `Max`, `Step` (counted from `Min`), `Format` and `HighId` (default: the high label; `Id` defaults to the low label). An end moved past the other pushes it to the same value; a stored x > y shows swapped and writes nothing until an end changes. One undo step per drag and per typed number; both labels are found by search. With `Names` the ends step through the names (0 to `Count − 1`, whole steps; `Min`, `Max` and `Step` are ignored) and one read-only text named `<Id>-value` shows `names[low] + "  —  " + names[high]` in place of the two number fields; `Committed` still fires once per drag. `Track` runs once after the track is built and draws into its bar, under the span and the thumbs; what it draws takes no pointer |
 | Switches | every switch (`Toggle`, `PageHeader`, `Tile`) flips on Submit (Enter/Space) as on a click |
 | Tabs | `Tabs.Pages`, `Tabs.Content`; `SearchIndex.Hit.Tab` |
 | Search | `Nav.AddSearchSource` with `SearchIndex.Entry` (`Label`, `Where`, `Open`, `Tip`; `Label` and `Where` are English keys, translated) for pages Facet did not build; `NavItem.OnHit` |
@@ -741,7 +746,7 @@ and its 7 px handle, the handle alone with the rail shut, or the icon strip when
 | Menus | `MenuItem`; `Controls.MenuBar`/`MenuBar` (`Root`, `Left`, `Tools`, `IsOpen`, `Open`, `Close`); `Popup.Menu(anchor, IList<MenuItem>)`; `Popup.Context`; `ControlOptions.ContextMenuItems` (at the pointer, read at the right-click; also on a canvas's pane, around its stage); `Menus.HandleKeys` |
 | Toolbar | `Controls.Toolbar`/`Toolbar` (`Search`, `Chips`, `Icon`, `Glyph`, `Button`, `Toggle`, `Label`, `UndoRedo`, `Spacer`); `Controls.Chips<T>`; `Ui.IconButton`; `Paint.Tint` (public) |
 | Inspector | `Bind.Many` (by key), `Bind<T>.Mixed`, `Control<T>.Mixed`, `ColumnsOptions.RightFill`, `Ui.Scroll`, `Controls.Live` |
-| Lists | `Controls.Reorder<T>`/`Reorder<T>` (`Root`, `Refresh`, `BeginRename`), `ReorderOptions<T>` (`Items`, `Key`, `Text`, `Selected`, `Active`, `Select`, `Move`, `Rename`, `Menu`, `Add`, `Title`, `TitleMenu`, `Vertical`, `Scroll`, `Build`) |
+| Lists | `Controls.Reorder<T>`/`Reorder<T>` (`Root`, `Refresh`, `BeginRename`), `ReorderOptions<T>` (`Items`, `Key`, `Text`, `Selected`, `Active`, `Select`, `Move`, `Rename`, `Menu`, `Add`, `Title`, `TitleMenu`, `Vertical`, `Scroll`, `Build`, `DragFromText`) |
 | Switcher and rows | `Controls.CardGrid<T>`/`CardGrid<T>` (`Root`, `Refresh`, `Redraw`, `BeginRename`), `CardGridOptions<T>` (`Items`, `Key`, `Title`, `Note`, `Active`, `Thumb`, `ThumbAspect`, `Click`, `DoubleClick`, `Menu`, `AddLabel`, `Add`, `Rename`); `Sizes.CardWidth` (168); `Controls.Repeat<T>`; `SliderOptions.Scrub`; `KeyOptions.Chord`, `Prompt`, `Mouse`; `Controls.BeginCapture`; `Input.ReadChord`, `Input.ChordCancel` |
 | Image cards | `Controls.ImageCards<T>`/`ImageCards<T>` (`Root`, `Columns`, `Refresh`, `Redraw`, `ImagesChanged`), `ImageCardsOptions<T>` (`Items`, `Key`, `Image`, `Body`, `Click`, `Below`, `Grid`, `MinWidth`, `MaxColumns`, `Gap`, `Scrim`, `ImageMargin`; not a `ControlOptions`) |
 | Search list | `Controls.SearchList`/`SearchList` (`Root`, `Body`, `Refresh`), `SearchListOptions` (`Search`, `Query`, `Placeholder`, `MaxLength`, `Tools`, `State`, `Message`, `RetryLabel`, `Retry`, `ErrorExtra`, `More`, `EndText`, `LoadMore`, `EndMargin`; not a `ControlOptions`), `ListState`, `MoreState`; `Ui.ScrollEnd` |

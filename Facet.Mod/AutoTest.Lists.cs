@@ -448,6 +448,156 @@ namespace Facet.Mod
             finally { s.Dispose(); }
         }
 
+        // Form fields that keep their own Id, hear their commits and bind their undo; a range over named steps and a
+        // drawn track; a list whose drags start only from an item's text.
+        IEnumerator SectionFormFields()
+        {
+            var h = Host.Create("Fields", o => o.Log = m => Main.Log("[fields] " + m));
+            var s = new Surface(h, "FacetFields", Layer.Window);
+            s.Visible = true;
+            var w = new Window(s.Root, "fields", "Fields", new Rect(60, 40, 1000, 760));
+            var stage = Ui.Box(w.Body);
+            stage.style.width = 900f;
+            var root = w.Root;
+            try
+            {
+                // Id
+                var withId = Ui.Box(stage); var noId = Ui.Box(stage);
+                bool on = false;
+                Form.Build(withId, new[] { new Field { Label = "Alpha", Id = "ALPHA_ID", Kind = FieldKind.Bool, Get = () => on, Set = v => on = (bool)v } });
+                Form.Build(noId, new[] { new Field { Label = "Alpha", Kind = FieldKind.Bool, Get = () => on, Set = v => on = (bool)v } });
+                yield return null; yield return null;
+                var idRow = withId.Q("ALPHA_ID");
+                Check(idRow != null && withId.Q("Alpha") == null && idRow.Query<Label>().ToList().Exists(l => l.text == "Alpha") && noId.Q("Alpha") != null,
+                    "Form: a field with Id ALPHA_ID builds a control named ALPHA_ID showing Alpha; with no Id it is named Alpha",
+                    (idRow != null) + "/" + (noId.Q("Alpha") != null));
+                withId.RemoveFromHierarchy(); noId.RemoveFromHierarchy();
+
+                // Committed: once per drag, once more per undo.
+                History.Clear();
+                float amount = 0.2f; int sets = 0, commits = 0;
+                var fbox = Ui.Box(stage);
+                Form.Build(fbox, new[] { new Field { Label = "Amount", Id = "fields-amount", Kind = FieldKind.Float, Min = 0f, Max = 1f,
+                    Get = () => amount, Set = v => { sets++; amount = (float)v; }, Committed = () => commits++ } });
+                yield return null; yield return null;
+                var dragger = fbox.Q("fields-amount-input")?.Q(className: "unity-base-slider__dragger");
+                Check(dragger != null, "Form: the float field's slider has a dragger");
+                if (dragger != null)
+                {
+                    var from = dragger.worldBound.center;
+                    PointerAt(EventType.MouseDown, from, root); yield return null;
+                    for (int i = 1; i <= 10; i++) { PointerAt(EventType.MouseMove, from + new Vector2(8f * i, 0f), root); yield return null; }
+                    PointerAt(EventType.MouseUp, from + new Vector2(80f, 0f), root); yield return null; yield return null;
+                }
+                int dragSets = sets, dragCommits = commits;
+                History.Undo(); yield return null;
+                int undoCommits = commits;
+                History.Redo(); yield return null;
+                Check(dragSets >= 5 && dragCommits == 1 && undoCommits == 2 && commits == 3,
+                    "Form: a slider drag calls Set every frame and Committed once; an undo and a redo call Committed once more each",
+                    "sets " + dragSets + " commits " + dragCommits + "/" + undoCommits + "/" + commits);
+                fbox.RemoveFromHierarchy();
+
+                // UndoDocument: a step recorded on a document that was replaced does nothing.
+                History.Clear();
+                object doc = new object();
+                string name = "a"; int nsets = 0, ncommits = 0;
+                var nbox = Ui.Box(stage);
+                Form.Build(nbox, new[] { new Field { Label = "Name", Id = "fields-name", Kind = FieldKind.Text,
+                    Get = () => name, Set = v => { nsets++; name = (string)v; }, Committed = () => ncommits++, UndoDocument = () => doc } });
+                yield return null; yield return null;
+                var nf = nbox.Q<TextField>("fields-name-input");
+                if (nf != null) { Type(nf, "b"); yield return null; }
+                bool typed = name == "b" && nsets == 1 && ncommits == 1;
+                History.Undo(); yield return null;
+                Check(nf != null && typed && nsets == 2 && ncommits == 2 && name == "a",
+                    "Form: with the same UndoDocument, an undo of a typed edit calls Set and Committed once each", typed + " sets " + nsets + " commits " + ncommits + " " + name);
+                if (nf != null) { Type(nf, "c"); yield return null; }
+                typed = name == "c" && nsets == 3 && ncommits == 3;
+                doc = new object();
+                History.Undo(); yield return null;
+                Check(nf != null && typed && nsets == 3 && ncommits == 3 && name == "c",
+                    "Form: with UndoDocument replaced after an edit, an undo calls neither Set nor Committed", typed + " sets " + nsets + " commits " + ncommits + " " + name);
+                nbox.RemoveFromHierarchy();
+                History.Clear();
+
+                // Named steps over a drawn track.
+                var names = new List<string>();
+                for (int i = 1; i <= 8; i++) names.Add("Name " + i);
+                var span = new Vector2(2f, 2f); int rcommits = 0, tracks = 0;
+                VisualElement drawn = null;
+                var range = Controls.Range(stage, "Low", "High", Bind.To(() => span, v => span = v), o =>
+                {
+                    o.Id = "fields-range"; o.Names = names;
+                    o.Track = t => { tracks++; drawn = Ui.Box(t); drawn.name = "fields-drawn"; };
+                });
+                range.Committed += _ => rcommits++;
+                yield return null; yield return null;
+                var track = stage.Q("fields-range-track");
+                var value = stage.Q<Label>("fields-range-value");
+                if (track != null)
+                {
+                    var b = track.worldBound;
+                    Func<float, Vector2> at = v => new Vector2(b.xMin + v / 7f * b.width, b.center.y);
+                    yield return DragAt(at(2f), at(5f), root);
+                }
+                Check(span == new Vector2(2f, 5f) && value != null && value.text == "Name 3  —  Name 6" && rcommits == 1,
+                    "Range: with Names a drag from 2 to 5 shows Name 3  —  Name 6 and commits once", span + " '" + value?.text + "' " + rcommits);
+                Check(range.Root.Query<TextField>().ToList().Count == 0 && stage.Q("fields-range-input") == null && stage.Q("High-input") == null,
+                    "Range: with Names the ends have no -input field");
+                var bar = drawn?.parent;
+                Check(tracks == 1 && bar != null && bar.parent == track && track.IndexOf(bar) == 0 && bar.IndexOf(drawn) == 0 && track.childCount == 3,
+                    "Range: Track runs once and what it draws sits under the span and the thumbs",
+                    tracks + " " + (bar == null ? "none" : track?.IndexOf(bar) + "/" + bar.IndexOf(drawn)));
+                range.Root.RemoveFromHierarchy();
+
+                // A drag starts only from an item's text row.
+                var outer = new List<string> { "Alpha", "Beta", "Gamma" };
+                var inner = new Dictionary<string, List<string>>();
+                int outerMoves = 0, innerMoves = 0;
+                float level = 0.5f;
+                Action<List<string>, int, int> move = (l, a, z) => { var x = l[a]; l.RemoveAt(a); l.Insert(z, x); };
+                var list = Controls.Reorder<string>(stage, o =>
+                {
+                    o.Id = "fields-outer"; o.Vertical = true; o.DragFromText = true;
+                    o.Items = () => outer; o.Text = x => x;
+                    o.Move = (a, z) => { outerMoves++; move(outer, a, z); };
+                    o.Build = (e, x) =>
+                    {
+                        Controls.Slider(e, "Level", Bind.To(() => level, v => level = v), so => so.Id = "fields-level-" + x);
+                        var mine = inner[x] = new List<string> { x + " 1", x + " 2", x + " 3" };
+                        Controls.Reorder<string>(e, io =>
+                        {
+                            io.Id = "fields-inner-" + x; io.Vertical = true;
+                            io.Items = () => mine; io.Text = y => y;
+                            io.Move = (a, z) => { innerMoves++; move(mine, a, z); };
+                        });
+                    };
+                });
+                yield return null; yield return null; yield return null;
+                History.Clear();
+                var sd = stage.Q("fields-level-Alpha-input")?.Q(className: "unity-base-slider__dragger");
+                if (sd != null) yield return DragAt(sd.worldBound.center, sd.worldBound.center + new Vector2(40f, 0f), root);
+                Check(sd != null && outerMoves == 0 && string.Join(",", outer) == "Alpha,Beta,Gamma",
+                    "Reorder DragFromText: a 40 px drag on a slider in an item calls no outer Move", (sd != null) + " " + outerMoves);
+                var nested = stage.Query<VisualElement>("fields-inner-Beta-item").ToList();
+                if (nested.Count == 3)
+                    yield return DragAt(nested[0].worldBound.center, new Vector2(nested[2].worldBound.center.x, nested[2].worldBound.yMax - 2f), root);
+                Check(nested.Count == 3 && innerMoves == 1 && outerMoves == 0 && string.Join(",", inner["Beta"]) == "Beta 2,Beta 3,Beta 1" && string.Join(",", outer) == "Alpha,Beta,Gamma",
+                    "Reorder DragFromText: a drag in a nested list moves only its own items",
+                    nested.Count + " " + innerMoves + "/" + outerMoves + " " + string.Join(",", inner.ContainsKey("Beta") ? inner["Beta"] : new List<string>()));
+                var heads = stage.Query<VisualElement>("fields-outer-head").ToList();
+                var faces = stage.Query<VisualElement>("fields-outer-item").ToList();
+                if (heads.Count == 3 && faces.Count == 3)
+                    yield return DragAt(heads[0].worldBound.center, new Vector2(heads[0].worldBound.center.x, faces[2].worldBound.yMax - 2f), root);
+                Check(heads.Count == 3 && outerMoves == 1 && string.Join(",", outer) == "Beta,Gamma,Alpha",
+                    "Reorder DragFromText: a drag on an item's text row calls the outer Move once", heads.Count + " " + outerMoves + " " + string.Join(",", outer));
+                list.Root.RemoveFromHierarchy();
+                History.Clear();
+            }
+            finally { s.Dispose(); }
+        }
+
         // asked holds lo..hi, give or take one card at either end, each once.
         static bool Span(List<int> asked, int lo, int hi)
         {

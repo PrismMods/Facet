@@ -556,6 +556,16 @@ static class FacetTest {
 
     // The canvas's snapping, grid, resize, marquee, z-order, zoom and fit, in canvas units with y down.
     static void CanvasGeometry() {
+        // A swipe right and down (Input.mouseScrollDelta (1, 2)) reaches the panel as WheelEvent (-3, -6): both paths
+        // must give the same notches, or the polled path pans one axis backwards.
+        float nx, ny, wx, wy, ix, iy;
+        CanvasMath.PolledNotch(1f, 2f, out nx, out ny);
+        Check(nx == -3f / 3f && ny == -6f / 3f, "polled wheel notches match the panel's WheelEvent on both axes", nx + "," + ny);
+        CanvasMath.WheelPan(nx, ny, false, false, out wx, out wy);
+        CanvasMath.WheelPan(nx, ny, false, true, out ix, out iy);
+        Check(wx == 20f && wy == 40f && ix == -wx && iy == -wy, "wheel pans 20 px a notch against the swipe; invert flips both axes", wx + "," + wy + " / " + ix + "," + iy);
+        CanvasMath.WheelPan(0f, 1f, true, false, out wx, out wy);
+        Check(wx == -20f && wy == 0f, "Shift turns a y-only wheel sideways", wx + "," + wy);
         Check(CanvasMath.GridStep(5, 1) == 5 && CanvasMath.GridStep(5, 2) == 3 && CanvasMath.GridStep(5, 0.5f) == 10
            && CanvasMath.GridStep(5, 4) == 1 && CanvasMath.GridStep(5, 0.3f) == 17 && CanvasMath.GridStep(0, 1) == 1, "grid step by zoom");
         Check(CanvasMath.GridPitch(5, 1) == 5 && CanvasMath.GridPitch(5, 0.5f) == 10 && CanvasMath.GridPitch(5, 0.3f) == 20, "drawn grid pitch");

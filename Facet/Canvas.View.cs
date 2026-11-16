@@ -33,6 +33,10 @@ namespace Facet
         /// Facet surface, or its own surface hiding, unfocuses it.
         public bool Focused => ReferenceEquals(CanvasAll.Focused, this);
 
+        /// True: the wheel and trackpad pan with the swipe instead of against it, on both axes (Ctrl/Cmd zoom is
+        /// unchanged). Read at each wheel step on either path, so a host's setting applies at once; null is false.
+        public Func<bool> InvertWheelPan { get; set; }
+
         /// The pointer is over the stage.
         public bool Hovered => _hovered;
 
@@ -118,7 +122,7 @@ namespace Facet
         private int _button, _nativeWheel = -1, _polledWheel = -1;
         private Func<T, IList<MenuItem>> _menu;
         private Action<IReadOnlyList<T>> _delete, _zorder;
-        private string _siteKeys, _siteMenu, _siteDelete, _siteZOrder, _siteView, _siteActivated;
+        private string _siteKeys, _siteMenu, _siteDelete, _siteZOrder, _siteView, _siteActivated, _siteInvert;
         private T _lastHit;
         private float _lastHitAt;
         private bool _nudging;
@@ -133,7 +137,7 @@ namespace Facet
         {
             _menu = o.Menu; _delete = o.Delete; _zorder = o.ZOrder;
             _siteKeys = site + "PollKeys"; _siteMenu = site + "Menu"; _siteDelete = site + "Delete"; _siteZOrder = site + "ZOrder";
-            _siteView = site + "ViewChanged"; _siteActivated = site + "Activated";
+            _siteView = site + "ViewChanged"; _siteActivated = site + "Activated"; _siteInvert = site + "InvertWheelPan";
             Stage.focusable = true;
             Events.On<GeometryChangedEvent>(Stage, _ => FirstSize());
             Events.On<WheelEvent>(Stage, NativeWheel);
@@ -205,10 +209,12 @@ namespace Facet
             bool ctrl = UnityEngine.Input.GetKey(KeyCode.LeftControl) || UnityEngine.Input.GetKey(KeyCode.RightControl)
                      || UnityEngine.Input.GetKey(KeyCode.LeftCommand) || UnityEngine.Input.GetKey(KeyCode.RightCommand);
             bool shift = UnityEngine.Input.GetKey(KeyCode.LeftShift) || UnityEngine.Input.GetKey(KeyCode.RightShift);
-            Wheel(UnityEngine.Input.mouseScrollDelta.x, -delta, ctrl, shift, stage);
+            float x, y;
+            CanvasMath.PolledNotch(UnityEngine.Input.mouseScrollDelta.x, delta, out x, out y);
+            Wheel(x, y, ctrl, shift, stage);
         }
 
-        // 20 stage px a notch; Shift turns a y-only wheel sideways; Ctrl or Cmd zooms at the pointer.
+        // Pans by CanvasMath.WheelPan; Ctrl or Cmd zooms at the pointer.
         private void Wheel(float x, float y, bool zoom, bool shift, Vector2 at)
         {
             if (_mode != Mode.None) return;
@@ -219,8 +225,10 @@ namespace Facet
                 ZoomAt(_zoom - Mathf.Sign(n) * 0.1f * Mathf.Min(Mathf.Abs(n), 1f), at);
                 return;
             }
-            if (shift && Mathf.Abs(x) < 1e-4f) { x = y; y = 0f; }
-            SetView(_zoom, _pan - new Vector2(x, y) * 20f);
+            float px, py;
+            var invert = InvertWheelPan;
+            CanvasMath.WheelPan(x, y, shift, invert != null && Safe.Get(_host, _siteInvert, invert, false), out px, out py);
+            SetView(_zoom, _pan + new Vector2(px, py));
         }
 
         // ---- the right and middle buttons

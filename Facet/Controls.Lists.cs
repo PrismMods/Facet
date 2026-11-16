@@ -39,6 +39,10 @@ namespace Facet
         public bool Scroll { get; set; }
         /// Extra content built into each item after its text.
         public Action<VisualElement, T> Build { get; set; }
+        /// The item's text sits on its own row (Id + "-head") with the Build content under it, and only a press on that
+        /// row picks, drags, renames or opens the item's menu: a press inside the Build content (a slider, a nested
+        /// Reorder) is left to that content and never starts this list's drag.
+        public bool DragFromText { get; set; }
     }
 
     /* A group of items the user picks, drags into a new order, renames in place and right-clicks: a tab strip, or a
@@ -246,12 +250,22 @@ namespace Facet
                 if (_o.Vertical) face.style.marginBottom = _sz.Line;
                 else { face.style.marginRight = _sz.Gap / 2f; if (_scroll == null) face.style.marginBottom = _sz.Gap / 2f; }
                 Paint.Look(face, looks.Tab);
-                var mark = Face(face, "●", "-mark");
+                VisualElement head = null;
+                if (_o.DragFromText)
+                {
+                    face.style.flexDirection = FlexDirection.Column;
+                    face.style.alignItems = Align.Stretch;
+                    head = Ui.Row(face);
+                    head.name = Root.name + "-head";
+                    head.pickingMode = PickingMode.Position;
+                    head.style.minHeight = _sz.ListRowHeight;
+                }
+                var mark = Face(head ?? face, "●", "-mark");
                 mark.style.marginRight = _sz.Gap / 2f;
                 mark.style.display = DisplayStyle.None;
-                var text = Face(face, "", "-text");
+                var text = Face(head ?? face, "", "-text");
                 if (_o.Build != null) Safe.Run(_host, _site + " Build", () => _o.Build(face, it));
-                Events.On<PointerDownEvent>(face, e => Down(face, e));
+                Events.On<PointerDownEvent>(face, e => Down(face, head, e));
                 Events.On<PointerMoveEvent>(face, Moved);
                 Events.On<PointerUpEvent>(face, Up);
                 Events.On<PointerCaptureOutEvent>(face, _ => { if (_press >= 0) End(); });
@@ -279,8 +293,9 @@ namespace Facet
 
         // ---- the pointer
 
-        private void Down(VisualElement face, PointerDownEvent e)
+        private void Down(VisualElement face, VisualElement head, PointerDownEvent e)
         {
+            if (head != null && e.target != head) return;   // the text and mark ignore the pointer: a press on them is the head's
             int i = _faces.IndexOf(face);
             if (i < 0 || i == _renaming) return;   // a press in the rename field is the field's
             if (e.button == 1)

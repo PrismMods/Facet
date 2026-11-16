@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -14,11 +15,22 @@ namespace Facet
         public string Format { get; set; } = "0.##";
         /// Names the high number field HighId + "-input". Defaults to the high label, as Id does to the low one.
         public string HighId { get; set; }
+        /// Steps through these names: the ends run 0..Count-1 in whole steps (Min, Max and Step are ignored), and one
+        /// read-only text, Id + "-value", shows names[low] + "  —  " + names[high] in place of the two number fields.
+        public IReadOnlyList<string> Names { get; set; }
+        /// Runs once after the track is built and draws into its bar, under the span and the thumbs.
+        public Action<VisualElement> Track { get; set; }
     }
 
     public static partial class Controls
     {
         private sealed class RangeDrag { public bool On, High, Moved; }
+
+        private static void Unpicked(VisualElement e)
+        {
+            e.pickingMode = PickingMode.Ignore;
+            for (int i = 0; i < e.childCount; i++) Unpicked(e[i]);
+        }
 
         /* Two ends over a Vector2 (x the low end, y the high one) in one row: the low label, its number, a track with
            two thumbs and an Accent span between them, the high number and the high label. x <= y always: an end moved
@@ -31,9 +43,21 @@ namespace Facet
             if (o.HighId == null) o.HighId = highLabel;
             var right = Row(parent, lowLabel);
             var t = Theme.For(right); var sz = t.Sizes; var lk = t.Looks;
-            float min = o.Min, max = o.Max, step = o.Step;
+            var names = o.Names != null && o.Names.Count > 0 ? o.Names : null;
+            float min = names != null ? 0f : o.Min, max = names != null ? names.Count - 1 : o.Max, step = names != null ? 1f : o.Step;
 
-            var lowField = NumberField(right, null);
+            TextField lowField = null, highField = null;
+            Label valueText = null;
+            if (names == null) lowField = NumberField(right, null);
+            else
+            {
+                valueText = Ui.Text(right, "", sz.Small);
+                valueText.name = o.Id + "-value";
+                valueText.style.minWidth = sz.NumberWidth;
+                valueText.style.marginLeft = sz.Gap;
+                valueText.style.unityTextAlign = TextAnchor.MiddleRight;
+                valueText.pickingMode = PickingMode.Ignore;
+            }
             var track = Ui.Box(right);
             track.name = o.Id + "-track";
             track.style.width = sz.SliderWidth;
@@ -71,7 +95,15 @@ namespace Facet
             };
             var lowThumb = thumb();
             var highThumb = thumb();
-            var highField = NumberField(right, null);
+            if (o.Track != null)
+            {
+                int had = line.childCount;
+                Safe.Run(Host.For(right), "Range Track '" + o.Id + "'", () => o.Track(line));
+                // What it drew goes under the span (the thumbs are the track's, over the bar already) and takes no pointer:
+                // the track reads presses at its own local positions.
+                for (int k = had; k < line.childCount; k++) { Unpicked(line[k]); line.Insert(k - had, line[k]); }
+            }
+            if (names == null) highField = NumberField(right, null);
             var highText = Ui.Text(right, highLabel, sz.Body);
             highText.style.marginLeft = sz.Gap;
             highText.pickingMode = PickingMode.Ignore;
@@ -80,6 +112,7 @@ namespace Facet
 
             Func<float, float> at = v => max > min ? Mathf.Clamp01((v - min) / (max - min)) : 0f;
             Func<float, string> text = v => v.ToString(o.Format, CultureInfo.CurrentCulture);
+            Func<float, string> named = v => names[Mathf.Clamp(Mathf.RoundToInt(v), 0, names.Count - 1)];
             Action<Vector2, bool> show = (v, mixed) =>
             {
                 float a, b;
@@ -89,11 +122,12 @@ namespace Facet
                 highThumb.style.left = Length.Percent(100f * tb);
                 span.style.left = Length.Percent(100f * ta);
                 span.style.width = Length.Percent(100f * (tb - ta));
+                if (names != null) { valueText.text = mixed ? MixedText(valueText) : named(a) + "  —  " + named(b); return; }
                 lowField.SetValueWithoutNotify(mixed ? MixedText(lowField) : text(a));
                 highField.SetValueWithoutNotify(mixed ? MixedText(highField) : text(b));
             };
             var c = TrackedRow(right.parent, lowField, parent, lowLabel, o, range, null, show);
-            highField.name = o.HighId + "-input";
+            if (highField != null) highField.name = o.HighId + "-input";
             bool undoable = o.Undoable;
 
             // One end to v, measured from the ends as shown; false when that changes nothing.
@@ -114,8 +148,7 @@ namespace Facet
                 if (move(high, v, false) && undoable) History.Seal();   // the next typed number is its own step
                 return true;
             }, () => show(c.Value, c.Mixed));
-            typed(lowField, false);
-            typed(highField, true);
+            if (names == null) { typed(lowField, false); typed(highField, true); }
 
             // The track takes the pointer (thumbs and span ignore it): a press moves the nearer end there, a drag
             // carries it, and the release or a lost capture commits once.

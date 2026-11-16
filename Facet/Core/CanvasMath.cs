@@ -183,6 +183,19 @@ namespace Facet
             panY = stageH * 0.5f - content.CY * zoom;
         }
 
+        /// Notches x right and y down from Input.mouseScrollDelta, the polled wheel. The panel's WheelEvent carries
+        /// -3 x Input.mouseScrollDelta on both axes (InputForUI), so its delta / 3 is the same swipe: both axes flip.
+        internal static void PolledNotch(float scrollX, float scrollY, out float x, out float y) { x = -scrollX; y = -scrollY; }
+
+        /// How far a wheel of (x, y) notches pans the view: 20 stage px a notch against the swipe; Shift turns a
+        /// y-only wheel sideways; invert pans with the swipe instead.
+        internal static void WheelPan(float x, float y, bool shift, bool invert, out float panX, out float panY)
+        {
+            if (shift && Math.Abs(x) < 1e-4f) { x = y; y = 0f; }
+            float k = invert ? 20f : -20f;
+            panX = x * k; panY = y * k;
+        }
+
         /// A position kept within ±limit; NaN comes back as 0.
         internal static float Clamp(float v, float limit) { return float.IsNaN(v) ? 0 : v < -limit ? -limit : v > limit ? limit : v; }
 
