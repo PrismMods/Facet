@@ -81,7 +81,7 @@ namespace Facet
             { "Redo {0}", "다시 실행: {0}" },
             { "Sure?", "정말요?" },
             { "Active", "사용 중" },
-            { "unbound", "없음" },
+            { "Unbound", "없음" },
             { "press a key…", "키를 누르세요…" },
             { "Click the strip to add a stop.", "띠를 클릭하면 스톱이 추가됩니다." },
             { "Stop colour", "스톱 색" },

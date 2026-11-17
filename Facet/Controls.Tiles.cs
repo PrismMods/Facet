@@ -112,7 +112,8 @@ namespace Facet
             if (Carded(grid, sz)) grid.style.paddingTop = gap;
             Events.On<GeometryChangedEvent>(grid, e =>
             {
-                float w = Mathf.Floor((grid.contentRect.width - cols * gap) / cols * 100f) / 100f;
+                // 1 px slack: contentRect is pixel-snapped, up to half a device pixel wider than Yoga wraps against.
+                float w = Mathf.Floor((grid.contentRect.width - cols * gap - 1f) / cols * 100f) / 100f;
                 if (float.IsNaN(w) || w <= 0f) return;
                 Data.Get<GridWidth>(grid).W = w;
                 for (int i = 0; i < grid.childCount; i++) grid[i].style.width = w;

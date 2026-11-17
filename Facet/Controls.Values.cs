@@ -557,11 +557,11 @@ namespace Facet
             sv.scrollOffset = new Vector2(sv.scrollOffset.x, sv.scrollOffset.y + dy / k);
         }
 
-        // The key's name is data, not a word: set by hand so a relabel leaves it alone. Empty reads "unbound".
+        // The key's name is data, not a word: set by hand so a relabel leaves it alone. Empty reads "Unbound".
         private static void Draw(Button b, string name, bool mixed, bool chord = false)
         {
             if (mixed) Words.Label(b, "Mixed", true);
-            else if (string.IsNullOrEmpty(name)) Words.Label(b, "unbound", true);
+            else if (string.IsNullOrEmpty(name)) Words.Label(b, "Unbound", true);
             else b.text = chord ? Shortcut.Display(name, Application.platform == RuntimePlatform.OSXPlayer || Application.platform == RuntimePlatform.OSXEditor) : name;
         }
 
